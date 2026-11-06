@@ -1,0 +1,26 @@
+{
+  "name": "vibe-together-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "start:production": "node --env-file=.env.production src/server.js",
+    "admin:credentials": "node scripts/create-admin-credentials.js",
+    "admin:provision": "node scripts/provision-admin.js",
+    "admin:provision:production": "node --env-file=.env.production scripts/provision-admin.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "mongoose": "^8.12.1"
+  }
+}

@@ -1,0 +1,333 @@
+import { categories } from '../../data/categories.js'
+import { events } from '../../data/events.js'
+
+export const adminRoles = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'organizer', label: 'Organizer' },
+  { value: 'customer', label: 'Customer' },
+]
+
+export const mockUsers = [
+  {
+    id: 'user-001',
+    name: 'Platform Super Admin',
+    email: 'super-admin.demo@example.com',
+    phone: '',
+    role: 'super_admin',
+    status: 'active',
+    joinedAt: '2026-01-01',
+    organizerId: '',
+  },
+  {
+    id: 'user-101',
+    name: 'Aarav Mehta',
+    email: 'aarav.demo@example.com',
+    phone: '+91 90000 00101',
+    role: 'customer',
+    status: 'active',
+    joinedAt: '2026-07-14',
+    organizerId: '',
+  },
+  {
+    id: 'user-102',
+    name: 'Mira Shah',
+    email: 'mira.demo@example.com',
+    phone: '+91 90000 00102',
+    role: 'customer',
+    status: 'active',
+    joinedAt: '2026-08-03',
+    organizerId: '',
+  },
+  {
+    id: 'user-103',
+    name: 'Ishaan Kapoor',
+    email: 'ishaan.demo@example.com',
+    phone: '+91 90000 00103',
+    role: 'customer',
+    status: 'active',
+    joinedAt: '2026-08-22',
+    organizerId: '',
+  },
+  {
+    id: 'user-104',
+    name: 'Tara Nair',
+    email: 'tara.demo@example.com',
+    phone: '+91 90000 00104',
+    role: 'customer',
+    status: 'inactive',
+    joinedAt: '2026-09-11',
+    organizerId: '',
+  },
+  {
+    id: 'user-105',
+    name: 'Kabir Rao',
+    email: 'kabir.demo@example.com',
+    phone: '+91 90000 00105',
+    role: 'customer',
+    status: 'active',
+    joinedAt: '2026-09-28',
+    organizerId: '',
+  },
+  {
+    id: 'user-106',
+    name: 'Ananya Bose',
+    email: 'ananya.demo@example.com',
+    phone: '+91 90000 00106',
+    role: 'customer',
+    status: 'active',
+    joinedAt: '2026-10-04',
+    organizerId: '',
+  },
+  {
+    id: 'user-107',
+    name: 'Devika Iyer',
+    email: 'devika.demo@example.com',
+    phone: '+91 90000 00107',
+    role: 'customer',
+    status: 'active',
+    joinedAt: '2026-10-15',
+    organizerId: '',
+  },
+  {
+    id: 'user-108',
+    name: 'Rohan Das',
+    email: 'rohan.demo@example.com',
+    phone: '+91 90000 00108',
+    role: 'customer',
+    status: 'active',
+    joinedAt: '2026-10-29',
+    organizerId: '',
+  },
+  {
+    id: 'user-201',
+    name: 'The Lantern Collective',
+    email: 'lantern.demo@example.com',
+    phone: '+91 90000 00201',
+    role: 'organizer',
+    status: 'active',
+    joinedAt: '2026-06-02',
+    organizerId: 'org-201',
+  },
+  {
+    id: 'user-202',
+    name: 'Good Company Studio',
+    email: 'company.demo@example.com',
+    phone: '+91 90000 00202',
+    role: 'organizer',
+    status: 'active',
+    joinedAt: '2026-07-18',
+    organizerId: 'org-202',
+  },
+  {
+    id: 'user-203',
+    name: 'Open Road Experiences',
+    email: 'openroad.demo@example.com',
+    phone: '+91 90000 00203',
+    role: 'organizer',
+    status: 'pending',
+    joinedAt: '2026-10-21',
+    organizerId: 'org-203',
+  },
+  {
+    id: 'user-900',
+    name: 'Vibe Together Admin',
+    email: 'admin.demo@example.com',
+    phone: '',
+    role: 'admin',
+    status: 'active',
+    joinedAt: '2026-01-01',
+    organizerId: '',
+  },
+]
+
+export const mockOrganizers = [
+  {
+    id: 'org-201',
+    userId: 'user-201',
+    name: 'The Lantern Collective',
+    contactEmail: 'lantern.demo@example.com',
+    categoryIds: ['sing-along'],
+    status: 'approved',
+    joinedAt: '2026-06-02',
+    description: 'Live music evenings and welcoming sing-along gatherings.',
+  },
+  {
+    id: 'org-202',
+    userId: 'user-202',
+    name: 'Good Company Studio',
+    contactEmail: 'company.demo@example.com',
+    categoryIds: ['strangers-meet', 'fun-games'],
+    status: 'approved',
+    joinedAt: '2026-07-18',
+    description: 'Social meetups, friendly games, and community experiences.',
+  },
+  {
+    id: 'org-203',
+    userId: 'user-203',
+    name: 'Open Road Experiences',
+    contactEmail: 'openroad.demo@example.com',
+    categoryIds: ['strangers-trip'],
+    status: 'pending',
+    joinedAt: '2026-10-21',
+    description: 'Small group trips and locally hosted outdoor adventures.',
+  },
+]
+
+const eventStatuses = [
+  'published',
+  'published',
+  'pending',
+  'approved',
+  'published',
+  'draft',
+  'rejected',
+  'cancelled',
+]
+
+export const mockEvents = events.map((event, index) => ({
+  ...event,
+  status: eventStatuses[index] ?? 'pending',
+  organizerId:
+    event.organizer === 'Community hosted'
+      ? 'org-202'
+      : index % 2 === 0
+        ? 'org-201'
+        : 'org-202',
+  submittedAt: new Date(
+    Date.UTC(2026, 8 + Math.floor(index / 3), 4 + index * 3),
+  )
+    .toISOString()
+    .slice(0, 10),
+}))
+
+export const mockBookings = [
+  {
+    reference: 'VT-DEMO-0001',
+    customer: 'Aarav Mehta',
+    customerEmail: 'aarav.demo@example.com',
+    eventId: 'after-hours-sing-along',
+    organizerId: 'org-201',
+    ticketCount: 2,
+    createdAt: '2026-10-26T14:10:00.000Z',
+    amount: 48,
+    currency: 'INR',
+    paymentStatus: 'not_verified',
+    status: 'confirmed',
+  },
+  {
+    reference: 'VT-DEMO-0002',
+    customer: 'Mira Shah',
+    customerEmail: 'mira.demo@example.com',
+    eventId: 'the-open-table',
+    organizerId: 'org-202',
+    ticketCount: 1,
+    createdAt: '2026-10-27T09:30:00.000Z',
+    amount: 0,
+    currency: 'INR',
+    paymentStatus: 'not_required',
+    status: 'confirmed',
+  },
+  {
+    reference: 'VT-DEMO-0003',
+    customer: 'Ishaan Kapoor',
+    customerEmail: 'ishaan.demo@example.com',
+    eventId: 'somewhere-together',
+    organizerId: 'org-203',
+    ticketCount: 1,
+    createdAt: '2026-10-30T16:45:00.000Z',
+    amount: 68,
+    currency: 'INR',
+    paymentStatus: 'pending',
+    status: 'pending',
+  },
+  {
+    reference: 'VT-DEMO-0004',
+    customer: 'Tara Nair',
+    customerEmail: 'tara.demo@example.com',
+    eventId: 'the-playground',
+    organizerId: 'org-202',
+    ticketCount: 3,
+    createdAt: '2026-11-02T11:20:00.000Z',
+    amount: 48,
+    currency: 'INR',
+    paymentStatus: 'not_verified',
+    status: 'confirmed',
+  },
+  {
+    reference: 'VT-DEMO-0005',
+    customer: 'Kabir Rao',
+    customerEmail: 'kabir.demo@example.com',
+    eventId: 'one-more-song',
+    organizerId: 'org-201',
+    ticketCount: 2,
+    createdAt: '2026-11-03T08:12:00.000Z',
+    amount: 0,
+    currency: 'INR',
+    paymentStatus: 'not_required',
+    status: 'cancelled',
+  },
+]
+
+export const demoAnalytics = {
+  userGrowth: [18, 26, 34, 41, 58, 72, 96, 118, 143, 176, 204, 238],
+  eventCreation: [3, 5, 4, 8, 6, 9, 12, 10, 14, 16, 19, 22],
+  bookings: [12, 18, 16, 28, 31, 26, 42, 48, 57, 63, 74, 89],
+  monthlyRevenue: [1200, 1800, 2400, 2100, 3600, 4200, 5100, 4800, 6200, 7100, 7900, 9100],
+  categoryPopularity: categories.map((category, index) => ({
+    category: category.title,
+    count: [32, 46, 28, 39][index],
+  })),
+}
+
+export const mockActivity = [
+  {
+    id: 'activity-1',
+    action: 'Booking created',
+    affectedUser: 'Aarav Mehta',
+    description: 'Demo booking VT-DEMO-0001 was added.',
+    createdAt: '2026-11-04T10:12:00.000Z',
+    actorRole: 'system',
+  },
+  {
+    id: 'activity-2',
+    action: 'Event submitted',
+    affectedUser: 'Open Road Experiences',
+    description: 'A demo trip event is waiting for review.',
+    createdAt: '2026-11-03T15:48:00.000Z',
+    actorRole: 'organizer',
+  },
+  {
+    id: 'activity-3',
+    action: 'Organizer application received',
+    affectedUser: 'Open Road Experiences',
+    description: 'A demo organizer application was received.',
+    createdAt: '2026-11-02T12:20:00.000Z',
+    actorRole: 'system',
+  },
+  {
+    id: 'activity-4',
+    action: 'Account activated',
+    affectedUser: 'Tara Nair',
+    description: 'A demo customer account status was changed.',
+    createdAt: '2026-10-30T09:05:00.000Z',
+    actorRole: 'admin',
+  },
+]
+
+export const defaultPlatformSettings = {
+  platformName: 'VIBE TOGETHER',
+  tagline: 'Different People. One Vibe.',
+  contactEmail: '',
+  contactPhone: '',
+  whatsappNumber: '',
+  socialInstagram: '',
+  socialYoutube: '',
+  bookingPolicy:
+    'Free bookings are development-only. Paid bookings require server-side payment verification.',
+  categories: categories.map(({ id, title }) => ({ id, title, enabled: true })),
+  notifications: {
+    newBooking: true,
+    eventSubmission: true,
+    organizerApplication: true,
+  },
+}
