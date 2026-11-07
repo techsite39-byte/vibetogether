@@ -4,7 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/start-dev.js",
+    "dev:client": "vite",
+    "dev:all": "node scripts/start-dev.js",
+    "server": "node backend/src/server.js",
+    "server:dev": "node --watch-path=backend/src backend/src/server.js",
     "build": "vite build",
     "lint": "oxlint",
     "test": "node --test",

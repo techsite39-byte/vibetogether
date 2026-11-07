@@ -15,6 +15,7 @@ async function startTestServer({ eventRepository } = {}) {
           existing.name !== enquiry.name ||
           existing.mobile !== enquiry.mobile ||
           existing.eventId !== enquiry.eventId ||
+          existing.categoryId !== enquiry.categoryId ||
           existing.gender !== enquiry.gender
         ) {
           throw Object.assign(new Error('Request ID conflict.'), { status: 409 })
@@ -142,6 +143,44 @@ test('serves database events and validates booking selections against them', asy
   assert.equal([...saved.values()][0].event, databaseEvent.title)
 })
 
+test('stores one category interest without assigning an event', async () => {
+  const { baseUrl, saved } = await startTestServer()
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    categoryId: 'fun-games',
+    gender: 'Female',
+  }
+  const response = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+
+  assert.equal(response.status, 201)
+  const savedEnquiry = saved.get(request.requestId)
+  assert.equal(savedEnquiry.eventId, '')
+  assert.equal(savedEnquiry.event, '')
+  assert.equal(savedEnquiry.categoryId, 'fun-games')
+  assert.equal(savedEnquiry.category, 'Fun Games')
+
+  const duplicateResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  assert.equal(duplicateResponse.status, 200)
+
+  const conflictResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...request, categoryId: 'sing-along' }),
+  })
+  assert.equal(conflictResponse.status, 409)
+  assert.equal(saved.size, 1)
+})
+
 test('returns an empty event list and a friendly error when the event store fails', async () => {
   const empty = await startTestServer({
     eventRepository: {
@@ -188,6 +227,13 @@ test('rejects invalid names, phone numbers, genders, and unavailable events', as
     { ...valid, requestId: crypto.randomUUID(), mobile: '123' },
     { ...valid, requestId: crypto.randomUUID(), gender: 'Other' },
     { ...valid, requestId: crypto.randomUUID(), eventId: 'not-an-event' },
+    {
+      requestId: crypto.randomUUID(),
+      name: 'Jordan Example',
+      mobile: '+91 98765 43210',
+      categoryId: 'not-a-category',
+      gender: 'Female',
+    },
   ]
 
   for (const body of invalidCases) {

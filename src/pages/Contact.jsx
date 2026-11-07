@@ -10,7 +10,6 @@ import {
 import ContactCard from '../components/contact/ContactCard.jsx'
 import ContactForm from '../components/contact/ContactForm.jsx'
 import FAQAccordion from '../components/contact/FAQAccordion.jsx'
-import HostEventForm from '../components/contact/HostEventForm.jsx'
 import WhatsAppLink from '../components/contact/WhatsAppLink.jsx'
 import Button from '../components/common/Button.jsx'
 import Container from '../components/common/Container.jsx'
@@ -50,7 +49,7 @@ export default function Contact() {
             AND <span className="gradient-text">VIBE TOGETHER.</span>
           </h1>
           <p className="contact-hero__subtitle">
-            Have questions? Want to host an event? We&apos;re here for you.
+            Have a question? We&apos;re here for you.
           </p>
           <div className="contact-hero__actions">
             <a className="button button--primary" href="#contact-form">
@@ -157,36 +156,6 @@ export default function Contact() {
             <span className="contact-demo-pill">DEMO · NOT SENT OR STORED</span>
           </div>
           <ContactForm />
-        </Container>
-      </section>
-
-      <section
-        className="host-event contact-section"
-        id="host-event"
-        aria-labelledby="host-event-title"
-      >
-        <Container className="host-event__layout">
-          <div className="host-event__intro">
-            <p className="contact-eyebrow">
-              <Sparkles size={16} aria-hidden="true" />
-              Bring your idea to life
-            </p>
-            <h2 id="host-event-title">Host an event with us.</h2>
-            <p>
-              Tell us what you&apos;re planning and who you hope to bring
-              together. Hosting enquiries use the same demo/API-ready
-              submission flow.
-            </p>
-            <WhatsAppLink
-              className="whatsapp-action--inline"
-              label="Ask about hosting"
-              message="Hi VIBE TOGETHER, I have an event idea and would like to ask about hosting it."
-            />
-          </div>
-          <div className="host-event__form">
-            <p className="host-event__form-label">Event proposal</p>
-            <HostEventForm />
-          </div>
         </Container>
       </section>
 

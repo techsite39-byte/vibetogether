@@ -121,7 +121,7 @@ export default function EventCard({
           <div className="event-card__actions">
             <Button
               className="event-card__book"
-              onClick={() => openBooking(id)}
+              onClick={() => openBooking(category)}
               variant="secondary"
             >
               Book Now

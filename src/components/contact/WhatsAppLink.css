@@ -1,0 +1,120 @@
+.whatsapp-action {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.whatsapp-action__button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0.65rem 1rem;
+  border: 1px solid rgb(69 200 122 / 40%);
+  border-radius: var(--radius-pill);
+  background: rgb(37 179 101 / 14%);
+  color: #b4ffd0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.whatsapp-action__button svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
+.whatsapp-action__button:hover {
+  border-color: rgb(69 200 122 / 70%);
+  background: rgb(37 179 101 / 22%);
+  color: #e1ffed;
+  transform: translateY(-1px);
+}
+
+.whatsapp-action__button.is-unconfigured:disabled {
+  border-color: var(--color-border);
+  background: rgb(255 255 255 / 3%);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.whatsapp-action__notice {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.whatsapp-action--inline {
+  margin-top: var(--space-1);
+}
+
+.whatsapp-action--floating {
+  position: fixed;
+  z-index: var(--z-sticky);
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  justify-items: end;
+}
+
+.whatsapp-action--floating .whatsapp-action__button {
+  width: 3.75rem;
+  min-height: 3.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #178a4d;
+  box-shadow:
+    0 12px 30px rgb(0 0 0 / 35%),
+    0 0 24px rgb(37 179 101 / 18%);
+  color: #fff;
+}
+
+.whatsapp-action--floating .whatsapp-action__button svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.whatsapp-action--floating .whatsapp-action__button:hover {
+  background: #1c9d58;
+}
+
+.whatsapp-action--floating .whatsapp-action__button.is-unconfigured:disabled {
+  border: 0;
+  background: #178a4d;
+  color: #fff;
+  opacity: 0.75;
+}
+
+.whatsapp-action--floating .whatsapp-action__label {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.whatsapp-action--floating .whatsapp-action__notice {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .whatsapp-action__button {
+    transition: none;
+  }
+}

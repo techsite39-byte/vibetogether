@@ -20,13 +20,23 @@ const bookingEnquirySchema = new mongoose.Schema(
     },
     eventId: {
       type: String,
-      required: true,
       maxlength: 80,
+      default: '',
     },
     event: {
       type: String,
-      required: true,
       maxlength: 160,
+      default: '',
+    },
+    categoryId: {
+      type: String,
+      maxlength: 80,
+      default: '',
+    },
+    category: {
+      type: String,
+      maxlength: 160,
+      default: '',
     },
     gender: {
       type: String,

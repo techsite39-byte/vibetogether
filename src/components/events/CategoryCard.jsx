@@ -48,7 +48,7 @@ export default function CategoryCard({
         <Button
           className="category-card__action"
           variant="secondary"
-          onClick={() => openBooking()}
+          onClick={() => openBooking(title)}
         >
           Book Now <ArrowUpRight size={16} aria-hidden="true" />
         </Button>

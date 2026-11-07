@@ -155,7 +155,7 @@ function NewEventDialog({ categories, onClose, onSave }) {
 }
 
 export default function ManageEvents() {
-  const { categories, createRecord, deleteEvent, events, organizers, storageError, updateEvent } = useAdminData()
+  const { actor, categories, createRecord, deleteEvent, events, organizers, storageError, updateEvent } = useAdminData()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [organizer, setOrganizer] = useState('all')

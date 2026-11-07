@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ClipboardList,
   LayoutDashboard,
+  Loader2,
   LogOut,
   ImagePlus,
   Inbox,
@@ -16,12 +17,11 @@ import {
   Users,
   UserRoundCog,
 } from 'lucide-react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AdminDataProvider } from '../context/AdminDataProvider.jsx'
 import {
   getAdminConfiguration,
   getAdminSession,
-  signInAdmin,
   signOutAdmin,
 } from '../services/adminApi.js'
 import { AdminNotice } from './AdminUI.jsx'
@@ -50,81 +50,10 @@ const roleLabels = {
   admin: 'Admin',
 }
 
-function AdminSignIn({ configuration, loading, onAuthenticate, error }) {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setSubmitting(true)
-    try {
-      if (await onAuthenticate(username, password)) {
-        setPassword('')
-      }
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="admin-access">
-      <section className="admin-access__card">
-        <Link className="site-brand" to="/">
-          <span className="site-brand__name">VIBE TOGETHER</span>
-          <span className="site-brand__tagline">Secure admin workspace</span>
-        </Link>
-        <span className="admin-access__shield" aria-hidden="true">
-          <Shield size={25} />
-        </span>
-        <p className="admin-eyebrow">Administrator sign-in</p>
-        <h1>Welcome back.</h1>
-        {loading ? (
-          <p className="admin-access__description">Checking admin service configuration…</p>
-        ) : !configuration?.configured ? (
-          <AdminNotice tone="warning">
-            Admin sign-in is not configured. Set ADMIN_USERNAME,
-            ADMIN_PASSWORD_HASH, and ADMIN_SESSION_SECRET in the backend
-            environment or secret manager, then restart the backend.
-          </AdminNotice>
-        ) : (
-          <form className="admin-access__form" onSubmit={handleSubmit}>
-            <label htmlFor="admin-username">Admin email</label>
-            <input
-              autoComplete="username"
-              id="admin-username"
-              onChange={(event) => setUsername(event.target.value)}
-              required
-              value={username}
-            />
-            <label htmlFor="admin-password">Password</label>
-            <input
-              autoComplete="current-password"
-              id="admin-password"
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-            <button className="button button--primary" disabled={submitting} type="submit">
-              {submitting ? 'Signing in…' : 'Sign in'}
-              <ChevronRight size={17} aria-hidden="true" />
-            </button>
-          </form>
-        )}
-        {error && <AdminNotice tone="error">{error}</AdminNotice>}
-        <Link className="admin-access__back" to="/">
-          Return to the public site
-        </Link>
-      </section>
-    </div>
-  )
-}
-
 export default function AdminLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [session, setSession] = useState(null)
-  const [configuration, setConfiguration] = useState(null)
   const [loading, setLoading] = useState(true)
   const [accessError, setAccessError] = useState('')
   const adminMainRef = useRef(null)
@@ -137,7 +66,6 @@ export default function AdminLayout() {
         if (!active) {
           return
         }
-        setConfiguration(configured)
         if (configured.configured) {
           try {
             setSession(await getAdminSession())
@@ -169,36 +97,29 @@ export default function AdminLayout() {
     adminRevealSelector,
   )
 
-  async function authenticate(username, password) {
-    try {
-      setSession(await signInAdmin(username, password))
-      setAccessError('')
-      return true
-    } catch (error) {
-      setAccessError(error instanceof Error ? error.message : 'Admin sign-in failed.')
-      return false
-    }
-  }
-
   async function logout() {
     try {
       await signOutAdmin()
       setSession(null)
-      setAccessError('')
+      navigate('/admin/login', { replace: true })
     } catch (error) {
       setAccessError(error instanceof Error ? error.message : 'Sign-out failed.')
     }
   }
 
-  if (!session) {
+  if (loading) {
     return (
-      <AdminSignIn
-        configuration={configuration}
-        error={accessError}
-        loading={loading}
-        onAuthenticate={authenticate}
-      />
+      <div className="admin-access" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', color: '#c4b5fd' }}>
+          <Loader2 className="admin-auth-spinner" size={32} style={{ margin: '0 auto 1rem', display: 'block' }} />
+          <p>Verifying secure admin workspace session…</p>
+        </div>
+      </div>
     )
+  }
+
+  if (!session) {
+    return <Navigate to="/admin/login" state={{ from: location }} replace />
   }
 
   if (session.role === 'admin' && location.pathname === '/admin/settings') {
@@ -231,7 +152,13 @@ export default function AdminLayout() {
       <div className="admin-layout admin-workspace">
         <aside className="admin-sidebar">
           <Link className="site-brand" to="/admin">
-            <span className="site-brand__name">VIBE TOGETHER</span>
+            <img
+              className="site-brand__logo"
+              src="/assets/folder/favicon.png"
+              alt="Vibe Together"
+              width="64"
+              height="64"
+            />
             <span className="site-brand__tagline">Control room</span>
           </Link>
           <div className="admin-sidebar__demo">
@@ -258,11 +185,11 @@ export default function AdminLayout() {
           </Link>
           <div className="admin-sidebar__account">
             <div className="admin-sidebar__avatar" aria-hidden="true">
-              VT
+              {session.name ? session.name.slice(0, 2).toUpperCase() : (session.email ? session.email.slice(0, 2).toUpperCase() : 'VT')}
             </div>
             <div>
-              <strong>{session.username}</strong>
-              <span>{roleLabels[session.role]}</span>
+              <strong>{session.name || session.email || session.username || 'Admin'}</strong>
+              <span>{roleLabels[session.role] ?? session.role}</span>
             </div>
             <button
               aria-label="Sign out of admin"

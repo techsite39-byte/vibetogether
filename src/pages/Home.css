@@ -1378,6 +1378,14 @@
   clip-path: inset(0 round 58% 42% 38% 62% / 42% 52% 48% 58%);
 }
 
+.home-about__experiences-showcase {
+  display: block;
+  width: 100%;
+  position: relative;
+  isolation: isolate;
+  margin-block: clamp(1rem, 2.5vw, 2.5rem);
+}
+
 .home-about__experiences {
   position: relative;
   isolation: isolate;

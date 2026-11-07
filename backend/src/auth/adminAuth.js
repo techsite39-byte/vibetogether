@@ -1,22 +1,32 @@
 import {
   createHmac,
+  createHash,
   randomBytes,
+  randomInt,
   scrypt as scryptCallback,
   timingSafeEqual,
 } from 'node:crypto'
 import { promisify } from 'node:util'
 import bcrypt from 'bcryptjs'
 import { Router } from 'express'
-import { AdminCredential } from '../models/adminRecords.js'
+import { AdminCredential, AdminSession, PasswordReset } from '../models/adminRecords.js'
 
 const scrypt = promisify(scryptCallback)
 const sessionCookie = 'vt_admin_session'
 const csrfCookie = 'vt_admin_csrf'
-const sessionLifetimeSeconds = 8 * 60 * 60
-const loginWindowMilliseconds = 15 * 60 * 1000
+const googleStateCookie = 'vt_google_oauth_state'
+const googleFrontendOriginCookie = 'vt_google_frontend_origin'
+const defaultSessionLifetimeSeconds = 8 * 60 * 60 // 8 hours
+const rememberMeLifetimeSeconds = 30 * 24 * 60 * 60 // 30 days
+const loginWindowMilliseconds = 15 * 60 * 1000 // 15 minutes
 const loginLimit = 5
+const otpWindowMilliseconds = 10 * 60 * 1000 // 10 minutes
+const otpRequestLimit = 4
+const otpExpiryMilliseconds = 5 * 60 * 1000 // 5 minutes
+const resetTokenExpiryMilliseconds = 15 * 60 * 1000 // 15 minutes
 
 function safeEqual(first, second) {
+  if (first == null || second == null) return false
   const firstBuffer = Buffer.from(String(first))
   const secondBuffer = Buffer.from(String(second))
   return (
@@ -120,16 +130,111 @@ function cookieOptions({ secure, maxAge, httpOnly }) {
     .join('; ')
 }
 
-function setSessionCookies(response, token, csrfToken, secure) {
+function googleStateCookieValue(state, secure, maxAge = 600) {
+  return [
+    `${googleStateCookie}=${encodeURIComponent(state)}`,
+    'Path=/api/admin/auth',
+    'SameSite=Lax',
+    `Max-Age=${maxAge}`,
+    'HttpOnly',
+    secure ? 'Secure' : '',
+  ]
+    .filter(Boolean)
+    .join('; ')
+}
+
+function googleFrontendOriginCookieValue(origin, secure, maxAge = 600) {
+  return [
+    `${googleFrontendOriginCookie}=${encodeURIComponent(origin)}`,
+    'Path=/api/admin/auth',
+    'SameSite=Lax',
+    `Max-Age=${maxAge}`,
+    'HttpOnly',
+    secure ? 'Secure' : '',
+  ]
+    .filter(Boolean)
+    .join('; ')
+}
+
+function isLocalDevelopmentOrigin(origin) {
+  return /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)
+}
+
+function allowedFrontendOrigin(candidate, { corsOrigins, nodeEnv }) {
+  if (typeof candidate !== 'string') return ''
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.origin !== candidate || parsed.username || parsed.password) return ''
+    if (corsOrigins.includes(parsed.origin)) return parsed.origin
+    return nodeEnv === 'development' && isLocalDevelopmentOrigin(parsed.origin)
+      ? parsed.origin
+      : ''
+  } catch {
+    return ''
+  }
+}
+
+async function verifyGoogleIdentityToken(token, clientId) {
+  let response
+  try {
+    response = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(10000) },
+    )
+  } catch {
+    throw Object.assign(
+      new Error('Google identity verification is temporarily unavailable. Please try again.'),
+      { status: 502 },
+    )
+  }
+
+  if (!response.ok) {
+    throw Object.assign(
+      new Error('Google authentication failed or the token has expired.'),
+      { status: 401 },
+    )
+  }
+
+  const info = await response.json()
+  const issuer = info.iss
+  const expiresAt = Number(info.exp)
+  if (
+    info.aud !== clientId ||
+    !['accounts.google.com', 'https://accounts.google.com'].includes(issuer) ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt * 1000 <= Date.now() ||
+    typeof info.sub !== 'string' ||
+    !info.sub ||
+    typeof info.email !== 'string' ||
+    !info.email.trim()
+  ) {
+    throw Object.assign(new Error('Google identity token is invalid.'), { status: 401 })
+  }
+
+  if (info.email_verified !== 'true' && info.email_verified !== true) {
+    throw Object.assign(new Error('Google email address is not verified.'), { status: 403 })
+  }
+
+  return {
+    email: info.email.trim().toLowerCase(),
+    name: typeof info.name === 'string' && info.name.trim() ? info.name.trim() : 'Admin',
+    sub: info.sub,
+  }
+}
+
+function setSessionCookies(response, token, csrfToken, secure, maxAge = defaultSessionLifetimeSeconds) {
+  const existing = response.getHeader('Set-Cookie')
+  const cookies = Array.isArray(existing) ? existing : existing ? [existing] : []
   response.setHeader('Set-Cookie', [
+    ...cookies,
     `${sessionCookie}=${encodeURIComponent(token)}; ${cookieOptions({
       secure,
-      maxAge: sessionLifetimeSeconds,
+      maxAge,
       httpOnly: true,
     })}`,
     `${csrfCookie}=${encodeURIComponent(csrfToken)}; ${cookieOptions({
       secure,
-      maxAge: sessionLifetimeSeconds,
+      maxAge,
       httpOnly: false,
     })}`,
   ])
@@ -142,31 +247,33 @@ export function clearAdminSession(response, secure) {
   ])
 }
 
-function createLoginRateLimiter() {
+function createRateLimiter(windowMs, maxCount, message) {
   const attempts = new Map()
 
-  return function limitAdminLogin(request, response, next) {
+  return function limit(request, response, next) {
     const now = Date.now()
-    const key = request.ip ?? request.socket.remoteAddress ?? 'unknown'
+    const ip = request.ip ?? request.socket?.remoteAddress ?? 'unknown'
+    const identifier = String(request.body?.email || request.body?.username || '').trim().toLowerCase()
+    const key = `${ip}:${identifier}`
+
     const current = attempts.get(key)
     const record =
-      !current || now - current.startedAt >= loginWindowMilliseconds
+      !current || now - current.startedAt >= windowMs
         ? { startedAt: now, count: 0 }
         : current
     record.count += 1
     attempts.set(key, record)
 
     if (attempts.size > 10000) {
-      for (const [client, value] of attempts) {
-        if (now - value.startedAt >= loginWindowMilliseconds) {
-          attempts.delete(client)
-        }
+      for (const [k, v] of attempts) {
+        if (now - v.startedAt >= windowMs) attempts.delete(k)
       }
     }
 
-    if (record.count > loginLimit) {
-      response.set('Retry-After', String(loginWindowMilliseconds / 1000))
-      response.status(429).json({ message: 'Too many sign-in attempts. Try again later.' })
+    if (record.count > maxCount) {
+      const retryAfter = Math.ceil((windowMs - (now - record.startedAt)) / 1000)
+      response.set('Retry-After', String(retryAfter))
+      response.status(429).json({ message, retryAfter })
       return
     }
 
@@ -174,7 +281,11 @@ function createLoginRateLimiter() {
   }
 }
 
-export function createRequireAdmin({ sessionSecret, model = AdminCredential }) {
+export function createRequireAdmin({
+  sessionSecret,
+  model = AdminCredential,
+  sessionModel = AdminSession,
+}) {
   return async function requireAdmin(request, response, next) {
     try {
       if (!sessionSecret) {
@@ -183,22 +294,44 @@ export function createRequireAdmin({ sessionSecret, model = AdminCredential }) {
       }
 
       const payload = verifyPayload(readCookie(request, sessionCookie), sessionSecret)
-      if (!payload || typeof payload.sub !== 'string') {
+      if (
+        !payload ||
+        typeof payload.sub !== 'string' ||
+        typeof payload.sid !== 'string'
+      ) {
         response.status(401).json({ message: 'Admin sign-in is required.' })
         return
       }
 
-      const admin = await model.findById(payload.sub).select('username role active').lean()
-      if (!admin?.active || !['admin', 'super_admin'].includes(admin.role)) {
+      const session = await sessionModel.findOne({
+        adminId: payload.sub,
+        sessionId: payload.sid,
+        expiresAt: { $gt: new Date() },
+      }).lean()
+      if (!session) {
+        response.status(401).json({ message: 'Admin session is no longer valid.' })
+        return
+      }
+
+      const admin = await model.findById(payload.sub)
+        .select('name email username role status active emailVerified')
+        .lean()
+
+      const isActive = admin && admin.active !== false && (admin.status == null || admin.status === 'active')
+      if (!isActive || !['admin', 'super_admin'].includes(admin.role)) {
         response.status(401).json({ message: 'Admin session is no longer valid.' })
         return
       }
 
       request.admin = {
         id: String(admin._id),
+        name: admin.name || 'Admin',
+        email: admin.email || admin.username,
         username: admin.username,
         role: admin.role,
+        status: admin.status || 'active',
       }
+      request.adminSessionId = payload.sid
       next()
     } catch (error) {
       next(error)
@@ -207,7 +340,7 @@ export function createRequireAdmin({ sessionSecret, model = AdminCredential }) {
 }
 
 export function requireAdminCsrf(request, response, next) {
-  const origin = request.get('origin')
+  const origin = request.get('origin') || request.get('referer') || request.get('host')
   const cookieToken = readCookie(request, csrfCookie)
   const headerToken = request.get('x-csrf-token')
 
@@ -224,57 +357,381 @@ export function requireAdminCsrf(request, response, next) {
   next()
 }
 
+/**
+ * Creates the complete Admin Authentication Router with:
+ * - Email / Password Login
+ * - Google OAuth 2.0 Login
+ * - Forgot Password (Email OTP)
+ * - OTP Verification
+ * - OTP Resend
+ * - Password Reset
+ * - Session Management (Logout & /me)
+ */
 export function createAdminAuthRouter({
   bootstrapPasswordHash,
+  emailService,
+  googleClientId = '',
+  googleClientSecret = '',
+  googleCallbackUrl = '',
+  googleCallbackUrlValid = false,
+  backendPort = 4000,
+  frontendOrigin = 'http://localhost:5173',
+  corsOrigins = [],
   model = AdminCredential,
+  nodeEnv = 'production',
+  passwordResetModel = PasswordReset,
+  sessionModel = AdminSession,
   sessionSecret,
+  databaseReady = () => true,
   secureCookies = false,
-  username,
+  username = '',
 }) {
   const router = Router()
-  const limitLogin = createLoginRateLimiter()
-  const requireAdmin = createRequireAdmin({ sessionSecret, model })
+  const limitLogin = createRateLimiter(
+    loginWindowMilliseconds,
+    loginLimit,
+    'Too many sign-in attempts. Please try again after 15 minutes.',
+  )
+  const limitOtpRequest = createRateLimiter(
+    otpWindowMilliseconds,
+    otpRequestLimit,
+    'Too many password reset requests. Please wait before trying again.',
+  )
+  const requireAdmin = createRequireAdmin({ sessionSecret, model, sessionModel })
 
-  router.get('/configuration', (_request, response) => {
+  router.get('/google/debug', (request, response) => {
+    if (nodeEnv !== 'development') {
+      response.status(404).json({ message: 'Route not found.' })
+      return
+    }
+
+    response.setHeader('Cache-Control', 'no-store')
     response.json({
-      configured: Boolean(username && sessionSecret),
+      environment: nodeEnv,
+      googleClientId: googleClientId || null,
+      configuredCallbackUrl: googleCallbackUrl || null,
+      callbackRoute: '/api/admin/auth/google/callback',
+      backendPort,
+      frontendOrigin:
+        allowedFrontendOrigin(request.query.frontend_origin, { corsOrigins, nodeEnv }) ||
+        frontendOrigin,
+      oauthConfigured: Boolean(
+        googleClientId && googleClientSecret && googleCallbackUrlValid,
+      ),
+      clientSecretConfigured: Boolean(googleClientSecret),
     })
   })
 
+  // GET /api/admin/auth/configuration
+  router.get('/configuration', (_request, response) => {
+    const missingConfiguration = []
+    if (!username) missingConfiguration.push('ADMIN_EMAIL')
+    if (!sessionSecret) missingConfiguration.push('ADMIN_SESSION_SECRET')
+    const configured = missingConfiguration.length === 0
+    const databaseConnected = databaseReady()
+    response.json({
+      configured,
+      databaseConnected,
+      googleEnabled: configured && databaseConnected && Boolean(
+        googleClientId && googleClientSecret && googleCallbackUrlValid,
+      ),
+      googleClientId: googleClientId || null,
+      googleClientSecretConfigured: Boolean(googleClientSecret),
+      googleCallbackConfigured: Boolean(googleCallbackUrl),
+      googleCallbackUrl: googleCallbackUrlValid ? googleCallbackUrl : null,
+      googleMissingConfiguration: [
+        !googleClientId ? 'GOOGLE_CLIENT_ID' : null,
+        !googleClientSecret ? 'GOOGLE_CLIENT_SECRET' : null,
+        !googleCallbackUrlValid ? 'GOOGLE_CALLBACK_URL (valid callback URI required)' : null,
+      ].filter(Boolean),
+      smtpEnabled: Boolean(emailService?.isConfigured),
+      missingConfiguration,
+      message: !configured
+        ? `Admin authentication is not configured. Set ${missingConfiguration.join(' and ')}.`
+        : !databaseConnected
+          ? 'The admin service is waiting for its database connection.'
+          : null,
+    })
+  })
+
+  router.use((_request, response, next) => {
+    if (!databaseReady()) {
+      response.status(503).json({
+        message: 'The admin database is unavailable. Please try again when the service is ready.',
+      })
+      return
+    }
+    if (!username || !sessionSecret) {
+      response.status(503).json({ message: 'Admin authentication is not configured.' })
+      return
+    }
+    next()
+  })
+
+  async function exchangeGoogleCode(code) {
+    if (!googleClientId) {
+      throw Object.assign(
+        new Error('Google Sign-In is not configured. Set GOOGLE_CLIENT_ID on the backend.'),
+        { status: 503 },
+      )
+    }
+    if (!googleClientSecret) {
+      throw Object.assign(
+        new Error('Google Client Secret is not configured. Set GOOGLE_CLIENT_SECRET on the backend.'),
+        { status: 503 },
+      )
+    }
+    if (!googleCallbackUrlValid) {
+      throw Object.assign(
+        new Error('Google redirect URL is missing or invalid. Set GOOGLE_CALLBACK_URL to the backend /api/admin/auth/google/callback URI.'),
+        { status: 503 },
+      )
+    }
+
+    const params = new URLSearchParams({
+      code,
+      client_id: googleClientId,
+      client_secret: googleClientSecret,
+      redirect_uri: googleCallbackUrl,
+      grant_type: 'authorization_code',
+    })
+    let tokenResponse
+    try {
+      tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+        signal: AbortSignal.timeout(10000),
+      })
+    } catch {
+      throw Object.assign(
+        new Error('Google token exchange is temporarily unavailable.'),
+        { status: 502 },
+      )
+    }
+    if (!tokenResponse.ok) {
+      throw Object.assign(
+        new Error('Google rejected the authorization code or redirect URL.'),
+        { status: 401 },
+      )
+    }
+
+    const tokenData = await tokenResponse.json()
+    if (typeof tokenData.id_token !== 'string' || !tokenData.id_token) {
+      throw Object.assign(
+        new Error('Google authorization response did not include an ID token.'),
+        { status: 401 },
+      )
+    }
+    return verifyGoogleIdentityToken(tokenData.id_token, googleClientId)
+  }
+
+  async function establishGoogleSession(googleUser, response) {
+    const admin = await model.findOne({
+      $or: [
+        { email: googleUser.email },
+        { username: googleUser.email },
+        { googleId: googleUser.sub },
+      ],
+    })
+      .select('+passwordHash name email username role status active googleId')
+      .exec()
+
+    if (!admin) {
+      throw Object.assign(
+        new Error('This Google account is not authorized for administrator access.'),
+        { status: 403 },
+      )
+    }
+
+    const isActive = admin.active !== false && (admin.status == null || admin.status === 'active')
+    if (!isActive) {
+      throw Object.assign(new Error('Admin account has been deactivated.'), { status: 403 })
+    }
+    if (
+      !['admin', 'super_admin'].includes(admin.role) ||
+      (admin.googleId && admin.googleId !== googleUser.sub)
+    ) {
+      throw Object.assign(
+        new Error('This Google account is not authorized for administrator access.'),
+        { status: 403 },
+      )
+    }
+
+    if (!admin.googleId) admin.googleId = googleUser.sub
+    if (!admin.email) admin.email = googleUser.email
+    admin.emailVerified = true
+    admin.lastLoginAt = new Date()
+    await admin.save()
+
+    const expiresAt = Date.now() + defaultSessionLifetimeSeconds * 1000
+    const sessionId = randomBytes(32).toString('base64url')
+    await sessionModel.create({
+      adminId: admin._id,
+      sessionId,
+      expiresAt: new Date(expiresAt),
+    })
+    const token = signPayload(
+      {
+        sub: String(admin._id),
+        sid: sessionId,
+        exp: expiresAt,
+        role: admin.role,
+        email: admin.email || admin.username,
+      },
+      sessionSecret,
+    )
+    const csrfToken = randomBytes(24).toString('base64url')
+    setSessionCookies(response, token, csrfToken, secureCookies)
+
+    return {
+      admin: {
+        id: String(admin._id),
+        name: admin.name || googleUser.name,
+        email: admin.email || admin.username,
+        username: admin.username,
+        role: admin.role,
+        status: admin.status || 'active',
+      },
+      csrfToken,
+    }
+  }
+
+  router.get(['/google', '/google/redirect'], (request, response) => {
+    if (!googleClientId || !googleClientSecret || !googleCallbackUrlValid) {
+      response.status(503).json({
+        message: 'Google Sign-In requires valid GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL settings on the backend.',
+      })
+      return
+    }
+
+    const state = randomBytes(32).toString('base64url')
+    const requestedFrontendOrigin =
+      allowedFrontendOrigin(request.query.frontend_origin, { corsOrigins, nodeEnv }) ||
+      frontendOrigin
+    const authorizationUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
+    authorizationUrl.search = new URLSearchParams({
+      client_id: googleClientId,
+      redirect_uri: googleCallbackUrl,
+      response_type: 'code',
+      scope: 'openid email profile',
+      state,
+    }).toString()
+    console.info(
+      '[Google OAuth] Authorization request',
+      JSON.stringify({
+        clientId: googleClientId,
+        redirectUri: googleCallbackUrl,
+        frontendOrigin: requestedFrontendOrigin,
+      }),
+    )
+    response.setHeader('Cache-Control', 'no-store')
+    response.setHeader('Set-Cookie', [
+      googleStateCookieValue(state, secureCookies),
+      googleFrontendOriginCookieValue(requestedFrontendOrigin, secureCookies),
+    ])
+    response.redirect(302, authorizationUrl.toString())
+  })
+
+  router.get('/google/callback', async (request, response, next) => {
+    response.setHeader('Set-Cookie', [
+      googleStateCookieValue('', secureCookies, 0),
+      googleFrontendOriginCookieValue('', secureCookies, 0),
+    ])
+    const callbackFrontendOrigin =
+      allowedFrontendOrigin(readCookie(request, googleFrontendOriginCookie), {
+        corsOrigins,
+        nodeEnv,
+      }) || frontendOrigin
+    const state = typeof request.query.state === 'string' ? request.query.state : ''
+    const cookieState = readCookie(request, googleStateCookie)
+    const code = typeof request.query.code === 'string' ? request.query.code : ''
+    if (!state || !cookieState || !safeEqual(state, cookieState)) {
+      response.status(403).json({ message: 'Google sign-in state could not be verified. Please try again.' })
+      return
+    }
+    if (!code) {
+      response.status(400).json({ message: 'Google did not return an authorization code.' })
+      return
+    }
+
+    try {
+      const googleUser = await exchangeGoogleCode(code)
+      await establishGoogleSession(googleUser, response)
+      response.redirect(302, new URL('/admin/dashboard', callbackFrontendOrigin).toString())
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // POST /api/admin/auth/login
   router.post('/login', limitLogin, async (request, response, next) => {
     try {
-      if (!username || !sessionSecret) {
-        response.status(503).json({ message: 'Admin authentication is not configured.' })
+      const rawIdentifier = request.body?.email || request.body?.username
+      const identifier = typeof rawIdentifier === 'string' ? rawIdentifier.trim().toLowerCase() : ''
+      const password = typeof request.body?.password === 'string' ? request.body.password : ''
+      const rememberMe = Boolean(request.body?.rememberMe)
+
+      if (!identifier || !password) {
+        response.status(400).json({ message: 'Email address and password are required.' })
         return
       }
 
-      const suppliedUsername =
-        typeof request.body?.username === 'string'
-          ? request.body.username.trim().toLowerCase()
-          : ''
-      const password =
-        typeof request.body?.password === 'string' ? request.body.password : ''
-      const admin = await model.findOne({ username: suppliedUsername, active: true })
-        .select('+passwordHash username role')
+      // Find by email or username
+      const admin = await model.findOne({
+        $or: [{ email: identifier }, { username: identifier }],
+      })
+        .select('+passwordHash name email username role status active')
         .exec()
+
       const valid = await verifyAdminPassword(
         password,
         admin?.passwordHash ?? bootstrapPasswordHash,
       )
 
-      if (!admin || !valid) {
-        response.status(401).json({ message: 'Username or password is incorrect.' })
+      const isActive = admin && admin.active !== false && (admin.status == null || admin.status === 'active')
+
+      if (!admin || !valid || !isActive) {
+        response.status(401).json({ message: 'Invalid email address or password.' })
         return
       }
 
       admin.lastLoginAt = new Date()
+      if (!admin.email) {
+        admin.email = admin.username
+      }
       await admin.save()
-      const expiresAt = Date.now() + sessionLifetimeSeconds * 1000
-      const token = signPayload({ sub: String(admin._id), exp: expiresAt }, sessionSecret)
+
+      const lifetimeSeconds = rememberMe ? rememberMeLifetimeSeconds : defaultSessionLifetimeSeconds
+      const expiresAt = Date.now() + lifetimeSeconds * 1000
+      const sessionId = randomBytes(32).toString('base64url')
+      await sessionModel.create({
+        adminId: admin._id,
+        sessionId,
+        expiresAt: new Date(expiresAt),
+      })
+      const token = signPayload(
+        {
+          sub: String(admin._id),
+          sid: sessionId,
+          exp: expiresAt,
+          role: admin.role,
+          email: admin.email || admin.username,
+        },
+        sessionSecret,
+      )
       const csrfToken = randomBytes(24).toString('base64url')
-      setSessionCookies(response, token, csrfToken, secureCookies)
+      setSessionCookies(response, token, csrfToken, secureCookies, lifetimeSeconds)
+
       response.json({
-        admin: { id: String(admin._id), username: admin.username, role: admin.role },
+        admin: {
+          id: String(admin._id),
+          name: admin.name || 'Admin',
+          email: admin.email || admin.username,
+          username: admin.username,
+          role: admin.role,
+          status: admin.status || 'active',
+        },
         csrfToken,
       })
     } catch (error) {
@@ -282,11 +739,342 @@ export function createAdminAuthRouter({
     }
   })
 
-  router.get('/session', requireAdmin, (request, response) => {
-    response.json({ admin: request.admin, csrfToken: readCookie(request, csrfCookie) })
+  // POST /api/admin/auth/google
+  router.post('/google', async (request, response, next) => {
+    try {
+      if (!googleClientId) {
+        response.status(503).json({
+          message: 'Google Sign-In is not configured. Set GOOGLE_CLIENT_ID on the backend.',
+        })
+        return
+      }
+
+      const { credential, code } = request.body || {}
+      if (typeof credential === 'string' && credential) {
+        const googleUser = await verifyGoogleIdentityToken(credential, googleClientId)
+        const result = await establishGoogleSession(googleUser, response)
+        response.json(result)
+        return
+      }
+      if (typeof code === 'string' && code) {
+        const googleUser = await exchangeGoogleCode(code)
+        const result = await establishGoogleSession(googleUser, response)
+        response.json(result)
+        return
+      } else {
+        response.status(400).json({ message: 'Google credential token or authorization code is required.' })
+        return
+      }
+    } catch (error) {
+      next(error)
+    }
   })
 
-  router.post('/logout', requireAdmin, requireAdminCsrf, (_request, response) => {
+  // POST /api/admin/auth/forgot-password
+  router.post('/forgot-password', limitOtpRequest, async (request, response, next) => {
+    try {
+      const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : ''
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        response.status(400).json({ message: 'Please provide a valid administrator email address.' })
+        return
+      }
+      if (!emailService?.isConfigured) {
+        response.status(503).json({
+          message: 'Password reset email is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD on the backend.',
+        })
+        return
+      }
+
+      // Always return a generic success message to prevent email enumeration
+      const genericMessage = 'If an admin account is registered with this email, a 6-digit verification code has been dispatched.'
+
+      const admin = await model.findOne({
+        $or: [{ email }, { username: email }],
+        active: true,
+      }).select('email username role status').exec()
+
+      if (admin && admin.status === 'active') {
+        // Invalidate any existing unused OTPs for this admin
+        await passwordResetModel.updateMany(
+          { email, usedAt: null },
+          { usedAt: new Date() },
+        )
+
+        // Generate secure 6-digit random OTP
+        const otp = String(randomInt(100000, 1000000))
+        const otpHash = createHash('sha256')
+          .update(otp + sessionSecret)
+          .digest('hex')
+
+        await passwordResetModel.create({
+          adminId: admin._id,
+          email,
+          otpHash,
+          expiresAt: new Date(Date.now() + otpExpiryMilliseconds),
+          attempts: 0,
+          usedAt: null,
+        })
+
+        // Dispatch email
+        try {
+          await emailService.sendOtpEmail({ email, otp })
+        } catch (error) {
+          await passwordResetModel.updateMany(
+            { email, usedAt: null },
+            { usedAt: new Date() },
+          )
+          console.error('[Forgot Password] Email delivery failed:', error.message)
+          response.status(502).json({
+            message: 'The verification email could not be delivered. Check SMTP configuration and try again.',
+          })
+          return
+        }
+      }
+
+      response.json({ success: true, message: genericMessage })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // POST /api/admin/auth/verify-otp
+  router.post('/verify-otp', async (request, response, next) => {
+    try {
+      const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : ''
+      const otp = typeof request.body?.otp === 'string' ? request.body.otp.trim() : ''
+
+      if (!email || !otp || !/^\d{6}$/.test(otp)) {
+        response.status(400).json({ message: 'A valid email and 6-digit verification code are required.' })
+        return
+      }
+
+      const resetRecord = await passwordResetModel.findOne({
+        email,
+        usedAt: null,
+      }).sort({ createdAt: -1 }).exec()
+
+      if (!resetRecord || new Date() > new Date(resetRecord.expiresAt)) {
+        response.status(400).json({
+          message: 'The verification code is invalid or has expired. Please request a new one.',
+        })
+        return
+      }
+
+      if (resetRecord.attempts >= 5) {
+        resetRecord.usedAt = new Date()
+        await resetRecord.save()
+        response.status(429).json({
+          message: 'Maximum verification attempts exceeded. Please request a new verification code.',
+        })
+        return
+      }
+
+      resetRecord.attempts += 1
+
+      const incomingHash = createHash('sha256')
+        .update(otp + sessionSecret)
+        .digest('hex')
+
+      if (!safeEqual(incomingHash, resetRecord.otpHash)) {
+        await resetRecord.save()
+        const remaining = Math.max(0, 5 - resetRecord.attempts)
+        response.status(400).json({
+          message: `Incorrect verification code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
+          attemptsRemaining: remaining,
+        })
+        return
+      }
+
+      // Mark OTP as used and issue single-use reset token
+      const resetToken = randomBytes(32).toString('hex')
+      const resetTokenHash = createHash('sha256')
+        .update(resetToken + sessionSecret)
+        .digest('hex')
+
+      resetRecord.usedAt = new Date()
+      resetRecord.resetTokenHash = resetTokenHash
+      resetRecord.resetTokenExpiresAt = new Date(Date.now() + resetTokenExpiryMilliseconds)
+      await resetRecord.save()
+
+      response.json({
+        success: true,
+        resetToken,
+        message: 'Verification code confirmed. You may now set your new password.',
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // POST /api/admin/auth/resend-otp
+  router.post('/resend-otp', limitOtpRequest, async (request, response, next) => {
+    try {
+      const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : ''
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        response.status(400).json({ message: 'Valid email address is required.' })
+        return
+      }
+      if (!emailService?.isConfigured) {
+        response.status(503).json({
+          message: 'Password reset email is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD on the backend.',
+        })
+        return
+      }
+
+      // Enforce 60-second cooldown
+      const recentRecord = await passwordResetModel.findOne({ email }).sort({ createdAt: -1 }).exec()
+      if (recentRecord) {
+        const elapsedSeconds = Math.floor((Date.now() - new Date(recentRecord.createdAt).getTime()) / 1000)
+        if (elapsedSeconds < 60) {
+          const waitTime = 60 - elapsedSeconds
+          response.set('Retry-After', String(waitTime))
+          response.status(429).json({
+            message: `Please wait ${waitTime} seconds before requesting another code.`,
+            retryAfter: waitTime,
+          })
+          return
+        }
+      }
+
+      const admin = await model.findOne({
+        $or: [{ email }, { username: email }],
+        active: true,
+      }).select('email username').exec()
+
+      const genericMessage =
+        'If an admin account is registered with this email, a fresh verification code has been sent.'
+
+      if (admin) {
+        await passwordResetModel.updateMany({ email, usedAt: null }, { usedAt: new Date() })
+
+        const otp = String(randomInt(100000, 1000000))
+        const otpHash = createHash('sha256')
+          .update(otp + sessionSecret)
+          .digest('hex')
+
+        await passwordResetModel.create({
+          adminId: admin._id,
+          email,
+          otpHash,
+          expiresAt: new Date(Date.now() + otpExpiryMilliseconds),
+          attempts: 0,
+          usedAt: null,
+        })
+
+        try {
+          await emailService.sendOtpEmail({ email, otp })
+        } catch (error) {
+          await passwordResetModel.updateMany(
+            { email, usedAt: null },
+            { usedAt: new Date() },
+          )
+          console.error('[Resend OTP] Email delivery failed:', error.message)
+          response.status(502).json({
+            message: 'The verification email could not be delivered. Check SMTP configuration and try again.',
+          })
+          return
+        }
+      }
+
+      response.json({
+        success: true,
+        message: genericMessage,
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // POST /api/admin/auth/reset-password
+  router.post('/reset-password', async (request, response, next) => {
+    try {
+      const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : ''
+      const resetToken = typeof request.body?.resetToken === 'string' ? request.body.resetToken.trim() : ''
+      const newPassword = typeof request.body?.newPassword === 'string' ? request.body.newPassword : ''
+      const confirmPassword = typeof request.body?.confirmPassword === 'string' ? request.body.confirmPassword : ''
+
+      if (!email || !resetToken || !newPassword) {
+        response.status(400).json({ message: 'Email, reset token, and new password are required.' })
+        return
+      }
+
+      if (newPassword !== confirmPassword) {
+        response.status(400).json({ message: 'Passwords do not match.' })
+        return
+      }
+
+      if (newPassword.length < 12 || newPassword.length > 256) {
+        response.status(400).json({ message: 'Password must be between 12 and 256 characters long.' })
+        return
+      }
+
+      const incomingTokenHash = createHash('sha256')
+        .update(resetToken + sessionSecret)
+        .digest('hex')
+
+      const resetRecord = await passwordResetModel.findOne({
+        email,
+        resetTokenHash: incomingTokenHash,
+        resetTokenExpiresAt: { $gt: new Date() },
+      }).exec()
+
+      if (!resetRecord) {
+        response.status(400).json({
+          message: 'Password reset session is invalid or has expired. Please restart the request.',
+        })
+        return
+      }
+
+      // Invalidate the reset token
+      resetRecord.resetTokenHash = null
+      await resetRecord.save()
+
+      // Invalidate all reset requests for this email
+      await passwordResetModel.deleteMany({ email })
+
+      // Hash and update admin password
+      const passwordHash = await hashAdminPassword(newPassword)
+      const admin = await model.findById(resetRecord.adminId).select('+passwordHash').exec()
+
+      if (!admin) {
+        response.status(404).json({ message: 'Admin account not found.' })
+        return
+      }
+
+      admin.passwordHash = passwordHash
+      await admin.save()
+
+      await sessionModel.deleteMany({ adminId: admin._id })
+      clearAdminSession(response, secureCookies)
+
+      response.json({
+        success: true,
+        message: 'Your password has been successfully reset. Please sign in with your new password.',
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // GET /api/admin/auth/me (also aliased at /session for backwards compatibility)
+  const handleGetMe = (request, response) => {
+    response.json({
+      admin: request.admin,
+      csrfToken: readCookie(request, csrfCookie),
+    })
+  }
+
+  router.get('/me', requireAdmin, handleGetMe)
+  router.get('/session', requireAdmin, handleGetMe)
+
+  // POST /api/admin/auth/logout
+  router.post('/logout', requireAdmin, requireAdminCsrf, async (request, response, next) => {
+    try {
+      await sessionModel.deleteOne({ sessionId: request.adminSessionId })
+    } catch (error) {
+      next(error)
+      return
+    }
     clearAdminSession(response, secureCookies)
     response.status(204).end()
   })

@@ -7,13 +7,16 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
-import {
-  getBookingEvents,
-  submitBookingEnquiry,
-} from '../../services/bookingEnquiry.js'
+import { categories } from '../../data/categories.js'
+import { submitBookingEnquiry } from '../../services/bookingEnquiry.js'
 import './BookingJourney.css'
 
-const steps = ['Name', 'Mobile', 'Event', 'Gender']
+const steps = ['Name', 'Mobile', 'Category', 'Gender']
+const categoryOrder = ['fun-games', 'sing-along', 'strangers-meet', 'strangers-trip']
+const bookingCategories = [...categories].sort(
+  (first, second) =>
+    categoryOrder.indexOf(first.id) - categoryOrder.indexOf(second.id),
+)
 const countryCodes = [
   { country: 'India', code: '+91' },
   { country: 'United States', code: '+1' },
@@ -51,15 +54,15 @@ function getNormalizedMobile(value, countryCode) {
   return `+${digits}`
 }
 
-export default function BookingJourney({ initialEventId = '', onClose }) {
-  const [events, setEvents] = useState([])
-  const [eventsLoading, setEventsLoading] = useState(true)
-  const [eventsError, setEventsError] = useState('')
-  const [eventLoadAttempt, setEventLoadAttempt] = useState(0)
+export default function BookingJourney({ initialCategory = '', onClose }) {
+  const initialCategoryId =
+    bookingCategories.find(
+      ({ id, title }) => id === initialCategory || title === initialCategory,
+    )?.id ?? ''
   const [form, setForm] = useState({
     name: '',
     mobile: '',
-    eventId: initialEventId,
+    categoryId: initialCategoryId,
     gender: '',
   })
   const [countryCode, setCountryCode] = useState('+91')
@@ -77,36 +80,6 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
   const transitioning = useRef(false)
   const transitionTimer = useRef(null)
   const settleTimer = useRef(null)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    getBookingEvents(controller.signal)
-      .then((availableEvents) => {
-        setEvents(availableEvents)
-        setForm((current) => ({
-          ...current,
-          eventId: availableEvents.some(({ id }) => id === initialEventId)
-            ? initialEventId
-            : current.eventId,
-        }))
-      })
-      .catch((error) => {
-        if (error.name !== 'AbortError') {
-          setEventsError(
-            error instanceof Error
-              ? error.message
-              : 'We could not load experiences right now. Please try again.',
-          )
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setEventsLoading(false)
-        }
-      })
-
-    return () => controller.abort()
-  }, [eventLoadAttempt, initialEventId])
 
   useEffect(() => {
     const previouslyFocused = document.activeElement
@@ -188,16 +161,8 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
     if (step === 1 && !getNormalizedMobile(form.mobile, countryCode)) {
       return 'Enter a valid mobile number with 7 to 15 digits.'
     }
-    if (step === 2) {
-      if (eventsLoading) {
-        return 'Please wait while events load.'
-      }
-      if (eventsError) {
-        return 'Events could not be loaded. Please retry.'
-      }
-      if (!events.some(({ id }) => id === form.eventId)) {
-        return 'Choose an event to continue.'
-      }
+    if (step === 2 && !bookingCategories.some(({ id }) => id === form.categoryId)) {
+      return 'Choose one category to continue.'
     }
     if (step === 3 && !['Male', 'Female'].includes(form.gender)) {
       return 'Choose an option to continue.'
@@ -257,10 +222,10 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
         requestId: requestId.current,
         name: form.name.normalize('NFKC').trim(),
         mobile: getNormalizedMobile(form.mobile, countryCode),
-        eventId: form.eventId,
+        categoryId: form.categoryId,
         gender: form.gender,
       })
-      setForm({ name: '', mobile: '', eventId: '', gender: '' })
+      setForm({ name: '', mobile: '', categoryId: '', gender: '' })
       setIsSubmitted(true)
     } catch (error) {
       setSubmissionError(
@@ -274,7 +239,9 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
     }
   }
 
-  const selectedEvent = events.find(({ id }) => id === form.eventId)
+  const selectedCategory = bookingCategories.find(
+    ({ id }) => id === form.categoryId,
+  )
 
   return (
     <section
@@ -310,18 +277,16 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
           <Sparkles size={16} aria-hidden="true" />
           VIBE TOGETHER
         </span>
-        {!isSubmitted && (
-          <button
-            aria-label="Cancel booking journey"
-            className="booking-journey__close"
-            disabled={isSubmitting}
-            onClick={onClose}
-            type="button"
-          >
-            <X size={20} aria-hidden="true" />
-            <span>Close</span>
-          </button>
-        )}
+        <button
+          aria-label={isSubmitted ? 'Close confirmation' : 'Cancel booking journey'}
+          className="booking-journey__close"
+          disabled={isSubmitting}
+          onClick={onClose}
+          type="button"
+        >
+          <X size={20} aria-hidden="true" />
+          <span>Close</span>
+        </button>
       </header>
 
       {isSubmitted ? (
@@ -330,9 +295,9 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
             <Check size={34} aria-hidden="true" />
           </span>
           <p className="booking-journey__eyebrow">REQUEST RECEIVED</p>
-          <h1>You&apos;re one step closer to a new experience!</h1>
+          <h1>Congratulations!</h1>
           <p className="booking-journey__support">
-            Your booking request has been received.
+            Your enquiry has been submitted successfully.
           </p>
           <p className="booking-journey__privacy">
             This is an enquiry, not a confirmed event booking.
@@ -371,20 +336,23 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
             <p className="booking-journey__eyebrow">
               {step < 3 ? `LET’S GET TO KNOW YOU · STEP 0${step + 1}` : 'YOUR NEXT STORY STARTS HERE'}
             </p>
-            <h1 className="booking-journey__title" id="booking-journey-title">
+            <h1
+              className={`booking-journey__title${step === 2 ? ' booking-journey__title--category' : ''}`}
+              id="booking-journey-title"
+            >
               {[
                 'What’s your name?',
                 'What’s your mobile number?',
-                'Which event would you like to experience?',
+                'Pick a category',
                 'How do you identify?',
               ][step]}
             </h1>
             {step > 0 && step < 4 && (
               <p className="booking-journey__support">
                 {step === 1
-                  ? 'Enter your number so we can contact you about your event.'
+                  ? 'Enter your number so we can contact you about your enquiry.'
                   : step === 2
-                    ? 'Choose the experience that matches your vibe.'
+                    ? 'Choose one category. Our team can match you with a suitable event.'
                     : 'Select one option to complete your enquiry.'}
               </p>
             )}
@@ -441,74 +409,34 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
               )}
 
               {step === 2 && (
-                <div aria-label="Available events" className="booking-journey__event-list" role="radiogroup">
-                  {eventsLoading && (
-                    <p className="booking-journey__loading">
-                      <LoaderCircle size={18} aria-hidden="true" />
-                      Finding experiences…
-                    </p>
-                  )}
-                  {eventsError && (
-                    <div className="booking-journey__event-error" role="alert">
-                      <span>{eventsError}</span>
-                      <button
-                        onClick={() => {
-                          setEventsLoading(true)
-                          setEventsError('')
-                          setEventLoadAttempt((attempt) => attempt + 1)
-                        }}
-                        type="button"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  )}
-                  {!eventsLoading && !eventsError && events.map(({
-                    description,
-                    id,
-                    image,
-                    imageAlt,
-                    title,
-                  }) => (
-                    <button
-                      aria-checked={form.eventId === id}
-                      className={`booking-journey__event${form.eventId === id ? ' is-selected' : ''}`}
+                <fieldset className="booking-journey__category-list">
+                  <legend className="booking-journey__visually-hidden">
+                    Choose one category of interest
+                  </legend>
+                  {bookingCategories.map(({ id, title }, index) => (
+                    <label
+                      className={`booking-journey__category${form.categoryId === id ? ' is-selected' : ''}`}
                       key={id}
-                      onClick={() => {
-                        resetRequestAfterEdit()
-                        setForm((current) => ({ ...current, eventId: id }))
-                        setFieldError('')
-                      }}
-                      role="radio"
-                      type="button"
                     >
-                      {image && (
-                        <img
-                          alt={imageAlt}
-                          className="booking-journey__event-image"
-                          loading="lazy"
-                          src={image}
-                        />
-                      )}
-                      <span className="booking-journey__event-copy">
-                        <span className="booking-journey__event-title">{title}</span>
-                        {description && (
-                          <span className="booking-journey__event-description">
-                            {description}
-                          </span>
-                        )}
+                      <input
+                        checked={form.categoryId === id}
+                        data-journey-focus={index === 0 ? '' : undefined}
+                        name="categoryId"
+                        onChange={() => {
+                          resetRequestAfterEdit()
+                          setForm((current) => ({ ...current, categoryId: id }))
+                          setFieldError('')
+                        }}
+                        type="radio"
+                        value={id}
+                      />
+                      <span className="booking-journey__category-title">{title}</span>
+                      <span aria-hidden="true" className="booking-journey__category-check">
+                        {form.categoryId === id && <Check size={16} />}
                       </span>
-                      <span aria-hidden="true" className="booking-journey__event-check">
-                        {form.eventId === id && <Check size={17} />}
-                      </span>
-                    </button>
+                    </label>
                   ))}
-                  {!eventsLoading && !eventsError && events.length === 0 && (
-                    <p className="booking-journey__loading">
-                      No experiences are available right now. Please check back soon.
-                    </p>
-                  )}
-                </div>
+                </fieldset>
               )}
 
               {step === 3 && (
@@ -534,9 +462,9 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
               )}
             </div>
 
-            {selectedEvent && step === 3 && (
+            {selectedCategory && step === 3 && (
               <p className="booking-journey__selected-event">
-                Your experience: <strong>{selectedEvent.title}</strong>
+                Your interest: <strong>{selectedCategory.title}</strong>
               </p>
             )}
             {(fieldError || submissionError) && (
@@ -570,7 +498,7 @@ export default function BookingJourney({ initialEventId = '', onClose }) {
                     Sending…
                   </>
                 ) : step === 3 ? (
-                  <>Submit Booking <ArrowRight size={18} aria-hidden="true" /></>
+                  <>Submit Enquiry <ArrowRight size={18} aria-hidden="true" /></>
                 ) : (
                   <>Continue <ArrowRight size={18} aria-hidden="true" /></>
                 )}

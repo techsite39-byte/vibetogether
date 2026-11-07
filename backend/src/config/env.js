@@ -1,9 +1,33 @@
 import dotenv from 'dotenv'
-import { resolve } from 'node:path'
+import fs from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const currentDir = dirname(fileURLToPath(import.meta.url))
+const backendDir = resolve(currentDir, '../..')
+const rootDir = resolve(backendDir, '..')
 
 const nodeEnv = process.env.NODE_ENV ?? 'development'
-const defaultEnvFile = nodeEnv === 'production' ? '.env.production' : '.env'
-dotenv.config({ path: resolve(process.cwd(), process.env.ENV_FILE ?? defaultEnvFile) })
+
+const candidatePaths = [
+  process.env.ENV_FILE ? resolve(process.cwd(), process.env.ENV_FILE) : null,
+  resolve(backendDir, '.env'),
+  resolve(process.cwd(), '.env'),
+  resolve(rootDir, '.env'),
+].filter(Boolean)
+
+let loadedEnvPath = null
+for (const envPath of candidatePaths) {
+  if (fs.existsSync(envPath) && fs.statSync(envPath).isFile()) {
+    dotenv.config({ path: envPath })
+    loadedEnvPath = envPath
+    break
+  }
+}
+
+if (!process.env.MONGODB_URI && loadedEnvPath == null) {
+  dotenv.config()
+}
 
 const port = Number(process.env.PORT ?? 4000)
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -12,19 +36,32 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 const mongoUri = process.env.MONGODB_URI
 if (!mongoUri || !/^mongodb(\+srv)?:\/\//.test(mongoUri)) {
-  throw new Error('MONGODB_URI must be a MongoDB connection URI.')
+  throw new Error(
+    `MONGODB_URI must be a valid MongoDB connection URI. Checked files: ${candidatePaths.join(', ')}`,
+  )
 }
 
-const mongoDatabaseName = process.env.MONGODB_DB_NAME
+const mongoDatabaseName = process.env.MONGODB_DB_NAME ?? 'main'
 if (!mongoDatabaseName || mongoDatabaseName.length > 63) {
   throw new Error('MONGODB_DB_NAME must name the database to use.')
 }
 
-const corsOrigins = (process.env.CORS_ORIGIN ??
-  (nodeEnv === 'production' ? '' : 'http://localhost:5173,http://127.0.0.1:5173'))
+const configuredCorsOrigins = (process.env.CORS_ORIGIN ??
+  (nodeEnv === 'production'
+    ? ''
+    : 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:4000,http://127.0.0.1:4000'))
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean)
+const devFrontendOrigins =
+  nodeEnv === 'production'
+    ? []
+    : (process.env.DEV_FRONTEND_ORIGINS ?? '')
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean)
+const corsOrigins = [...new Set([...configuredCorsOrigins, ...devFrontendOrigins])]
+const frontendOrigin = devFrontendOrigins[0] ?? configuredCorsOrigins[0] ?? ''
 
 if (nodeEnv === 'production' && corsOrigins.length === 0) {
   throw new Error('CORS_ORIGIN must list trusted frontend origins in production.')
@@ -62,14 +99,49 @@ const adminAuthConfigured = Boolean(
   adminUsername && adminSessionSecret,
 )
 
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() ?? ''
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? ''
+const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL?.trim() ?? ''
+let googleCallbackUrlValid = false
+if (googleCallbackUrl) {
+  try {
+    const callback = new URL(googleCallbackUrl)
+    googleCallbackUrlValid =
+      ['http:', 'https:'].includes(callback.protocol) &&
+      callback.pathname === '/api/admin/auth/google/callback' &&
+      !callback.username &&
+      !callback.password
+  } catch {
+    googleCallbackUrlValid = false
+  }
+}
+
+const smtpHost = process.env.SMTP_HOST?.trim() ?? ''
+const smtpPort = Number(process.env.SMTP_PORT ?? 587)
+const smtpUser = process.env.SMTP_USER?.trim() ?? ''
+const smtpPassword = process.env.SMTP_PASSWORD?.trim() ?? ''
+const smtpFromEmail =
+  process.env.SMTP_FROM_EMAIL?.trim() ??
+  (smtpUser ? `"Vibe Together" <${smtpUser}>` : 'Vibe Together <no-reply@vibetogether.com>')
+
 export const config = Object.freeze({
   adminAuthConfigured,
   adminPasswordHash,
   adminSessionSecret,
   adminUsername,
   corsOrigins,
+  frontendOrigin,
+  googleClientId,
+  googleClientSecret,
+  googleCallbackUrl,
+  googleCallbackUrlValid,
   mongoDatabaseName,
   mongoUri,
   nodeEnv,
   port,
+  smtpHost,
+  smtpPort,
+  smtpUser,
+  smtpPassword,
+  smtpFromEmail,
 })

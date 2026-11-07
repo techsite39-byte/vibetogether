@@ -15,7 +15,19 @@ export function AdminTrendChart({ label, series }) {
   const width = 720
   const height = 220
   const padding = 18
-  const path = buildPath(series, width, height, padding)
+  const points = series.map((item, index) => ({
+    label:
+      typeof item === 'object' && item !== null && typeof item.label === 'string'
+        ? item.label
+        : `Period ${index + 1}`,
+    value:
+      typeof item === 'number'
+        ? item
+        : typeof item?.value === 'number' && Number.isFinite(item.value)
+          ? item.value
+          : 0,
+  }))
+  const path = buildPath(points.map((point) => point.value), width, height, padding)
 
   return (
     <figure className="admin-chart">
@@ -62,9 +74,9 @@ export function AdminTrendChart({ label, series }) {
       <details className="admin-chart__data">
         <summary>View chart data</summary>
         <ol>
-          {series.map((value, index) => (
+          {points.map(({ label: period, value }, index) => (
             <li key={`${label}-${index}`}>
-              Period {index + 1}: {value}
+              {period}: {value.toLocaleString('en-IN')}
             </li>
           ))}
         </ol>

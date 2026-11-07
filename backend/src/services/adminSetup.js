@@ -1,8 +1,8 @@
 import { categories as sourceCategories } from '../../../src/data/categories.js'
-import { AdminCredential, Category } from '../models/adminRecords.js'
+import { AdminCredential, AdminSession, Category, PasswordReset } from '../models/adminRecords.js'
 import { hashAdminPassword, verifyAdminPassword } from '../auth/adminAuth.js'
 
-export async function provisionAdminAccount({ username, password, model = AdminCredential }) {
+export async function provisionAdminAccount({ name = 'Admin', username, password, model = AdminCredential }) {
   const normalizedUsername = username?.trim().toLowerCase()
   if (
     typeof normalizedUsername !== 'string' ||
@@ -24,10 +24,14 @@ export async function provisionAdminAccount({ username, password, model = AdminC
 
   try {
     await model.create({
+      name,
+      email: normalizedUsername,
       username: normalizedUsername,
       passwordHash: await hashAdminPassword(password),
       role: 'admin',
+      status: 'active',
       active: true,
+      emailVerified: true,
     })
     return { created: true, role: 'admin' }
   } catch (error) {
@@ -48,17 +52,29 @@ export async function initializeAdminRecords({
   bootstrapPasswordHash,
   username,
 }) {
-  await Promise.all([AdminCredential.init(), Category.init()])
+  await Promise.all([
+    AdminCredential.init(),
+    AdminSession.init(),
+    Category.init(),
+    PasswordReset.init(),
+  ])
 
   if (username && bootstrapPasswordHash) {
+    const normalized = username.trim().toLowerCase()
     await AdminCredential.findOneAndUpdate(
-      { username: username.trim().toLowerCase() },
+      { username: normalized },
       {
-        $setOnInsert: {
-          username: username.trim().toLowerCase(),
-          passwordHash: bootstrapPasswordHash,
-          role: 'admin',
+        $set: {
+          email: normalized,
           active: true,
+          status: 'active',
+        },
+        $setOnInsert: {
+          name: 'Vibe Super Admin',
+          username: normalized,
+          passwordHash: bootstrapPasswordHash,
+          role: 'super_admin',
+          emailVerified: true,
         },
       },
       { upsert: true, new: false, setDefaultsOnInsert: true },

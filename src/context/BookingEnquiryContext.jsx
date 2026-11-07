@@ -24,10 +24,10 @@ export function BookingEnquiryProvider({ children }) {
   const bookingSession = useRef(0)
   const [activeBooking, setActiveBooking] = useState(null)
 
-  const openBooking = useCallback((eventId = '') => {
+  const openBooking = useCallback((category = '') => {
     automaticPopupHandled.current = true
     bookingSession.current += 1
-    setActiveBooking({ eventId, key: bookingSession.current })
+    setActiveBooking({ category, key: bookingSession.current })
   }, [])
 
   const closeBooking = useCallback(() => {
@@ -37,28 +37,10 @@ export function BookingEnquiryProvider({ children }) {
 
   useEffect(() => {
     currentPath.current = location.pathname
-  }, [location.pathname])
-
-  useEffect(() => {
-    if (isBookingFlow(currentPath.current)) {
+    if (isBookingFlow(location.pathname)) {
       automaticPopupHandled.current = true
-      return undefined
     }
-
-    const timer = window.setTimeout(() => {
-      if (automaticPopupHandled.current) {
-        return
-      }
-
-      automaticPopupHandled.current = true
-      if (!isBookingFlow(currentPath.current)) {
-        bookingSession.current += 1
-        setActiveBooking({ eventId: '', key: bookingSession.current })
-      }
-    }, 3000)
-
-    return () => window.clearTimeout(timer)
-  }, [])
+  }, [location.pathname])
 
   return (
     <BookingEnquiryContext.Provider value={{ openBooking }}>
@@ -66,7 +48,7 @@ export function BookingEnquiryProvider({ children }) {
       {activeBooking && (
         <BookingJourney
           key={activeBooking.key}
-          initialEventId={activeBooking.eventId}
+          initialCategory={activeBooking.category}
           onClose={closeBooking}
         />
       )}

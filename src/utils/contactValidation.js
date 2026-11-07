@@ -31,7 +31,7 @@ export function validateContactForm(form) {
     errors.subject = 'Enter a subject of up to 120 characters.'
   }
 
-  if (!['general', 'booking', 'hosting', 'partnership', 'technical'].includes(form.enquiryType)) {
+  if (!['general', 'booking', 'partnership', 'technical'].includes(form.enquiryType)) {
     errors.enquiryType = 'Choose an enquiry type.'
   }
 

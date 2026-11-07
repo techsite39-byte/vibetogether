@@ -4,6 +4,7 @@ import { createRequireAdmin, requireAdminCsrf } from '../auth/adminAuth.js'
 import {
   ActivityLog,
   AdminCredential,
+  AdminSession,
   Booking,
   Category,
   Enquiry,
@@ -64,7 +65,7 @@ const resourceFields = {
   subscribers: ['email', 'status'],
   enquiries: ['status'],
   gallery: ['title', 'caption', 'src', 'alt', 'categoryId', 'featured'],
-  admins: ['username', 'role', 'active'],
+  admins: ['name', 'email', 'username', 'role', 'status', 'active'],
 }
 
 const searchFields = {
@@ -76,7 +77,7 @@ const searchFields = {
   subscribers: ['email'],
   enquiries: ['name', 'email', 'subject', 'message'],
   gallery: ['title', 'caption', 'alt', 'categoryId'],
-  admins: ['username', 'role'],
+  admins: ['name', 'email', 'username', 'role'],
   activity: ['action', 'entity', 'entityId', 'description', 'actorRole'],
 }
 
@@ -464,6 +465,8 @@ function bookingFromEnquiry(enquiry) {
     customerEmail: '',
     eventId: enquiry.eventId,
     event: enquiry.event,
+    categoryId: enquiry.categoryId ?? '',
+    category: enquiry.category ?? '',
     ticketCount: 1,
     createdAt: enquiry.createdAt,
     amount: 0,
@@ -642,9 +645,14 @@ async function getOverview() {
 export function createAdminRouter({
   sessionSecret,
   adminModel = AdminCredential,
+  sessionModel = AdminSession,
 }) {
   const router = Router()
-  const requireAdmin = createRequireAdmin({ sessionSecret, model: adminModel })
+  const requireAdmin = createRequireAdmin({
+    sessionSecret,
+    model: adminModel,
+    sessionModel,
+  })
 
   router.use(requireAdmin)
   router.use((request, response, next) => {

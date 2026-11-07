@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { categories as defaultCategories } from '../../../src/data/categories.js'
 import { events as defaultEvents } from '../../../src/data/events.js'
 
 const requestIdPattern =
@@ -87,6 +88,11 @@ async function validateBookingEnquiry(body, eventRepository) {
     typeof body.eventId === 'string' && eventIdPattern.test(body.eventId)
       ? body.eventId
       : ''
+  const categoryId =
+    typeof body.categoryId === 'string' &&
+    eventIdPattern.test(body.categoryId)
+      ? body.categoryId
+      : ''
   const gender = body.gender
 
   if (!name) {
@@ -95,16 +101,38 @@ async function validateBookingEnquiry(body, eventRepository) {
   if (!mobile || mobile.replace(/\D/g, '').length < 7 || mobile.replace(/\D/g, '').length > 15) {
     return { error: 'Enter a valid mobile number with 7 to 15 digits.' }
   }
-  if (!eventId) {
-    return { error: 'Select an available event.' }
-  }
   if (gender !== 'Male' && gender !== 'Female') {
     return { error: 'Select Male or Female.' }
   }
 
-  const selectedEvent = await eventRepository.findById(eventId)
-  if (!selectedEvent) {
-    return { error: 'The selected event is not available.' }
+  let enquirySelection
+  if (body.categoryId !== undefined) {
+    const selectedCategory = defaultCategories.find(
+      (category) => category.id === categoryId,
+    )
+    if (!selectedCategory) {
+      return { error: 'Choose one valid category of interest.' }
+    }
+    enquirySelection = {
+      eventId: '',
+      event: '',
+      categoryId: selectedCategory.id,
+      category: selectedCategory.title,
+    }
+  } else {
+    if (!eventId) {
+      return { error: 'Select an available event.' }
+    }
+    const selectedEvent = await eventRepository.findById(eventId)
+    if (!selectedEvent) {
+      return { error: 'The selected event is not available.' }
+    }
+    enquirySelection = {
+      eventId: selectedEvent.id,
+      event: selectedEvent.title,
+      categoryId: '',
+      category: '',
+    }
   }
 
   if (typeof body.requestId !== 'string' || !requestIdPattern.test(body.requestId)) {
@@ -116,8 +144,7 @@ async function validateBookingEnquiry(body, eventRepository) {
       requestId: body.requestId,
       name,
       mobile,
-      eventId: selectedEvent.id,
-      event: selectedEvent.title,
+      ...enquirySelection,
       gender,
       createdAt: new Date(),
       source: 'Website booking journey',
@@ -144,7 +171,6 @@ export function createBookingEnquiriesRouter({
         return events.find((event) => event.id === id) ?? null
       },
     }
-
   router.post('/', rateLimit, async (request, response) => {
     try {
       const validation = await validateBookingEnquiry(

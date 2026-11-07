@@ -64,7 +64,6 @@ export const contactConfig = {
 export const enquiryTypes = [
   { value: 'general', label: 'General enquiry' },
   { value: 'booking', label: 'Event booking' },
-  { value: 'hosting', label: 'Event hosting' },
   { value: 'partnership', label: 'Partnership' },
   { value: 'technical', label: 'Technical support' },
 ]
@@ -75,12 +74,6 @@ export const faqItems = [
     question: 'How can I join an event?',
     answer:
       'Explore the events page, choose an experience, and follow the booking steps on its details page. Event availability and booking options are shown for each event.',
-  },
-  {
-    id: 'host-event',
-    question: 'How can I host an event?',
-    answer:
-      'Share your event idea using the host enquiry form below. Your proposal is saved for the VIBE TOGETHER team to review.',
   },
   {
     id: 'free-paid',

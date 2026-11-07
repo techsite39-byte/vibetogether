@@ -18,11 +18,29 @@ after(async () => {
   })
 })
 
-test('liveness endpoint responds without exposing database details', async () => {
+test('root and liveness endpoints report the running backend', async () => {
+  const rootResponse = await fetch(baseUrl)
+  const healthResponse = await fetch(`${baseUrl}/api/health`)
+
+  assert.equal(rootResponse.status, 200)
+  assert.deepEqual(await rootResponse.json(), {
+    status: 'ok',
+    message: 'Backend is running',
+    port: Number(new URL(baseUrl).port),
+  })
+  assert.equal(healthResponse.status, 200)
+  assert.deepEqual(await healthResponse.json(), {
+    status: 'ok',
+    message: 'Backend is running',
+    port: Number(new URL(baseUrl).port),
+  })
+})
+
+test('health endpoint reports the backend port', async () => {
   const response = await fetch(`${baseUrl}/api/health`)
 
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { status: 'ok' })
+  assert.equal((await response.json()).port, Number(new URL(baseUrl).port))
 })
 
 test('readiness endpoint reports an unavailable database', async () => {

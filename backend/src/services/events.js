@@ -45,11 +45,14 @@ export async function ensureEventCatalog() {
           ),
         )
       : {}
+    const insertFields = Object.fromEntries(
+      Object.entries(record).filter(([field]) => !Object.hasOwn(missingFields, field)),
+    )
     return {
       updateOne: {
         filter: { id: event.id },
         update: {
-          $setOnInsert: record,
+          $setOnInsert: insertFields,
           ...(Object.keys(missingFields).length > 0
             ? { $set: missingFields }
             : {}),

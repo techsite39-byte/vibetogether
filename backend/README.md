@@ -8,11 +8,10 @@ admin sessions.
 ## Setup
 
 1. Install dependencies with `npm install` in this folder.
-2. Copy `.env.example` to `.env` for development and set `MONGODB_URI`.
+2. Create `.env` in this folder and set `MONGODB_URI`.
 3. Set `MONGODB_DB_NAME` to the intended database (the current deployment
    configuration uses `main`).
-4. Configure `CORS_ORIGIN` with the exact frontend origin(s); replace the
-   placeholder in `.env.production` before production startup.
+4. Configure `CORS_ORIGIN` with the exact frontend origin(s).
 5. Configure `ADMIN_EMAIL` and `ADMIN_SESSION_SECRET` through the local
    environment or secret manager. In an interactive terminal, run
    `npm run admin:provision` (or `npm run admin:provision:production`) and
@@ -23,12 +22,39 @@ admin sessions.
    `ADMIN_PASSWORD_HASH` is optional and is only used to bootstrap a missing
    account for automated deployments. The older `ADMIN_USERNAME` setting and
    scrypt hashes remain supported for compatibility.
-6. Run `npm run dev`, or use `npm start` for production.
+   To change an existing super-admin email and password, run
+   `npm run admin:set-password -- new-admin@example.com` in an interactive
+   terminal. The command prompts for the new password twice without echoing it,
+   enforces the 12-character minimum, updates the matching super-admin record
+   and backend `.env`, and revokes that account's existing sessions.
+6. Run `npm run dev`, or use `npm start` for production. Development watch
+   mode monitors `backend/src` only, so dependency updates under `node_modules`
+   do not restart the API and interrupt Vite proxy requests.
+
+For Google sign-in, configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+`GOOGLE_CALLBACK_URL` in the backend environment. The callback URL must exactly
+match the Google Cloud Console's Authorized redirect URI and use
+`/api/admin/auth/google/callback` (for example,
+`http://localhost:4000/api/admin/auth/google/callback`). The redirect-based
+server flow does not expose the client secret to the browser. Confirm each
+deployed frontend origin is in `CORS_ORIGIN`; OAuth client origins and redirect
+URIs must also match the actual deployment in Google Cloud Console.
+In development, `GET /api/admin/auth/google/debug` reports the configured
+client ID, callback URL, backend port, frontend origin, and configuration
+status without exposing the client secret; it is unavailable in production.
+The login flow passes its frontend origin through a validated local-development
+parameter so the callback returns to the page's actual Vite port.
+
+Password reset requires working SMTP credentials. When SMTP or Google OAuth is
+not configured, the API reports that configuration is missing and does not
+simulate successful authentication or email delivery.
 
 For local production-mode startup, use `npm run start:production` (Node.js
-20.6+). Deployed environments should provide `NODE_ENV=production` and the
-required variables through their secret manager. Never add real environment
-files to source control or expose the MongoDB URI in frontend `VITE_*` variables.
+20.6+); this uses the same `.env` file and sets `NODE_ENV=production`.
+Deployed environments should provide `NODE_ENV=production` and the required
+variables through their secret manager, overriding local `.env` values when
+needed. Never add real environment files to source control or expose the
+MongoDB URI in frontend `VITE_*` variables.
 
 ## Health endpoints
 

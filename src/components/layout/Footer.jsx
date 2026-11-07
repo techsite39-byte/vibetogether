@@ -99,7 +99,15 @@ export default function Footer({ socialLinks = contactConfig.socialLinks }) {
       <div className="site-footer__inner container container--wide">
         <div className="site-footer__brand">
           <Link className="site-brand site-brand--footer" to="/">
-            <span className="site-brand__name">VIBE TOGETHER</span>
+            <img
+              className="site-brand__logo"
+              src="/assets/folder/favicon.png"
+              alt="Vibe Together"
+              width="88"
+              height="88"
+              loading="lazy"
+              decoding="async"
+            />
             <span className="site-brand__tagline">Different People. One Vibe.</span>
           </Link>
           <p className="site-footer__description">

@@ -7,6 +7,7 @@ import AdminLayout from './admin/components/AdminLayout.jsx'
 import MainLayout from './components/layout/MainLayout.jsx'
 
 const Dashboard = lazy(() => import('./admin/pages/Dashboard.jsx'))
+const AdminLoginPage = lazy(() => import('./admin/pages/AdminLoginPage.jsx'))
 const ManageUsers = lazy(() => import('./admin/pages/ManageUsers.jsx'))
 const ManageOrganizers = lazy(() => import('./admin/pages/ManageOrganizers.jsx'))
 const Analytics = lazy(() => import('./admin/pages/Analytics.jsx'))
@@ -68,8 +69,10 @@ function App() {
           <Route path="contact" element={<Contact />} />
           <Route path="*" element={<NotFound />} />
         </Route>
+        <Route path="admin/login" element={<AdminLoginPage />} />
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="users" element={<ManageUsers />} />
           <Route path="organizers" element={<ManageOrganizers />} />
           <Route path="events" element={<ManageEvents />} />

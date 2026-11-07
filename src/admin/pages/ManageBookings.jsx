@@ -37,6 +37,14 @@ function escapeCsv(value) {
   return `"${String(value ?? '').replaceAll('"', '""')}"`
 }
 
+function getBookingSubject(booking, event) {
+  if (booking.category) {
+    return `Category interest: ${booking.category}`
+  }
+
+  return event?.title ?? booking.event?.title ?? booking.event ?? 'Unknown event'
+}
+
 function BookingDetails({ booking, event, organizer, onClose }) {
   return (
     <AdminDialog onClose={onClose} title={`Booking ${booking.reference}`}>
@@ -45,8 +53,8 @@ function BookingDetails({ booking, event, organizer, onClose }) {
         <dl>
           <div><dt>Customer</dt><dd>{booking.customer}</dd></div>
           <div><dt>Email</dt><dd>{booking.customerEmail || '—'}</dd></div>
-          <div><dt>Event</dt><dd>{event?.title ?? booking.event?.title ?? booking.event ?? 'Unknown event'}</dd></div>
-          <div><dt>Organizer</dt><dd>{organizer?.name ?? event?.organizer ?? '—'}</dd></div>
+          <div><dt>{booking.category ? 'Category interest' : 'Event'}</dt><dd>{booking.category ?? getBookingSubject(booking, event)}</dd></div>
+          <div><dt>Organizer</dt><dd>{booking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</dd></div>
           <div><dt>Tickets</dt><dd>{booking.ticketCount}</dd></div>
           <div><dt>Booking date</dt><dd>{formatBookingDate(booking.createdAt)}</dd></div>
           <div><dt>Amount</dt><dd>{formatAmount(booking.amount, booking.currency)}</dd></div>
@@ -78,6 +86,7 @@ export default function ManageBookings() {
           booking.reference,
           booking.customer,
           booking.customerEmail,
+          booking.category,
           event?.title,
           booking.event?.title,
           typeof booking.event === 'string' ? booking.event : '',
@@ -97,7 +106,7 @@ export default function ManageBookings() {
           booking.reference,
           booking.customer,
           booking.customerEmail,
-          event?.title ?? booking.event?.title ?? booking.event ?? '',
+          getBookingSubject(booking, event),
           organizer?.name ?? '',
           booking.ticketCount,
           booking.createdAt,
@@ -138,7 +147,7 @@ export default function ManageBookings() {
   return (
     <div className="admin-page">
       <AdminPageHeader
-        description="Review and manage booking records persisted by the platform."
+        description="Review booking records and category interests submitted on the platform."
         eyebrow="Reservations"
         title="Booking management"
         actions={<button className="admin-button admin-button--primary" onClick={exportCsv} type="button"><Download size={16} aria-hidden="true" /> Export CSV</button>}
@@ -146,12 +155,12 @@ export default function ManageBookings() {
       {actionError && <AdminNotice tone="error">{actionError}</AdminNotice>}
       <AdminPanel title={`${filtered.length} booking records`}>
         <div className="admin-toolbar admin-toolbar--wrap">
-          <label className="admin-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search bookings</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Reference, customer, event or organizer" value={query} /></label>
+          <label className="admin-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search bookings</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Reference, customer, event, category or organizer" value={query} /></label>
           <label className="admin-select"><span>Booking</span><select onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All statuses</option><option value="confirmed">Confirmed</option><option value="pending">Pending</option><option value="cancelled">Cancelled</option></select></label>
           <label className="admin-select"><span>Payment</span><select onChange={(event) => setPaymentStatus(event.target.value)} value={paymentStatus}><option value="all">All payment states</option><option value="verified">Verified</option><option value="pending">Pending</option><option value="failed">Failed</option><option value="not_required">Not required</option></select></label>
         </div>
         <AdminTable label="Booking records">
-          <thead><tr><th scope="col">Reference / customer</th><th scope="col">Event / organizer</th><th scope="col">Tickets</th><th scope="col">Booked</th><th scope="col">Amount</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+          <thead><tr><th scope="col">Reference / customer</th><th scope="col">Event / interest</th><th scope="col">Tickets</th><th scope="col">Booked</th><th scope="col">Amount</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
           <tbody>
             {filtered.map((booking) => {
               const event = events.find((item) => item.id === booking.eventId)
@@ -159,7 +168,7 @@ export default function ManageBookings() {
               return (
                 <tr key={booking.reference}>
                   <td><strong>{booking.reference}</strong><span className="admin-table__secondary">{booking.customer}</span></td>
-                  <td><strong>{event?.title ?? booking.event?.title ?? booking.event ?? 'Unknown event'}</strong><span className="admin-table__secondary">{organizer?.name ?? event?.organizer ?? '—'}</span></td>
+                  <td><strong>{getBookingSubject(booking, event)}</strong><span className="admin-table__secondary">{booking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</span></td>
                   <td>{booking.ticketCount}</td>
                   <td>{formatBookingDate(booking.createdAt)}</td>
                   <td>{formatAmount(booking.amount, booking.currency)}</td>

@@ -56,7 +56,7 @@ export default function ManageEnquiries() {
   return (
     <div className="admin-page">
       <AdminPageHeader
-        description="Review contact messages and event-hosting requests submitted through the public site."
+        description="Review contact messages and requests submitted through the public site."
         eyebrow="Inbox"
         title="Contact and host enquiries"
       />

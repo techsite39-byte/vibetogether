@@ -48,7 +48,13 @@ export default function Navbar() {
     <header className="site-header">
       <div className="site-header__inner container container--wide">
         <Link className="site-brand" to="/" aria-label="Vibe Together home">
-          <span className="site-brand__name">VIBE TOGETHER</span>
+          <img
+            className="site-brand__logo"
+            src="/assets/folder/favicon.png"
+            alt="Vibe Together"
+            width="64"
+            height="64"
+          />
           <span className="site-brand__tagline">Different People. One Vibe.</span>
         </Link>
 

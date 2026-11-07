@@ -17,13 +17,60 @@ export const AdminCredential = createModel(
   'AdminCredential',
   'admin-cred',
   {
+    name: { type: String, trim: true, default: 'Vibe Admin', maxlength: 120 },
+    email: { type: String, trim: true, lowercase: true, maxlength: 254 },
     username: { type: String, required: true, trim: true, lowercase: true, maxlength: 120 },
-    passwordHash: { type: String, required: true, select: false },
+    passwordHash: { type: String, select: false },
+    googleId: { type: String, default: null, trim: true },
     role: { type: String, enum: ['super_admin', 'admin'], default: 'admin', required: true },
+    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
     active: { type: Boolean, default: true },
+    emailVerified: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
   },
-  [[{ username: 1 }, { unique: true }]],
+  [
+    [{ username: 1 }, { unique: true }],
+    [{ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string', $gt: '' } } }],
+    [{ googleId: 1 }, { unique: true, sparse: true }],
+  ],
+)
+
+export const Admin = AdminCredential
+
+export const PasswordReset = createModel(
+  'PasswordReset',
+  'password-resets',
+  {
+    adminId: { type: Schema.Types.ObjectId, ref: 'AdminCredential', required: true },
+    email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254 },
+    otpHash: { type: String, required: true },
+    expiresAt: { type: Date, required: true },
+    attempts: { type: Number, default: 0 },
+    usedAt: { type: Date, default: null },
+    resetTokenHash: { type: String, default: null },
+    resetTokenExpiresAt: { type: Date, default: null },
+    createdAt: { type: Date, default: Date.now },
+  },
+  [
+    [{ email: 1, createdAt: -1 }],
+    [{ adminId: 1, createdAt: -1 }],
+    [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
+  ],
+)
+
+export const AdminSession = createModel(
+  'AdminSession',
+  'admin-sessions',
+  {
+    adminId: { type: Schema.Types.ObjectId, ref: 'AdminCredential', required: true },
+    sessionId: { type: String, required: true, trim: true },
+    expiresAt: { type: Date, required: true },
+  },
+  [
+    [{ sessionId: 1 }, { unique: true }],
+    [{ adminId: 1 }],
+    [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
+  ],
 )
 
 export const User = createModel(

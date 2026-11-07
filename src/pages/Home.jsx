@@ -302,9 +302,6 @@ function Home() {
               <Button onClick={() => openBooking()}>
                 Book Now <ArrowRight size={17} aria-hidden="true" />
               </Button>
-              <Button to="/contact" variant="outline">
-                Host an Event
-              </Button>
             </div>
           </div>
         </div>
@@ -521,28 +518,6 @@ function Home() {
               <span className="home-about__orbit home-about__orbit--one" aria-hidden="true" />
               <span className="home-about__orbit home-about__orbit--two" aria-hidden="true" />
             </figure>
-          </div>
-
-          <div className="home-about__experiences home-about__story">
-            <div className="home-about__experience-grid">
-              {categories.map((category, index) => (
-                <article
-                  className={`home-about__experience home-about__experience--${index + 1}`}
-                  key={category.id}
-                >
-                  <img
-                    className="home-about__story-image"
-                    src={category.image}
-                    alt={category.imageAlt}
-                    loading="lazy"
-                  />
-                  <div className="home-about__experience-copy">
-                    <h3>{category.title}</h3>
-                    <p>{category.description}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
           </div>
 
           <div className="home-about__events home-about__story">

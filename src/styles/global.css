@@ -395,6 +395,22 @@ code {
   text-decoration: none;
 }
 
+.site-brand__logo {
+  display: block;
+  width: clamp(2.75rem, 4vw, 3.75rem);
+  height: clamp(2.75rem, 4vw, 3.75rem);
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+.site-brand--footer .site-brand__logo {
+  width: clamp(4.25rem, 6vw, 5.5rem);
+  height: clamp(4.25rem, 6vw, 5.5rem);
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
 .site-brand:hover {
   color: var(--color-text);
 }

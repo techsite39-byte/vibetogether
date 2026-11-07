@@ -8,11 +8,12 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "start:production": "node --env-file=.env.production src/server.js",
+    "start:production": "node --env-file=.env -e \"process.env.NODE_ENV='production'; import('./src/server.js')\"",
     "admin:credentials": "node scripts/create-admin-credentials.js",
     "admin:provision": "node scripts/provision-admin.js",
-    "admin:provision:production": "node --env-file=.env.production scripts/provision-admin.js",
-    "dev": "node --watch src/server.js",
+    "admin:provision:production": "node --env-file=.env -e \"process.env.NODE_ENV='production'; import('./scripts/provision-admin.js')\"",
+    "admin:set-password": "node scripts/set-admin-password.js",
+    "dev": "node --watch-path=src src/server.js",
     "test": "node --test"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
-    "mongoose": "^8.12.1"
+    "mongoose": "^8.12.1",
+    "nodemailer": "^10.3.1"
   }
 }

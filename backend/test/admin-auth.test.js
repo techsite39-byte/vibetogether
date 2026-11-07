@@ -11,13 +11,36 @@ import { provisionAdminAccount } from '../src/services/adminSetup.js'
 
 const servers = []
 
+function createSessionModel() {
+  const sessions = new Map()
+  return {
+    async create(session) {
+      sessions.set(session.sessionId, session)
+      return session
+    },
+    findOne({ sessionId }) {
+      return { lean: async () => sessions.get(sessionId) ?? null }
+    },
+    async deleteOne({ sessionId }) {
+      sessions.delete(sessionId)
+    },
+    async deleteMany({ adminId }) {
+      for (const [sessionId, session] of sessions) {
+        if (String(session.adminId) === String(adminId)) sessions.delete(sessionId)
+      }
+    },
+  }
+}
+
 async function startAuthServer(options) {
   const app = express()
   app.use(express.json())
-  app.use('/api/admin/auth', createAdminAuthRouter(options))
+  const sessionModel = options.sessionModel ?? createSessionModel()
+  app.use('/api/admin/auth', createAdminAuthRouter({ ...options, sessionModel }))
   if (options.protectRoutes) {
     app.use('/api/admin', createAdminRouter({
       adminModel: options.model,
+      sessionModel,
       sessionSecret: options.sessionSecret,
     }))
   }
@@ -129,6 +152,10 @@ test('authenticates admins, restores sessions, and enforces CSRF on logout', asy
       /vt_admin_session=.*Max-Age=0/.test(cookie),
     ),
   )
+  const revokedSession = await fetch(`${baseUrl}/api/admin/not-a-resource`, {
+    headers: { Cookie: cookieHeader },
+  })
+  assert.equal(revokedSession.status, 401)
 
   const secret = 'a-session-secret-with-more-than-thirty-two-characters'
   const expiredPayload = Buffer.from(
@@ -172,7 +199,12 @@ test('rejects invalid credentials and reports unconfigured auth', async () => {
 
   const unconfiguredUrl = await startAuthServer({})
   const configuration = await fetch(`${unconfiguredUrl}/api/admin/auth/configuration`)
-  assert.deepEqual(await configuration.json(), { configured: false })
+  const configurationData = await configuration.json()
+  assert.equal(configurationData.configured, false)
+  assert.deepEqual(configurationData.missingConfiguration, [
+    'ADMIN_EMAIL',
+    'ADMIN_SESSION_SECRET',
+  ])
   const login = await fetch(`${unconfiguredUrl}/api/admin/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

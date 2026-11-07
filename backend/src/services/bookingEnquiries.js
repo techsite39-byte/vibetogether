@@ -5,6 +5,7 @@ function sameRequest(existing, enquiry) {
     existing.name === enquiry.name &&
     existing.mobile === enquiry.mobile &&
     existing.eventId === enquiry.eventId &&
+    (existing.categoryId ?? '') === (enquiry.categoryId ?? '') &&
     existing.gender === enquiry.gender
   )
 }
