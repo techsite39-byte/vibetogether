@@ -1,6 +1,5 @@
 import { contactConfig } from '../data/contact.js'
-
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? '/api'
+import { API_BASE_URL } from '../config/api.js'
 
 export async function submitContactRequest(type, payload) {
   if (!['contact', 'host-event'].includes(type)) {

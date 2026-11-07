@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
+import { API_BASE_URL } from '../../config/api.js'
 import { readBookingApiResponse } from '../../services/bookingApiResponse.js'
 import './NewsletterSignup.css'
 
@@ -51,7 +52,7 @@ export default function NewsletterSignup() {
     setIsSubmitting(true)
     setFeedback({ type: '', message: '' })
     try {
-      const response = await fetch(`${import.meta.env?.VITE_API_BASE_URL ?? '/api'}/newsletter`, {
+      const response = await fetch(`${API_BASE_URL}/newsletter`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

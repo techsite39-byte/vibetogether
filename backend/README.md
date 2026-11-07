@@ -56,6 +56,45 @@ variables through their secret manager, overriding local `.env` values when
 needed. Never add real environment files to source control or expose the
 MongoDB URI in frontend `VITE_*` variables.
 
+## Render deployment
+
+The repository root contains a Render Blueprint for the API and Vite static
+site. In Render, create a Blueprint from this repository and configure the
+prompted secret values. The API service uses `backend/`, `npm ci --omit=dev`,
+and `npm start`; its readiness health check is `/api/health/ready`. The Vite
+site builds from the repository root with `npm ci --include=dev && npm run build`
+and publishes `dist`.
+
+Configure these values in Render, not in Git:
+
+- API: `MONGODB_URI`, `MONGODB_DB_NAME=main`, `CORS_ORIGIN`, `ADMIN_EMAIL`,
+  `ADMIN_SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+  `GOOGLE_CALLBACK_URL`, `SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`,
+  `SMTP_PASSWORD`, and optionally `SMTP_FROM_EMAIL`.
+- API account bootstrap: generate a bcrypt password hash locally with
+  `npm run admin:credentials` from `backend/` and set `ADMIN_PASSWORD_HASH` if
+  the target database does not already contain the admin account. Never put
+  the plaintext password or hash in a frontend variable.
+- Frontend: set `VITE_API_URL` to the API service's public URL followed by
+  `/api` (for example, `https://<api-service>.onrender.com/api`). This is a
+  build-time setting; redeploy the static site after changing it.
+
+After both services are created, use the actual assigned domains to set
+`CORS_ORIGIN` to the exact frontend origin (scheme and hostname, no path), and
+set `GOOGLE_CALLBACK_URL` to
+`https://<api-service>.onrender.com/api/admin/auth/google/callback`. Add that
+exact callback to Google Cloud Console under **Authorized redirect URIs**. Add
+the frontend origin under **Authorized JavaScript origins** only if using a
+browser-based Google credential flow. Redeploy the API after changing its
+environment. For a custom frontend domain, include its exact origin in
+`CORS_ORIGIN`; use HTTPS and keep the frontend and API on a same-site domain
+when possible so browser cookie policies permit admin sessions.
+
+Use `/api/health` for a process liveness check and `/api/health/ready` to
+confirm MongoDB connectivity. The API now waits for MongoDB and startup
+initialization before listening, so a failed database connection fails the
+deployment instead of appearing healthy with unavailable data APIs.
+
 ## Health endpoints
 
 - `GET /api/health` reports whether the API process is alive.

@@ -46,10 +46,7 @@ const app = createApp({
 })
 
 const host = process.env.HOST ?? '0.0.0.0'
-const server = app.listen(config.port, host, () => {
-  console.info(`Backend listening on http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${config.port}`)
-})
-
+let databaseInitialized = false
 try {
   await connectDatabase(config.mongoUri, config.mongoDatabaseName)
   await ensureEventCatalog()
@@ -58,15 +55,24 @@ try {
     username: config.adminUsername,
   })
   console.info('Database connected and initialized successfully.')
+  databaseInitialized = true
 } catch (error) {
-  console.error('Backend database initialization failed; database-backed APIs are unavailable:', error?.message || error)
+  console.error('Backend startup failed during database initialization:', error?.message || error)
+  process.exitCode = 1
+  await mongoose.disconnect()
 }
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
-    server.close(async () => {
-      await mongoose.disconnect()
-      process.exitCode = 0
-    })
+if (databaseInitialized) {
+  const server = app.listen(config.port, host, () => {
+    console.info(`Backend listening on ${host}:${config.port}`)
   })
+
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      server.close(async () => {
+        await mongoose.disconnect()
+        process.exitCode = 0
+      })
+    })
+  }
 }

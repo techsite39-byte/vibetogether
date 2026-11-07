@@ -1,6 +1,5 @@
 import { BookingApiError, readBookingApiResponse } from './bookingApiResponse.js'
-
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? '/api'
+import { API_BASE_URL } from '../config/api.js'
 
 export async function getBookingEvents(signal) {
   let payload
