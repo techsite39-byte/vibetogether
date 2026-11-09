@@ -23,7 +23,95 @@ function historyEntry(status, source, note = '', eventKey = randomUUID(), at = n
   return { status, source, note, eventKey, at }
 }
 
-function templateBodyParameters(booking, kind) {
+function categoryName(booking) {
+  return booking.category || booking.event || 'Vibe Together Experience'
+}
+
+function formattedDateOnly(value) {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return 'Not provided'
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+}
+
+function formattedTimeOnly(value) {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return 'Not provided'
+  return new Intl.DateTimeFormat('en-IN', {
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+}
+
+export function buildWhatsAppMessage(booking, kind = 'success') {
+  const customerName = booking.name || booking.customer || 'Friend'
+  const bookingCategory = categoryName(booking)
+  const createdAt = booking.createdAt || new Date()
+  const bookingDate = formattedDateOnly(createdAt)
+  const bookingTime = formattedTimeOnly(createdAt)
+  const actualAmount = `₹${booking.paymentAmount ?? booking.amount ?? 249}`
+  const applicableAmount = `₹${booking.paymentAmount ?? booking.amount ?? (booking.diwaliOfferApplied ? 249 : 299)}`
+  const bookingStatus = booking.status === 'confirmed' ? 'Approved' : 'Pending Approval'
+  const paymentStatus = booking.paymentFailureReason === 'cancelled' ? 'CANCELLED' : 'FAILED'
+
+  if (kind === 'failure') {
+    return [
+      '✨ VIBE TOGETHER – PAYMENT UPDATE ✨',
+      '',
+      `Hello ${customerName}!`,
+      '',
+      'Your payment was not completed.',
+      '',
+      `Amount: ${applicableAmount}`,
+      `Category: ${bookingCategory}`,
+      `Payment Status: ${paymentStatus}`,
+      '',
+      'Your booking is not confirmed yet.',
+      '',
+      'Please return to Vibe Together and retry your payment.',
+      '',
+      'Need help? Contact our team.',
+      '',
+      'https://www.vibetogether.show',
+      '',
+      'VIBE TOGETHER 💜',
+    ].join('\n')
+  }
+
+  return [
+    '✨ VIBE TOGETHER – PAYMENT SUCCESSFUL! ✨',
+    '',
+    `Hello ${customerName}! 💜`,
+    '',
+    'Your payment has been successfully received.',
+    '',
+    `🎟️ Booking Reference: ${booking.reference || '—'}`,
+    '',
+    `Category: ${bookingCategory}`,
+    `Booking Date: ${bookingDate}`,
+    `Booking Time: ${bookingTime}`,
+    `Amount Paid: ${actualAmount}`,
+    'Payment Status: PAID',
+    `Booking Status: ${bookingStatus}`,
+    '',
+    'Thank you for choosing Vibe Together!',
+    '',
+    'Your next story starts here. ✨',
+    '',
+    'https://www.vibetogether.show',
+    '',
+    'VIBE TOGETHER',
+    'Connect. Celebrate. Experience.',
+  ].join('\n')
+}
+
+export function templateBodyParameters(booking, kind) {
   const amount = `₹${booking.paymentAmount ?? 299}`
   if (kind === 'success') {
     const priceLines = booking.diwaliOfferApplied
@@ -134,7 +222,7 @@ export function createWhatsAppNotificationService({
     ).lean()
   }
 
-  async function send(requestId, type, { retry = false } = {}) {
+  async function send(requestId, type, { retry = false, force = false } = {}) {
     const booking = await getBooking(requestId)
     if (!booking) return null
 
@@ -195,14 +283,19 @@ export function createWhatsAppNotificationService({
 
     const previousNotification = booking.whatsappNotification ?? {}
     if (previousNotification.idempotencyKey === idempotencyKey) {
-      if (
-        ['sent', 'delivered', 'read', 'skipped'].includes(previousNotification.status) ||
-        previousNotification.inProgress
-      ) {
-        return { booking, duplicate: true }
+      if (['delivered', 'read'].includes(previousNotification.status)) {
+        return { booking, duplicate: true, alreadyDelivered: true }
       }
-      if (!retry || !previousNotification.retryable || new Date(previousNotification.nextRetryAt) > now()) {
-        return { booking, duplicate: true }
+      if (!force) {
+        if (
+          ['sent', 'skipped'].includes(previousNotification.status) ||
+          previousNotification.inProgress
+        ) {
+          return { booking, duplicate: true }
+        }
+        if (!retry || !previousNotification.retryable || new Date(previousNotification.nextRetryAt) > now()) {
+          return { booking, duplicate: true }
+        }
       }
     }
 
@@ -210,15 +303,19 @@ export function createWhatsAppNotificationService({
     const claimFilter = {
       requestId,
       whatsappConsent: true,
-      'whatsappNotification.inProgress': { $ne: true },
-      ...(previousNotification.idempotencyKey === idempotencyKey
-        ? {
-            'whatsappNotification.idempotencyKey': idempotencyKey,
-            'whatsappNotification.status': 'failed',
-            'whatsappNotification.retryable': true,
-            'whatsappNotification.nextRetryAt': { $lte: at },
-          }
-        : { 'whatsappNotification.idempotencyKey': { $ne: idempotencyKey } }),
+      ...(force
+        ? {}
+        : {
+            'whatsappNotification.inProgress': { $ne: true },
+            ...(previousNotification.idempotencyKey === idempotencyKey
+              ? {
+                  'whatsappNotification.idempotencyKey': idempotencyKey,
+                  'whatsappNotification.status': 'failed',
+                  'whatsappNotification.retryable': true,
+                  'whatsappNotification.nextRetryAt': { $lte: at },
+                }
+              : { 'whatsappNotification.idempotencyKey': { $ne: idempotencyKey } }),
+          }),
     }
     const claimed = await bookingEnquiryModel.findOneAndUpdate(
       claimFilter,
@@ -347,11 +444,11 @@ export function createWhatsAppNotificationService({
     return { booking: sent ?? claimed, sent: true }
   }
 
-  async function notify(requestId, type) {
+  async function notify(requestId, type, options = {}) {
     if (!['booking_confirmation', 'payment_assistance'].includes(type)) {
       throw new Error('Unsupported WhatsApp notification type.')
     }
-    return send(requestId, type)
+    return send(requestId, type, options)
   }
 
   async function processRetries() {

@@ -187,3 +187,12 @@ export async function signOutAdmin() {
     csrfToken = ''
   }
 }
+
+/**
+ * Retries a failed WhatsApp notification for a booking safely without sending duplicates.
+ */
+export async function retryWhatsAppNotification(reference) {
+  return adminRequest(`/bookings/${encodeURIComponent(reference)}/whatsapp/retry`, {
+    method: 'POST',
+  })
+}

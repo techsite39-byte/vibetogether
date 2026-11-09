@@ -192,3 +192,53 @@ test('verifies Meta webhook signatures against the original request body', () =>
   assert.equal(isValidWhatsAppWebhookSignature(body, signature, secret), true)
   assert.equal(isValidWhatsAppWebhookSignature(body, signature, 'wrong-secret'), false)
 })
+
+test('buildWhatsAppMessage produces exact required copy for success and failure', async () => {
+  const { buildWhatsAppMessage } = await import('../src/services/whatsappNotifications.js')
+  const successMsg = buildWhatsAppMessage(booking())
+  assert.match(successMsg, /✨ VIBE TOGETHER – PAYMENT SUCCESSFUL! ✨/)
+  assert.match(successMsg, /Hello Jordan Example! 💜/)
+  assert.match(successMsg, /🎟️ Booking Reference: 10812026501/)
+  assert.match(successMsg, /Amount Paid: ₹249/)
+  assert.match(successMsg, /Payment Status: PAID/)
+  assert.match(successMsg, /https:\/\/www\.vibetogether\.show/)
+  assert.match(successMsg, /Connect\. Celebrate\. Experience\./)
+
+  const failBooking = booking({
+    paymentStatus: 'failed',
+    paymentFailureReason: 'cancelled',
+    paymentAmount: 249,
+    reference: '',
+    diwaliOfferApplied: true,
+  })
+  const failMsg = buildWhatsAppMessage(failBooking, 'failure')
+  assert.match(failMsg, /✨ VIBE TOGETHER – PAYMENT UPDATE ✨/)
+  assert.match(failMsg, /Hello Jordan Example!/)
+  assert.match(failMsg, /Amount: ₹249/)
+  assert.match(failMsg, /Payment Status: CANCELLED/)
+  assert.match(failMsg, /Your booking is not confirmed yet\./)
+  assert.match(failMsg, /Please return to Vibe Together and retry your payment\./)
+  assert.match(failMsg, /VIBE TOGETHER 💜/)
+})
+
+test('admin forced retry does not send duplicate messages when already delivered', async () => {
+  const model = createBookingModel(booking())
+  let calls = 0
+  const service = createService(model, async () => {
+    calls += 1
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.admin-1' }] }) }
+  })
+
+  await service.notify('session-1', 'booking_confirmation')
+  assert.equal(calls, 1)
+
+  // Mark as delivered
+  await service.recordWebhookStatus({ messageId: 'wamid.admin-1', status: 'delivered', timestamp: '1794228000' })
+  assert.equal(model.record.whatsappNotification.status, 'delivered')
+
+  // Attempt admin force retry
+  const retryResult = await service.notify('session-1', 'booking_confirmation', { force: true, retry: true })
+  assert.equal(retryResult.duplicate, true)
+  assert.equal(retryResult.alreadyDelivered, true)
+  assert.equal(calls, 1, 'Did not call Meta API again because message was already delivered')
+})

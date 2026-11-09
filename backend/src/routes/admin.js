@@ -679,6 +679,7 @@ export function createAdminRouter({
   sessionModel = AdminSession,
   bookingEnquiryRepository,
   diwaliOfferService,
+  whatsappNotifications,
 }) {
   const router = Router()
   const requireAdmin = createRequireAdmin({
@@ -735,6 +736,48 @@ export function createAdminRouter({
         deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
         providerMessageId: enquiry.whatsappNotification?.providerMessageId ?? '',
         history: enquiry.whatsappNotification?.history ?? [],
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/bookings/:reference/whatsapp/retry', async (request, response, next) => {
+    try {
+      const enquiry = await bookingEnquiryRepository?.findByReference?.(request.params.reference)
+      if (!enquiry) {
+        response.status(404).json({ message: 'Booking enquiry was not found.' })
+        return
+      }
+      if (!enquiry.whatsappConsent) {
+        response.status(400).json({ message: 'Customer has not provided WhatsApp notification consent.' })
+        return
+      }
+      const currentStatus = enquiry.whatsappNotification?.status
+      if (['delivered', 'read'].includes(currentStatus)) {
+        response.status(409).json({
+          message: 'WhatsApp notification was already delivered. No duplicate message was sent.',
+          alreadyDelivered: true,
+          status: currentStatus,
+          notification: enquiry.whatsappNotification,
+        })
+        return
+      }
+      const isPaid = ['paid', 'verified', 'demo_paid'].includes(enquiry.paymentStatus)
+      const type = isPaid ? 'booking_confirmation' : 'payment_assistance'
+      const result = await whatsappNotifications?.notify?.(enquiry.requestId, type, { force: true, retry: true })
+      const updated = await bookingEnquiryRepository?.findByReference?.(request.params.reference) ?? enquiry
+      response.json({
+        message: result?.alreadyDelivered
+          ? 'WhatsApp notification was already delivered. No duplicate message was sent.'
+          : result?.sent
+            ? 'WhatsApp notification sent successfully.'
+            : result?.failed
+              ? 'WhatsApp notification retry failed. Check notification error details.'
+              : 'WhatsApp notification request processed.',
+        result,
+        notification: updated.whatsappNotification,
+        booking: jsonRecord(updated),
       })
     } catch (error) {
       next(error)

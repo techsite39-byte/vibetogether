@@ -8,84 +8,82 @@ function formattedDate(value) {
   const date = value ? new Date(value) : null
   if (!date || Number.isNaN(date.getTime())) return 'Not provided'
   return new Intl.DateTimeFormat('en-IN', {
-    dateStyle: 'medium',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+}
+
+function formattedTime(value) {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return 'Not provided'
+  return new Intl.DateTimeFormat('en-IN', {
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true,
     timeZone: 'Asia/Kolkata',
   }).format(date)
 }
 
 export function getWhatsAppNotificationPreview(booking, type = 'success') {
-  const name = booking.customer || booking.name || 'Customer'
-  const mobile = booking.mobile || ''
+  const customerName = booking.customer || booking.name || 'Friend'
+  const bookingCategory = categoryName(booking)
+  const createdAt = booking.createdAt || new Date()
+  const bookingDate = formattedDate(createdAt)
+  const bookingTime = formattedTime(createdAt)
+  const actualAmount = `₹${booking.amount ?? booking.paymentAmount ?? 249}`
+  const applicableAmount = `₹${booking.paymentAmount ?? booking.amount ?? (booking.diwaliOfferApplied ? 249 : 299)}`
+  const bookingStatus = booking.status === 'confirmed' ? 'Approved' : 'Pending Approval'
+  const paymentStatus = booking.paymentFailureReason === 'cancelled' ? 'CANCELLED' : 'FAILED'
+
   if (type === 'failure') {
     return [
-      '✨ VIBE TOGETHER – PAYMENT ASSISTANCE ✨',
+      '✨ VIBE TOGETHER – PAYMENT UPDATE ✨',
       '',
-      `Hello ${name}! 👋`,
+      `Hello ${customerName}!`,
       '',
-      'We noticed that your Vibe Together booking payment was not completed.',
+      'Your payment was not completed.',
       '',
-      "Don't worry! You can try again.",
+      `Amount: ${applicableAmount}`,
+      `Category: ${bookingCategory}`,
+      `Payment Status: ${paymentStatus}`,
       '',
-      '📋 YOUR BOOKING DETAILS',
+      'Your booking is not confirmed yet.',
       '',
-      `Name: ${name}`,
-      `Mobile: ${mobile}`,
-      `Category: ${categoryName(booking)}`,
+      'Please return to Vibe Together and retry your payment.',
       '',
-      `💳 Payment Amount: ₹${booking.amount ?? booking.paymentAmount ?? 299}`,
-      `Payment Status: ${booking.paymentFailureReason === 'cancelled' ? 'Cancelled' : 'Failed'}`,
+      'Need help? Contact our team.',
       '',
-      'Your booking has not yet been confirmed.',
-      'Please return to Vibe Together and retry your payment to complete your booking.',
+      'https://www.vibetogether.show',
       '',
-      'Need assistance? Contact our team.',
-      '',
-      '🌐 https://www.vibetogether.show/',
-      '',
-      'VIBE TOGETHER',
-      'Your next story starts here! 💜',
+      'VIBE TOGETHER 💜',
     ].join('\n')
   }
 
-  const amount = booking.amount ?? booking.paymentAmount ?? 0
-  const priceDetail = booking.diwaliOfferApplied
-    ? `Regular Price: ₹${booking.regularPrice}\nDiwali Offer Price: ₹${booking.offerPrice}\nAmount Paid: ₹${amount}`
-    : `Regular Price: ₹${booking.regularPrice ?? 299}\nAmount Paid: ₹${amount}`
   return [
-    '✨ VIBE TOGETHER – BOOKING CONFIRMATION ✨',
+    '✨ VIBE TOGETHER – PAYMENT SUCCESSFUL! ✨',
     '',
-    `Hello ${name}! 👋`,
+    `Hello ${customerName}! 💜`,
     '',
-    'Thank you for choosing Vibe Together! 💜',
+    'Your payment has been successfully received.',
     '',
-    'Your payment has been successfully completed and your booking has been registered.',
+    `🎟️ Booking Reference: ${booking.reference || '—'}`,
     '',
-    '🎟️ YOUR BOOKING REFERENCE:',
-    booking.reference,
+    `Category: ${bookingCategory}`,
+    `Booking Date: ${bookingDate}`,
+    `Booking Time: ${bookingTime}`,
+    `Amount Paid: ${actualAmount}`,
+    'Payment Status: PAID',
+    `Booking Status: ${bookingStatus}`,
     '',
-    '📋 BOOKING DETAILS',
+    'Thank you for choosing Vibe Together!',
     '',
-    `Name: ${name}`,
-    `Mobile: ${mobile}`,
-    `Email: ${booking.customerEmail || booking.email || 'Not provided'}`,
-    `Category: ${categoryName(booking)}`,
-    `Gender: ${booking.gender || 'Not provided'}`,
-    `Booking Date: ${formattedDate(booking.createdAt)}`,
+    'Your next story starts here. ✨',
     '',
-    '💳 PAYMENT DETAILS',
-    '',
-    priceDetail,
-    `Payment Status: ${booking.paymentStatus === 'demo_paid' ? 'Demo Paid' : 'Paid'}`,
-    '',
-    `📌 BOOKING STATUS: ${booking.status === 'confirmed' ? 'Approved' : 'Pending Approval'}`,
-    '',
-    'Thank you for being part of Vibe Together!',
-    '',
-    'Your next story starts here! ✨',
-    '',
-    '🌐 https://www.vibetogether.show/',
+    'https://www.vibetogether.show',
     '',
     'VIBE TOGETHER',
-    'Connect. Celebrate. Experience. 💜',
+    'Connect. Celebrate. Experience.',
   ].join('\n')
 }

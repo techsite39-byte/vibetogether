@@ -118,6 +118,7 @@ export function createApp({
     bookingEnquiryRepository,
     diwaliOfferService,
     diwaliOfferModel: DiwaliOffer,
+    whatsappNotifications,
   }))
   app.use('/api', createPublicEnquiriesRouter({ enquiryModel, subscriberModel }))
   app.use('/api/public-settings', createPublicSettingsRouter({

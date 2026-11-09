@@ -214,20 +214,77 @@ export default function BookingPayment() {
         throw new Error('Razorpay Checkout could not be loaded. Check your connection and retry.')
       }
 
+      const isDiwali = Boolean(bookingState.booking?.diwaliOfferApplied)
+      const bookingCategory = bookingState.booking?.category || bookingState.booking?.event || 'Event Booking'
+      const amountRupees = bookingState.booking?.paymentAmount ?? (isDiwali ? 249 : 299)
+      const savings = isDiwali ? ((bookingState.booking?.regularPrice ?? 299) - amountRupees) : 0
+      const description = isDiwali
+        ? `${bookingCategory} • Diwali Offer ₹${amountRupees} (Saved ₹${savings})`
+        : `${bookingCategory} • ₹${amountRupees}`
+
+      const rawContact = bookingState.booking?.mobile ?? ''
+      const sanitizedContact = rawContact.replace(/\D/g, '').slice(-10)
+
       const checkout = new window.Razorpay({
         key: order.key_id,
         amount: order.amount,
         currency: order.currency,
         name: 'VIBE TOGETHER',
-        description: 'Booking payment',
+        description,
+        image: `${window.location.origin}/assets/folder/favicon.png`,
         order_id: order.order_id,
         prefill: {
           name: bookingState.booking?.name ?? '',
           email: bookingState.booking?.email ?? '',
-          contact: bookingState.booking?.mobile ?? '',
+          contact: sanitizedContact || rawContact,
         },
-        theme: { color: '#773bff' },
+        notes: {
+          booking_request_id: requestId,
+          booking_category: bookingCategory,
+          diwali_offer: isDiwali ? `Applied (Saved ₹${savings})` : 'No',
+        },
+        theme: {
+          color: '#773bff',
+          backdrop_color: 'rgba(7, 5, 16, 0.88)',
+          hide_topbar: false,
+        },
+        config: {
+          display: {
+            blocks: {
+              upi: {
+                name: 'Pay using UPI, Google Pay, PhonePe or QR',
+                instruments: [
+                  {
+                    method: 'upi',
+                  },
+                ],
+              },
+              other: {
+                name: 'Other Payment Methods (Cards, Netbanking, Wallets)',
+                instruments: [
+                  {
+                    method: 'card',
+                  },
+                  {
+                    method: 'netbanking',
+                  },
+                  {
+                    method: 'wallet',
+                  },
+                ],
+              },
+            },
+            sequence: ['block.upi', 'block.other'],
+            preferences: {
+              show_default_blocks: true,
+            },
+          },
+        },
         modal: {
+          backdropclose: false,
+          escape: true,
+          handleback: true,
+          confirm_close: true,
           ondismiss: () => void handleRazorpayFailure({
             orderId: order.order_id,
             outcome: 'cancelled',
@@ -417,19 +474,15 @@ export default function BookingPayment() {
             {isPaid ? (
               <div className="booking-payment__success" role="status">
                 <span className="booking-payment__success-icon">
-                  <CheckCircle2 size={32} aria-hidden="true" />
+                  <CheckCircle2 size={36} aria-hidden="true" />
                 </span>
                 <p className="booking-payment__eyebrow">
                   {booking.paymentStatus === 'demo_paid' ? 'DEMO PAYMENT COMPLETE' : 'PAYMENT SUCCESSFUL'}
                 </p>
-                <h1>
-                  {booking.paymentStatus === 'demo_paid'
-                    ? 'Demo Payment Successful'
-                    : 'Payment Successful!'}
-                </h1>
+                <h1>Payment Successful!</h1>
                 <p className="booking-payment__description">
                   {booking.paymentStatus === 'demo_paid'
-                    ? 'Your booking is finalized as a demo payment record; no real payment was processed and no money was collected.'
+                    ? 'Your booking is finalized as a demo payment record; no real payment was processed.'
                     : 'Your Razorpay payment was verified and your booking is finalized.'}
                 </p>
               </div>
@@ -483,20 +536,15 @@ export default function BookingPayment() {
                 <section className="booking-payment__confirmation" aria-label="Booking confirmation">
                   <span className="booking-payment__muted">BOOKING REFERENCE</span>
                   <strong>{booking.reference}</strong>
-                  <p>Payment status: <b>{paymentLabel}</b></p>
+                  <p>Payment status: <b>PAID</b></p>
                   <p>Booking status: <b>{bookingLabel}</b></p>
                 </section>
-                <p className={`booking-payment__notification booking-payment__notification--${notificationStatus}`} role="status">
-                  <b>WhatsApp update · {notificationStatus.replaceAll('_', ' ')}</b>
-                  <span>{notificationCopy}</span>
-                </p>
+                <div className="booking-payment__processing-notice" role="status">
+                  <small>Your confirmation notification is being processed.</small>
+                </div>
               </>
             ) : isFailureView ? (
               <>
-                <p className={`booking-payment__notification booking-payment__notification--${notificationStatus}`} role="status">
-                  <b>WhatsApp update · {notificationStatus.replaceAll('_', ' ')}</b>
-                  <span>{notificationCopy}</span>
-                </p>
                 <div className="booking-payment__retry-actions">
                   <button className="booking-payment__pay" onClick={handleTryPaymentAgain} type="button">
                     Try Payment Again
