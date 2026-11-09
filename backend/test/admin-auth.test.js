@@ -103,6 +103,7 @@ test('authenticates admins, restores sessions, and enforces CSRF on logout', asy
     model,
     protectRoutes: true,
     sessionSecret: 'a-session-secret-with-more-than-thirty-two-characters',
+    secureCookies: true,
     username: admin.username,
   })
 
@@ -118,6 +119,7 @@ test('authenticates admins, restores sessions, and enforces CSRF on logout', asy
   const cookieHeader = cookies.map((cookie) => cookie.split(';', 1)[0]).join('; ')
   assert.match(cookieHeader, /vt_admin_session=/)
   assert.match(cookieHeader, /vt_admin_csrf=/)
+  assert.ok(cookies.every((cookie) => /SameSite=None/.test(cookie) && /Secure/.test(cookie)))
 
   const protectedWithoutSession = await fetch(`${baseUrl}/api/admin/not-a-resource`)
   assert.equal(protectedWithoutSession.status, 401)
@@ -156,6 +158,22 @@ test('authenticates admins, restores sessions, and enforces CSRF on logout', asy
     headers: { Cookie: cookieHeader },
   })
   assert.equal(revokedSession.status, 401)
+
+  const relogin = await fetch(`${baseUrl}/api/admin/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: admin.username, password }),
+  })
+  assert.equal(relogin.status, 200)
+  const reloginCookies =
+    relogin.headers.getSetCookie?.() ?? [relogin.headers.get('set-cookie') ?? '']
+  const reloginCookieHeader = reloginCookies
+    .map((cookie) => cookie.split(';', 1)[0])
+    .join('; ')
+  const restoredSession = await fetch(`${baseUrl}/api/admin/auth/session`, {
+    headers: { Cookie: reloginCookieHeader },
+  })
+  assert.equal(restoredSession.status, 200)
 
   const secret = 'a-session-secret-with-more-than-thirty-two-characters'
   const expiredPayload = Buffer.from(

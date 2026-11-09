@@ -14,7 +14,7 @@ services:
       - key: MONGODB_DB_NAME
         value: main
       - key: CORS_ORIGIN
-        sync: false
+        value: https://www.vibetogether.show
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_SESSION_SECRET
@@ -26,7 +26,7 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_CALLBACK_URL
-        sync: false
+        value: https://vibetogether-ahgy.onrender.com/api/admin/auth/google/callback
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -46,7 +46,7 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        sync: false
+        value: https://vibetogether-ahgy.onrender.com/api
     routes:
       - type: rewrite
         source: /*

@@ -1,4 +1,7 @@
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
+import { randomUUID } from 'node:crypto'
+
+const demoPaymentAmount = 299
 
 function sameRequest(existing, enquiry) {
   return (
@@ -50,4 +53,42 @@ export async function saveBookingEnquiry(enquiry) {
 
     return { enquiry: duplicate, duplicate: true }
   }
+}
+
+export async function findBookingEnquiry(requestId) {
+  return BookingEnquiry.findOne({ requestId }).lean()
+}
+
+export async function markBookingEnquiryDemoPaid(requestId) {
+  const updated = await BookingEnquiry.findOneAndUpdate(
+    {
+      requestId,
+      status: { $ne: 'cancelled' },
+      paymentStatus: { $ne: 'demo_paid' },
+    },
+    {
+      $set: {
+        paymentStatus: 'demo_paid',
+        paymentAmount: demoPaymentAmount,
+        paymentProvider: 'razorpay_demo',
+        paymentReference: `demo_${randomUUID()}`,
+        paidAt: new Date(),
+      },
+    },
+    { new: true, runValidators: true },
+  ).lean()
+
+  if (updated) {
+    return { enquiry: updated, duplicate: false }
+  }
+
+  const existing = await findBookingEnquiry(requestId)
+  if (!existing || existing.status === 'cancelled') {
+    return null
+  }
+  if (existing.paymentStatus === 'demo_paid') {
+    return { enquiry: existing, duplicate: true }
+  }
+
+  throw new Error('The demo payment status could not be updated.')
 }

@@ -7,16 +7,13 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { categories } from '../../data/categories.js'
 import { submitBookingEnquiry } from '../../services/bookingEnquiry.js'
 import './BookingJourney.css'
 
 const steps = ['Name', 'Mobile', 'Category', 'Gender']
-const categoryOrder = ['fun-games', 'sing-along', 'strangers-meet', 'strangers-trip']
-const bookingCategories = [...categories].sort(
-  (first, second) =>
-    categoryOrder.indexOf(first.id) - categoryOrder.indexOf(second.id),
-)
+const bookingCategories = categories.filter(({ id }) => id === 'sing-along')
 const countryCodes = [
   { country: 'India', code: '+91' },
   { country: 'United States', code: '+1' },
@@ -54,15 +51,12 @@ function getNormalizedMobile(value, countryCode) {
   return `+${digits}`
 }
 
-export default function BookingJourney({ initialCategory = '', onClose }) {
-  const initialCategoryId =
-    bookingCategories.find(
-      ({ id, title }) => id === initialCategory || title === initialCategory,
-    )?.id ?? ''
+export default function BookingJourney({ onClose }) {
+  const navigate = useNavigate()
   const [form, setForm] = useState({
     name: '',
     mobile: '',
-    categoryId: initialCategoryId,
+    categoryId: '',
     gender: '',
   })
   const [countryCode, setCountryCode] = useState('+91')
@@ -72,7 +66,6 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
   const [fieldError, setFieldError] = useState('')
   const [submissionError, setSubmissionError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isSubmitted, setIsSubmitted] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const journeyRef = useRef(null)
   const requestId = useRef(crypto.randomUUID())
@@ -225,8 +218,8 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
         categoryId: form.categoryId,
         gender: form.gender,
       })
-      setForm({ name: '', mobile: '', categoryId: '', gender: '' })
-      setIsSubmitted(true)
+      onClose()
+      navigate(`/booking/payment/${requestId.current}`)
     } catch (error) {
       setSubmissionError(
         error instanceof Error
@@ -278,7 +271,7 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
           VIBE TOGETHER
         </span>
         <button
-          aria-label={isSubmitted ? 'Close confirmation' : 'Cancel booking journey'}
+          aria-label="Cancel booking journey"
           className="booking-journey__close"
           disabled={isSubmitting}
           onClick={onClose}
@@ -289,29 +282,7 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
         </button>
       </header>
 
-      {isSubmitted ? (
-        <div className="booking-journey__success" role="status">
-          <span className="booking-journey__success-icon">
-            <Check size={34} aria-hidden="true" />
-          </span>
-          <p className="booking-journey__eyebrow">REQUEST RECEIVED</p>
-          <h1>Congratulations!</h1>
-          <p className="booking-journey__support">
-            Your enquiry has been submitted successfully.
-          </p>
-          <p className="booking-journey__privacy">
-            This is an enquiry, not a confirmed event booking.
-          </p>
-          <button
-            className="booking-journey__primary"
-            onClick={onClose}
-            type="button"
-          >
-            Continue Exploring <ArrowRight size={18} aria-hidden="true" />
-          </button>
-        </div>
-      ) : (
-        <div className="booking-journey__body">
+      <div className="booking-journey__body">
           <nav aria-label="Booking progress" className="booking-journey__progress">
             {steps.map((label, index) => (
               <div
@@ -406,21 +377,21 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
                     value={form.mobile}
                   />
                 </div>
-              )}
+                )}
 
-              {step === 2 && (
+                {step === 2 && (
                 <fieldset className="booking-journey__category-list">
                   <legend className="booking-journey__visually-hidden">
                     Choose one category of interest
                   </legend>
-                  {bookingCategories.map(({ id, title }, index) => (
+                  {bookingCategories.map(({ id, title, image }) => (
                     <label
-                      className={`booking-journey__category${form.categoryId === id ? ' is-selected' : ''}`}
+                      className={`booking-journey__category booking-journey__category--featured${form.categoryId === id ? ' is-selected' : ''}`}
                       key={id}
                     >
                       <input
                         checked={form.categoryId === id}
-                        data-journey-focus={index === 0 ? '' : undefined}
+                        data-journey-focus
                         name="categoryId"
                         onChange={() => {
                           resetRequestAfterEdit()
@@ -430,6 +401,13 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
                         type="radio"
                         value={id}
                       />
+                      <img
+                        alt=""
+                        aria-hidden="true"
+                        className="booking-journey__category-image"
+                        src={image}
+                      />
+                      <span aria-hidden="true" className="booking-journey__category-overlay" />
                       <span className="booking-journey__category-title">{title}</span>
                       <span aria-hidden="true" className="booking-journey__category-check">
                         {form.categoryId === id && <Check size={16} />}
@@ -489,7 +467,11 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
               )}
               <button
                 className="booking-journey__primary"
-                disabled={isSubmitting || isTransitioning}
+                disabled={
+                  isSubmitting ||
+                  isTransitioning ||
+                  (step === 2 && !form.categoryId)
+                }
                 type="submit"
               >
                 {isSubmitting ? (
@@ -510,7 +492,6 @@ export default function BookingJourney({ initialCategory = '', onClose }) {
             {`0${step + 1}`} <span>/ 04</span>
           </div>
         </div>
-      )}
     </section>
   )
 }

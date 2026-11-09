@@ -22,6 +22,7 @@ const ManageGallery = lazy(() => import('./admin/pages/ManageGallery.jsx'))
 const About = lazy(() => import('./pages/About.jsx'))
 const Booking = lazy(() => import('./pages/Booking.jsx'))
 const BookingConfirmation = lazy(() => import('./pages/BookingConfirmation.jsx'))
+const BookingPayment = lazy(() => import('./pages/BookingPayment.jsx'))
 const Contact = lazy(() => import('./pages/Contact.jsx'))
 const EventDetails = lazy(() => import('./pages/EventDetails.jsx'))
 const Events = lazy(() => import('./pages/Events.jsx'))
@@ -55,6 +56,10 @@ function App() {
           <Route
             path="booking/confirmation/:bookingReference"
             element={<BookingConfirmation />}
+          />
+          <Route
+            path="booking/payment/:requestId"
+            element={<BookingPayment />}
           />
           <Route path="my-bookings" element={<MyBookings />} />
           <Route path="booking" element={<Booking />} />

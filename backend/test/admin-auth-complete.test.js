@@ -481,6 +481,21 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
     const state = authorizationUrl.searchParams.get('state')
     assert.ok(state)
 
+    const cancelledCallback = await fetch(
+      `${baseUrl}/api/admin/auth/google/callback?error=access_denied`,
+      {
+        headers: {
+          Cookie: `vt_google_oauth_state=${stateCookie}; vt_google_frontend_origin=${frontendOriginCookie}`,
+        },
+        redirect: 'manual',
+      },
+    )
+    assert.equal(cancelledCallback.status, 302)
+    assert.equal(
+      cancelledCallback.headers.get('location'),
+      'http://localhost:5174/admin/login?google_error=cancelled',
+    )
+
     const rejectedCallback = await fetch(
       `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=invalid`,
       {

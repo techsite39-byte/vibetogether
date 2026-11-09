@@ -158,7 +158,12 @@ export function createBookingEnquiriesRouter({
   eventRepository,
   repository,
 }) {
-  if (!repository || typeof repository.save !== 'function') {
+  if (
+    !repository ||
+    typeof repository.save !== 'function' ||
+    typeof repository.findByRequestId !== 'function' ||
+    typeof repository.markDemoPaid !== 'function'
+  ) {
     throw new Error('A booking enquiry repository is required.')
   }
 
@@ -171,6 +176,24 @@ export function createBookingEnquiriesRouter({
         return events.find((event) => event.id === id) ?? null
       },
     }
+  function serializeEnquiry(enquiry) {
+    return {
+      requestId: enquiry.requestId,
+      name: enquiry.name,
+      mobile: enquiry.mobile,
+      category: enquiry.category,
+      event: enquiry.event,
+      gender: enquiry.gender,
+      createdAt: enquiry.createdAt,
+      status: enquiry.status,
+      paymentStatus: enquiry.paymentStatus ?? 'unpaid',
+      paymentAmount: enquiry.paymentAmount ?? 299,
+      paymentProvider: enquiry.paymentProvider ?? '',
+      paymentReference: enquiry.paymentReference ?? '',
+      paidAt: enquiry.paidAt ?? null,
+    }
+  }
+
   router.post('/', rateLimit, async (request, response) => {
     try {
       const validation = await validateBookingEnquiry(
@@ -199,6 +222,55 @@ export function createBookingEnquiriesRouter({
       console.error('Booking enquiry persistence failed.')
       response.status(503).json({
         message: 'We could not save your request right now. Please try again.',
+      })
+    }
+  })
+
+  router.get('/:requestId', async (request, response) => {
+    const { requestId } = request.params
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+
+    try {
+      const enquiry = await repository.findByRequestId(requestId)
+      if (!enquiry) {
+        response.status(404).json({ message: 'Booking enquiry not found.' })
+        return
+      }
+      response.set('Cache-Control', 'no-store')
+      response.json({ booking: serializeEnquiry(enquiry) })
+    } catch {
+      console.error('Booking enquiry lookup failed.')
+      response.status(503).json({
+        message: 'Booking details are temporarily unavailable. Please try again.',
+      })
+    }
+  })
+
+  router.post('/:requestId/demo-payment', async (request, response) => {
+    const { requestId } = request.params
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+
+    try {
+      const result = await repository.markDemoPaid(requestId)
+      if (!result) {
+        response.status(404).json({ message: 'Booking enquiry not found or no longer payable.' })
+        return
+      }
+      response.status(200).json({
+        message: 'Demo payment recorded. No real payment was processed.',
+        duplicate: result.duplicate,
+        booking: serializeEnquiry(result.enquiry),
+      })
+    } catch {
+      console.error('Demo booking payment persistence failed.')
+      response.status(503).json({
+        message: 'Demo payment could not be recorded. Please try again.',
       })
     }
   })

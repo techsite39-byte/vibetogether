@@ -31,14 +31,16 @@ admin sessions.
    mode monitors `backend/src` only, so dependency updates under `node_modules`
    do not restart the API and interrupt Vite proxy requests.
 
-For Google sign-in, configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
-`GOOGLE_CALLBACK_URL` in the backend environment. The callback URL must exactly
-match the Google Cloud Console's Authorized redirect URI and use
-`/api/admin/auth/google/callback` (for example,
-`http://localhost:4000/api/admin/auth/google/callback`). The redirect-based
-server flow does not expose the client secret to the browser. Confirm each
-deployed frontend origin is in `CORS_ORIGIN`; OAuth client origins and redirect
-URIs must also match the actual deployment in Google Cloud Console.
+Google sign-in is available for existing, active admin accounts only. It never
+creates an admin account or assigns an admin role based on a Google identity.
+Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_CALLBACK_URL`
+in the backend environment. The callback URL must exactly match the Google
+Cloud Console's Authorized redirect URI and use
+`/api/admin/auth/google/callback` (for this production deployment:
+`https://vibetogether-ahgy.onrender.com/api/admin/auth/google/callback`). The
+redirect-based server flow does not expose the client secret to the browser.
+Confirm each deployed frontend origin is in `CORS_ORIGIN`; OAuth client origins
+and redirect URIs must also match the actual deployment in Google Cloud Console.
 In development, `GET /api/admin/auth/google/debug` reports the configured
 client ID, callback URL, backend port, frontend origin, and configuration
 status without exposing the client secret; it is unavailable in production.
@@ -65,7 +67,7 @@ and `npm start`; its readiness health check is `/api/health/ready`. The Vite
 site builds from the repository root with `npm ci --include=dev && npm run build`
 and publishes `dist`.
 
-Configure these values in Render, not in Git:
+Configure secrets in Render, not in frontend code:
 
 - API: `MONGODB_URI`, `MONGODB_DB_NAME=main`, `CORS_ORIGIN`, `ADMIN_EMAIL`,
   `ADMIN_SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
@@ -75,20 +77,26 @@ Configure these values in Render, not in Git:
   `npm run admin:credentials` from `backend/` and set `ADMIN_PASSWORD_HASH` if
   the target database does not already contain the admin account. Never put
   the plaintext password or hash in a frontend variable.
-- Frontend: set `VITE_API_URL` to the API service's public URL followed by
-  `/api` (for example, `https://<api-service>.onrender.com/api`). This is a
-  build-time setting; redeploy the static site after changing it.
+- Frontend: set `VITE_API_URL` to
+  `https://vibetogether-ahgy.onrender.com/api`. This is a build-time setting;
+  redeploy the frontend after changing it.
 
-After both services are created, use the actual assigned domains to set
-`CORS_ORIGIN` to the exact frontend origin (scheme and hostname, no path), and
-set `GOOGLE_CALLBACK_URL` to
-`https://<api-service>.onrender.com/api/admin/auth/google/callback`. Add that
-exact callback to Google Cloud Console under **Authorized redirect URIs**. Add
-the frontend origin under **Authorized JavaScript origins** only if using a
-browser-based Google credential flow. Redeploy the API after changing its
-environment. For a custom frontend domain, include its exact origin in
-`CORS_ORIGIN`; use HTTPS and keep the frontend and API on a same-site domain
-when possible so browser cookie policies permit admin sessions.
+Set the API's `CORS_ORIGIN` to `https://www.vibetogether.show` and
+`GOOGLE_CALLBACK_URL` to
+`https://vibetogether-ahgy.onrender.com/api/admin/auth/google/callback`. Add
+that exact callback to Google Cloud Console under **Authorized redirect URIs**.
+Set `VITE_API_URL` in the Vercel frontend project to
+`https://vibetogether-ahgy.onrender.com/api`, then redeploy the frontend after
+changing it. Add the frontend origin under **Authorized JavaScript origins**
+only if using a browser-based Google credential flow. Production admin session
+cookies use `SameSite=None; Secure` so credentialed API calls work across the
+Vercel and Render origins; CORS remains restricted to the configured frontend.
+
+The booking enquiry payment screen currently runs in demo mode. A demo payment
+updates the original booking enquiry with one idempotent demo payment status;
+it does not call Razorpay Checkout or collect money. The server-side provider
+boundary is deliberately separate so real order creation, Checkout,
+signature verification, and webhook verification can be added later.
 
 Use `/api/health` for a process liveness check and `/api/health/ready` to
 confirm MongoDB connectivity. The API now waits for MongoDB and startup
@@ -109,6 +117,9 @@ deployment instead of appearing healthy with unavailable data APIs.
   `mobile`, `eventId`, `gender`, and a UUID `requestId`. Event names,
   timestamps, source (`Website booking journey`), and pending status are resolved
   by the server.
+- `GET /api/booking-enquiries/:requestId` returns the saved enquiry summary for
+  the payment page. `POST /api/booking-enquiries/:requestId/demo-payment`
+  atomically records one fixed ₹299 demo payment on that same record.
 - `POST /api/newsletter` stores subscriptions in `newsletter-db`.
 - `POST /api/enquiries/contact` and `POST /api/enquiries/host-event` store
   contact and event-hosting requests in `enquiry-db`.

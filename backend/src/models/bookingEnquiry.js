@@ -61,6 +61,31 @@ const bookingEnquirySchema = new mongoose.Schema(
       enum: ['pending', 'confirmed', 'cancelled'],
       default: 'pending',
     },
+    paymentStatus: {
+      type: String,
+      required: true,
+      enum: ['unpaid', 'demo_paid'],
+      default: 'unpaid',
+    },
+    paymentAmount: {
+      type: Number,
+      min: 0,
+      default: 299,
+    },
+    paymentProvider: {
+      type: String,
+      enum: ['razorpay_demo'],
+      default: null,
+    },
+    paymentReference: {
+      type: String,
+      maxlength: 80,
+      default: '',
+    },
+    paidAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     collection: 'user-db',

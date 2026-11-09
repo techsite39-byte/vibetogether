@@ -2,7 +2,11 @@ import { createApp } from './app.js'
 import { config } from './config/env.js'
 import { connectDatabase } from './db/connect.js'
 import { createEmailService } from './services/emailService.js'
-import { saveBookingEnquiry } from './services/bookingEnquiries.js'
+import {
+  findBookingEnquiry,
+  markBookingEnquiryDemoPaid,
+  saveBookingEnquiry,
+} from './services/bookingEnquiries.js'
 import {
   ensureEventCatalog,
   findEventById,
@@ -32,7 +36,11 @@ const app = createApp({
   googleClientSecret: config.googleClientSecret,
   googleCallbackUrl: config.googleCallbackUrl,
   googleCallbackUrlValid: config.googleCallbackUrlValid,
-  bookingEnquiryRepository: { save: saveBookingEnquiry },
+  bookingEnquiryRepository: {
+    save: saveBookingEnquiry,
+    findByRequestId: findBookingEnquiry,
+    markDemoPaid: markBookingEnquiryDemoPaid,
+  },
   corsOrigins: config.corsOrigins,
   databaseReady: () => mongoose.connection.readyState === 1,
   frontendOrigin: config.frontendOrigin,

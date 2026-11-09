@@ -121,7 +121,7 @@ function readCookie(request, name) {
 function cookieOptions({ secure, maxAge, httpOnly }) {
   return [
     'Path=/api/admin',
-    'SameSite=Strict',
+    `SameSite=${secure ? 'None' : 'Strict'}`,
     maxAge == null ? '' : `Max-Age=${maxAge}`,
     httpOnly ? 'HttpOnly' : '',
     secure ? 'Secure' : '',
@@ -643,6 +643,17 @@ export function createAdminAuthRouter({
         corsOrigins,
         nodeEnv,
       }) || frontendOrigin
+    const googleError = typeof request.query.error === 'string' ? request.query.error : ''
+    if (googleError) {
+      const loginUrl = new URL('/admin/login', callbackFrontendOrigin)
+      loginUrl.searchParams.set(
+        'google_error',
+        googleError === 'access_denied' ? 'cancelled' : 'failed',
+      )
+      response.redirect(302, loginUrl.toString())
+      return
+    }
+
     const state = typeof request.query.state === 'string' ? request.query.state : ''
     const cookieState = readCookie(request, googleStateCookie)
     const code = typeof request.query.code === 'string' ? request.query.code : ''
