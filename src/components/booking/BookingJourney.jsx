@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
+  CircleAlert,
   Check,
   LoaderCircle,
   Sparkles,
@@ -202,6 +203,7 @@ export default function BookingJourney({ onClose }) {
     transitionTimer.current = window.setTimeout(() => {
       setStep(nextStep)
       setTransitionStage('enter')
+      journeyRef.current?.scrollTo(0, 0)
       settleTimer.current = window.setTimeout(() => {
         setTransitionStage('idle')
         transitioning.current = false
@@ -546,8 +548,9 @@ export default function BookingJourney({ onClose }) {
               </label>
             )}
             {(fieldError || submissionError) && (
-              <p className="booking-journey__error" role="alert">
-                {submissionError || fieldError}
+              <p aria-live="assertive" className="booking-journey__error" role="alert">
+                <CircleAlert aria-hidden="true" size={18} />
+                <span>{submissionError || fieldError}</span>
               </p>
             )}
             <p className="booking-journey__privacy">
@@ -580,7 +583,7 @@ export default function BookingJourney({ onClose }) {
                     Sending…
                   </>
                 ) : step === 3 ? (
-                  <>Submit Enquiry <ArrowRight size={18} aria-hidden="true" /></>
+                  <>Continue <ArrowRight size={18} aria-hidden="true" /></>
                 ) : (
                   <>Continue <ArrowRight size={18} aria-hidden="true" /></>
                 )}

@@ -308,9 +308,12 @@ export function createBookingEnquiriesRouter({
         return
       }
 
-      console.error('Booking enquiry persistence failed.')
+      console.error('Booking enquiry persistence failed:', {
+        name: error?.name ?? 'UnknownError',
+        code: error?.code ?? '',
+      })
       response.status(503).json({
-        message: 'We could not save your request right now. Please try again.',
+        message: "We're temporarily unable to process your booking. Please try again shortly.",
       })
     }
   })

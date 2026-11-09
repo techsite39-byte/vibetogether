@@ -247,7 +247,7 @@ const bookingEnquirySchema = new mongoose.Schema(
     },
     paymentOrderAttemptNumber: {
       type: Number,
-      min: 1,
+      min: 0,
       default: 0,
     },
     paidAt: {

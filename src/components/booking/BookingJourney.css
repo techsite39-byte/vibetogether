@@ -2,15 +2,16 @@
   position: fixed;
   z-index: 1200;
   display: grid;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   width: 100%;
-  height: 100%;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
   min-height: 100vh;
   min-height: 100dvh;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto;
   isolation: isolate;
-  contain: paint;
-  padding: clamp(1.1rem, 3.2vw, 2.6rem) clamp(1rem, 5.2vw, 5.5rem);
+  padding: clamp(0.75rem, 2vh, 1.25rem) clamp(1rem, 5.2vw, 5.5rem);
   background:
     radial-gradient(ellipse at 50% 42%, rgb(33 17 61 / 45%), transparent 48%),
     linear-gradient(135deg, #050509 0%, #0d0918 54%, #070711 100%);
@@ -102,6 +103,8 @@
 }
 
 .booking-journey__header {
+  position: relative;
+  z-index: 1;
   display: flex;
   min-height: 3rem;
   align-items: center;
@@ -156,28 +159,29 @@
 
 .booking-journey__body {
   position: relative;
+  z-index: 1;
   display: grid;
   width: min(100%, 64rem);
-  min-height: 0;
+  min-width: 0;
   justify-self: center;
-  align-content: center;
-  padding: clamp(1.25rem, 4vh, 3rem) 0 2.8rem;
+  align-content: safe center;
+  padding: clamp(0.75rem, 2vh, 1.25rem) 0 max(1.25rem, env(safe-area-inset-bottom));
 }
 
 .booking-journey__progress {
-  display: flex;
+  display: grid;
   width: min(100%, 37rem);
-  align-items: center;
-  justify-content: space-between;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   justify-self: center;
-  margin-bottom: clamp(2.2rem, 7vh, 4.7rem);
+  margin-bottom: clamp(1.25rem, 3.5vh, 2.25rem);
 }
 
 .booking-journey__progress-step {
   position: relative;
   display: grid;
-  min-width: 3.2rem;
+  min-width: 0;
   justify-items: center;
+  text-align: center;
   gap: 0.55rem;
   color: #81778e;
   font-size: 0.73rem;
@@ -186,18 +190,22 @@
 
 .booking-journey__progress-step:not(:last-child)::after {
   position: absolute;
-  z-index: -1;
-  top: 0.9rem;
-  left: calc(50% + 1.1rem);
-  width: max(2rem, calc((min(37rem, 100vw - 3rem) - 6rem) / 3));
+  z-index: 0;
+  top: 0.95rem;
+  left: calc(50% + 1rem);
+  width: calc(100% - 2rem);
   height: 1px;
   background: rgb(255 255 255 / 13%);
   content: '';
+  pointer-events: none;
 }
 
 .booking-journey__progress-dot {
+  position: relative;
+  z-index: 1;
   display: grid;
   width: 2rem;
+  flex: 0 0 auto;
   aspect-ratio: 1;
   place-items: center;
   border: 1px solid rgb(204 184 231 / 24%);
@@ -206,6 +214,11 @@
   color: #aaa0b7;
   font-size: 0.65rem;
   transition: border-color 240ms ease, background 240ms ease, box-shadow 240ms ease;
+}
+
+.booking-journey__progress-label {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .booking-journey__progress-step.is-active,
@@ -224,6 +237,7 @@
 .booking-journey__screen {
   display: grid;
   width: min(100%, 50rem);
+  min-width: 0;
   justify-items: center;
   justify-self: center;
   text-align: center;
@@ -260,14 +274,14 @@
 
 .booking-journey__title,
 .booking-journey__success h1 {
-  max-width: 15ch;
+  max-width: 20ch;
   margin: 0;
   background: linear-gradient(108deg, #fff 23%, #e8d4ff 61%, #d482ff 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   font-family: var(--font-display);
-  font-size: clamp(2.35rem, 6.3vw, 5.2rem);
+  font-size: clamp(1.75rem, 3.4vw, 3rem);
   font-weight: 800;
   letter-spacing: -0.06em;
   line-height: 1.04;
@@ -277,7 +291,7 @@
 
 .booking-journey__title--category {
   max-width: 20ch;
-  font-size: clamp(2rem, 4.2vw, 3.8rem);
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
 }
 
 .booking-journey__support {
@@ -293,7 +307,7 @@
   display: grid;
   gap: 0.75rem;
   width: min(100%, 39rem);
-  margin-top: clamp(1.8rem, 5vh, 3rem);
+  margin-top: clamp(1.2rem, 3.2vh, 2rem);
   animation: booking-journey-answer-in 550ms 100ms both;
 }
 
@@ -683,9 +697,26 @@
 }
 
 .booking-journey__error {
+  display: flex;
+  width: min(100%, 39rem);
+  align-items: flex-start;
+  gap: 0.65rem;
+  box-sizing: border-box;
   margin: 1rem 0 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgb(255 145 185 / 32%);
+  border-radius: 0.85rem;
+  background: rgb(93 25 58 / 34%);
   color: #ffc1d8;
   font-size: 0.88rem;
+  line-height: 1.5;
+  text-align: left;
+  animation: booking-journey-error-in 220ms ease both;
+}
+
+.booking-journey__error svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
 }
 
 .booking-journey__privacy {
@@ -763,9 +794,8 @@
 }
 
 .booking-journey__step-count {
-  position: absolute;
-  right: 0;
-  bottom: 0.25rem;
+  justify-self: end;
+  margin-top: 0.6rem;
   color: #e5cbff;
   font-family: var(--font-mono);
   font-size: 0.8rem;
@@ -937,9 +967,18 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes booking-journey-error-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 640px) {
   .booking-journey {
-    padding: 0.9rem 1rem;
+    padding:
+      max(0.75rem, env(safe-area-inset-top))
+      max(1rem, env(safe-area-inset-right))
+      max(0.75rem, env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
   }
 
   .booking-journey__brand {
@@ -951,7 +990,7 @@
   }
 
   .booking-journey__body {
-    padding: 1rem 0 2.8rem;
+    padding: 1rem 0 max(1.25rem, env(safe-area-inset-bottom));
   }
 
   .booking-journey__diwali-offer {
@@ -984,31 +1023,26 @@
   }
 
   .booking-journey__progress {
-    margin-bottom: clamp(1.8rem, 5vh, 2.8rem);
+    margin-bottom: clamp(1rem, 3vh, 1.6rem);
   }
 
   .booking-journey__progress-step {
-    gap: 0.4rem;
-    font-size: 0.63rem;
-  }
-
-  .booking-journey__progress-step:not(:last-child)::after {
-    left: calc(50% + 0.9rem);
-    width: calc((100vw - 8rem) / 3);
+    gap: 0.35rem;
+    font-size: clamp(0.58rem, 2.7vw, 0.68rem);
   }
 
   .booking-journey__progress-dot {
-    width: 1.8rem;
+    width: 1.75rem;
   }
 
   .booking-journey__title {
-    max-width: 13ch;
-    font-size: clamp(2.3rem, 10.2vw, 3.6rem);
+    max-width: 19ch;
+    font-size: clamp(1.85rem, 7.2vw, 2.7rem);
   }
 
   .booking-journey__title--category {
-    max-width: 22ch;
-    font-size: clamp(2rem, 8.5vw, 3rem);
+    max-width: 24ch;
+    font-size: clamp(1.8rem, 6.8vw, 2.5rem);
   }
 
   .booking-journey__success {
@@ -1021,7 +1055,7 @@
   }
 
   .booking-journey__answer {
-    margin-top: 1.7rem;
+    margin-top: 1.1rem;
   }
 
   .booking-journey__phone {
@@ -1062,8 +1096,15 @@
   }
 
   .booking-journey__actions {
+    width: 100%;
+    min-width: 0;
     gap: 0.55rem;
-    margin-top: 1.15rem;
+    margin-top: 0.9rem;
+  }
+
+  .booking-journey__primary {
+    min-width: 0;
+    flex: 1 1 0;
   }
 
   .booking-journey__primary,

@@ -10,7 +10,10 @@ function getFailureMessage(status, operation) {
     return 'Too many attempts. Please wait a little and try again.'
   }
   if (status === 400 || status === 409) {
-    return 'Please review your information and try again.'
+    return 'Please check your details and try again.'
+  }
+  if (status >= 500) {
+    return "We're temporarily unable to process your booking. Please try again shortly."
   }
   return `${operation} is temporarily unavailable. Please try again.`
 }

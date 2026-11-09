@@ -55,7 +55,7 @@ export async function submitBookingEnquiry(enquiry, signal) {
       throw error
     }
     throw new BookingApiError(
-      'We could not submit your request right now. Please try again.',
+      'Connection interrupted. Your details are still here; please retry.',
     )
   }
 }
