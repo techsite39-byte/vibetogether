@@ -148,6 +148,19 @@
   white-space: nowrap;
 }
 
+.booking-payment__amount s {
+  color: #a99db5;
+  font-size: 0.78rem;
+}
+
+.booking-payment__offer-tag {
+  color: #f0cf88;
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+
 .booking-payment__details {
   display: grid;
   gap: 0.85rem;
@@ -282,6 +295,7 @@
   background: linear-gradient(145deg, rgb(119 59 255 / 35%), rgb(209 42 255 / 18%));
   box-shadow: 0 0 35px rgb(168 43 255 / 25%);
   color: #eedcff;
+  animation: booking-payment-success 680ms cubic-bezier(0.2, 0.8, 0.25, 1) both;
 }
 
 .booking-payment__reference {
@@ -325,6 +339,30 @@
 
 .booking-payment__confirmation b {
   color: #f3eaff;
+}
+
+.booking-payment__notification {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1rem 0 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgb(191 113 255 / 24%);
+  border-radius: 0.85rem;
+  background: rgb(119 59 255 / 7%);
+  color: #d7c9e6;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.booking-payment__notification b {
+  color: #efdeff;
+  text-transform: capitalize;
+}
+
+.booking-payment__notification--failed,
+.booking-payment__notification--skipped {
+  border-color: rgb(247 187 97 / 28%);
+  background: rgb(247 187 97 / 5%);
 }
 
 .booking-payment__whatsapp {
@@ -383,6 +421,17 @@
   padding-inline: 1.2rem;
 }
 
+.booking-payment__retry-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.booking-payment__retry-actions .booking-payment__secondary {
+  width: 100%;
+  margin-top: 0;
+}
+
 @keyframes booking-payment-enter {
   from { opacity: 0; transform: translateY(18px) scale(0.99); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -390,6 +439,12 @@
 
 @keyframes booking-payment-spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes booking-payment-success {
+  from { opacity: 0; transform: scale(0.68) rotate(-12deg); }
+  65% { opacity: 1; transform: scale(1.08) rotate(3deg); }
+  to { transform: scale(1) rotate(0); }
 }
 
 @media (max-width: 30rem) {
@@ -409,7 +464,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .booking-payment__card,
-  .booking-payment__spinner {
+  .booking-payment__spinner,
+  .booking-payment__success-icon {
     animation-duration: 0.01ms;
     animation-iteration-count: 1;
   }

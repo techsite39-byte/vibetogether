@@ -37,6 +37,26 @@ services:
         sync: false
       - key: SMTP_FROM_EMAIL
         sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_API_VERSION
+        sync: false
+      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_SUCCESS_TEMPLATE_NAME
+        sync: false
+      - key: WHATSAPP_FAILURE_TEMPLATE_NAME
+        sync: false
 
   - type: web
     name: vibetogether-frontend

@@ -8,6 +8,7 @@ function validateBooking(booking) {
     typeof booking.requestId !== 'string' ||
     typeof booking.name !== 'string' ||
     typeof booking.mobile !== 'string' ||
+    (booking.email !== undefined && typeof booking.email !== 'string') ||
     typeof booking.gender !== 'string' ||
     typeof booking.paymentStatus !== 'string' ||
     typeof booking.paymentAmount !== 'number'
@@ -19,6 +20,11 @@ function validateBooking(booking) {
 }
 
 async function requestBooking(path, options, signal) {
+  const payload = await requestPayload(path, options, signal)
+  return validateBooking(payload.booking)
+}
+
+async function requestPayload(path, options, signal) {
   let response
   try {
     response = await fetch(`${API_BASE_URL}/booking-enquiries/${path}`, {
@@ -31,7 +37,7 @@ async function requestBooking(path, options, signal) {
   }
 
   const payload = await readBookingApiResponse(response, 'Booking details')
-  return validateBooking(payload.booking)
+  return payload
 }
 
 export async function getBookingEnquiry(requestId, signal) {
@@ -43,6 +49,81 @@ export async function recordDemoBookingPayment(requestId) {
     `${encodeURIComponent(requestId)}/demo-payment`,
     { method: 'POST' },
   )
+}
+
+export async function recordDemoBookingFailure(requestId, outcome) {
+  return requestBooking(
+    `${encodeURIComponent(requestId)}/demo-payment-failure`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outcome }),
+    },
+  )
+}
+
+export async function createRazorpayOrder(requestId) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/razorpay-order`,
+    { method: 'POST' },
+  )
+  if (payload.pending) {
+    return { pending: true, booking: validateBooking(payload.booking) }
+  }
+  if (
+    typeof payload.order_id !== 'string' ||
+    typeof payload.key_id !== 'string' ||
+    !Number.isInteger(payload.amount) ||
+    typeof payload.currency !== 'string'
+  ) {
+    throw new Error('Razorpay did not return a valid payment order.')
+  }
+  return payload
+}
+
+export async function verifyRazorpayPayment(requestId, payment) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/verify-payment`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payment),
+    },
+  )
+  return {
+    ...payload,
+    booking: validateBooking(payload.booking),
+  }
+}
+
+export async function checkRazorpayPaymentStatus(requestId) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/razorpay-status`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  )
+  return {
+    ...payload,
+    booking: validateBooking(payload.booking),
+  }
+}
+
+export async function recordRazorpayPaymentFailure(requestId, failure) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/razorpay-failure`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(failure),
+    },
+  )
+  return {
+    ...payload,
+    booking: validateBooking(payload.booking),
+  }
 }
 
 export async function optOutOfWhatsAppUpdates(requestId) {

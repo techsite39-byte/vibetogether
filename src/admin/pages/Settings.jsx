@@ -1,89 +1,42 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle2, Save, Send, ShieldAlert } from 'lucide-react'
+import { useState } from 'react'
+import { Save, ShieldAlert } from 'lucide-react'
 import { AdminNotice, AdminPageHeader, AdminPanel } from '../components/AdminUI.jsx'
 import { useAdminData } from '../context/useAdminData.js'
-import { adminRequest } from '../services/adminApi.js'
-
-const defaultWhatsAppSettings = {
-  enabled: true,
-  displayNumber: '',
-  businessContact: '',
-  templateName: 'vibe_booking_confirmation_v1',
-  templateLanguage: 'en',
-}
 
 export default function Settings() {
-  const { settings, storageError, updateSettings } = useAdminData()
+  const { settings, diwaliOffer, actor, storageError, updateSettings, updateDiwaliOffer } = useAdminData()
   const [draft, setDraft] = useState(null)
+  const [offerDraft, setOfferDraft] = useState(null)
   const form = draft ?? settings
+  const offerForm = offerDraft ?? diwaliOffer
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [whatsapp, setWhatsApp] = useState(defaultWhatsAppSettings)
-  const [whatsappDraft, setWhatsAppDraft] = useState(null)
-  const [whatsappStatus, setWhatsAppStatus] = useState(null)
-  const [whatsappMessage, setWhatsAppMessage] = useState('')
-  const [whatsappError, setWhatsAppError] = useState('')
-  const [whatsappSaving, setWhatsAppSaving] = useState(false)
-  const whatsappForm = whatsappDraft ?? whatsapp
 
-  useEffect(() => {
-    let active = true
-    adminRequest('/admin/settings/whatsapp')
-      .then(({ settings, configuration }) => {
-        if (active) {
-          setWhatsApp({ ...defaultWhatsAppSettings, ...settings })
-          setWhatsAppStatus(configuration)
-        }
-      })
-      .catch((loadError) => {
-        if (active) {
-          setWhatsAppError(loadError instanceof Error ? loadError.message : 'WhatsApp settings could not be loaded.')
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  function toIstDateTimeInput(value) {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return date.toLocaleString('sv-SE', {
+      timeZone: 'Asia/Kolkata',
+      hour12: false,
+    }).replace(' ', 'T').slice(0, 16)
+  }
+
+  function fromIstDateTimeInput(value) {
+    return value ? new Date(`${value}:00+05:30`).toISOString() : ''
+  }
+
+  function offerDateToIso(value) {
+    if (!value) return ''
+    return /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+      ? new Date(value).toISOString()
+      : fromIstDateTimeInput(value)
+  }
 
   function updateField(key, value) {
     setDraft((current) => ({ ...(current ?? settings), [key]: value }))
     setMessage('')
     setError('')
-  }
-
-  async function saveWhatsAppSettings(event) {
-    event.preventDefault()
-    setWhatsAppSaving(true)
-    setWhatsAppError('')
-    setWhatsAppMessage('')
-    try {
-      const { settings: saved, configuration } = await adminRequest('/admin/settings/whatsapp', {
-        method: 'PUT',
-        body: JSON.stringify(whatsappForm),
-      })
-      setWhatsApp({ ...defaultWhatsAppSettings, ...saved })
-      setWhatsAppStatus(configuration)
-      setWhatsAppDraft(null)
-      setWhatsAppMessage('WhatsApp settings saved.')
-    } catch (saveError) {
-      setWhatsAppError(saveError instanceof Error ? saveError.message : 'WhatsApp settings could not be saved.')
-    } finally {
-      setWhatsAppSaving(false)
-    }
-  }
-
-  async function sendWhatsAppTest() {
-    setWhatsAppError('')
-    setWhatsAppMessage('')
-    try {
-      await adminRequest('/admin/settings/whatsapp/test', {
-        method: 'POST',
-        body: JSON.stringify({}),
-      })
-      setWhatsAppMessage('Test message accepted by WhatsApp. Delivery is not yet confirmed.')
-    } catch (testError) {
-      setWhatsAppError(testError instanceof Error ? testError.message : 'WhatsApp test could not be sent.')
-    }
   }
 
   function updateCategory(categoryId, updates) {
@@ -106,6 +59,37 @@ export default function Settings() {
         notifications: { ...base.notifications, [key]: checked },
       }
     })
+  }
+
+  function updateOfferField(key, value) {
+    setOfferDraft((current) => ({ ...(current ?? diwaliOffer), [key]: value }))
+    setMessage('')
+    setError('')
+  }
+
+  async function saveOffer() {
+    if (!offerForm) {
+      setError('Offer settings are still loading.')
+      return
+    }
+    try {
+      const saved = await updateDiwaliOffer({
+        enabled: offerForm.enabled,
+        regularPrice: Number(offerForm.regularPrice),
+        offerPrice: Number(offerForm.offerPrice),
+        activationAt: offerDateToIso(offerForm.activationAt),
+        expiresAt: offerDateToIso(offerForm.expiresAt),
+      })
+      if (saved) {
+        setMessage('Diwali offer settings saved.')
+        setError('')
+        setOfferDraft(null)
+      } else {
+        setError('Diwali offer settings could not be saved.')
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Offer settings could not be saved.')
+    }
   }
 
   async function saveSettings(event) {
@@ -163,35 +147,7 @@ export default function Settings() {
       </AdminNotice>
       {(error || storageError) && <AdminNotice tone="error">{error || storageError}</AdminNotice>}
       {message && <AdminNotice tone="success">{message}</AdminNotice>}
-      {(whatsappError || whatsappMessage) && (
-        <AdminNotice tone={whatsappError ? 'error' : 'success'}>
-          {whatsappError || whatsappMessage}
-        </AdminNotice>
-      )}
       <form className="admin-settings" onSubmit={saveSettings}>
-        <AdminPanel title="WhatsApp Business confirmations">
-          <div className="admin-settings__grid">
-            <label className="admin-checkbox">
-              <input checked={whatsappForm.enabled} onChange={(event) => setWhatsAppDraft((current) => ({ ...(current ?? whatsapp), enabled: event.target.checked }))} type="checkbox" />
-              Enable consent-based booking confirmations
-            </label>
-            <label>Business display number<input autoComplete="off" maxLength={30} onChange={(event) => setWhatsAppDraft((current) => ({ ...(current ?? whatsapp), displayNumber: event.target.value }))} placeholder="Not configured" value={whatsappForm.displayNumber} /></label>
-            <label>Business contact information<input autoComplete="off" maxLength={200} onChange={(event) => setWhatsAppDraft((current) => ({ ...(current ?? whatsapp), businessContact: event.target.value }))} placeholder="Support contact details" value={whatsappForm.businessContact} /></label>
-            <label>Approved booking template<input autoComplete="off" maxLength={80} onChange={(event) => setWhatsAppDraft((current) => ({ ...(current ?? whatsapp), templateName: event.target.value }))} value={whatsappForm.templateName} /></label>
-            <label>Template language code<input autoComplete="off" maxLength={8} onChange={(event) => setWhatsAppDraft((current) => ({ ...(current ?? whatsapp), templateLanguage: event.target.value }))} placeholder="en" value={whatsappForm.templateLanguage} /></label>
-          </div>
-          <p className="admin-muted">
-            API secrets stay in Render environment variables. API connection: {whatsappStatus?.configured ? 'configured' : 'not configured'}; webhook verification: {whatsappStatus?.webhookConfigured ? 'configured' : 'not configured'}; authorized test recipient: {whatsappStatus?.testNumberConfigured ? 'configured' : 'not configured'}.
-          </p>
-          {whatsappStatus?.configured && (
-            <p className="admin-settings__security"><CheckCircle2 size={18} aria-hidden="true" /><span>Messages use the approved template and the WhatsApp Cloud API.</span></p>
-          )}
-          <div className="admin-toolbar">
-            <button className="admin-button admin-button--primary" disabled={whatsappSaving} type="button" onClick={(event) => void saveWhatsAppSettings(event)}><Save size={17} aria-hidden="true" /> Save WhatsApp settings</button>
-            <button className="admin-button" onClick={() => { setWhatsAppDraft(null); setWhatsAppError(''); setWhatsAppMessage('') }} type="button">Cancel</button>
-            <button className="admin-button" disabled={!whatsappStatus?.testNumberConfigured || !whatsappStatus?.configured} onClick={() => void sendWhatsAppTest()} type="button"><Send size={16} aria-hidden="true" /> Send authorized test</button>
-          </div>
-        </AdminPanel>
         <AdminPanel title="Brand and contact">
           <div className="admin-settings__grid">
             <label>Platform name<input maxLength={80} onChange={(e) => updateField('platformName', e.target.value)} value={form.platformName} /></label>
@@ -208,6 +164,53 @@ export default function Settings() {
             <label>YouTube URL<input autoComplete="url" onChange={(e) => updateField('socialYoutube', e.target.value)} placeholder="Not configured" value={form.socialYoutube} /></label>
             <label>LinkedIn URL<input autoComplete="url" onChange={(e) => updateField('socialLinkedin', e.target.value)} placeholder="Not configured" value={form.socialLinkedin} /></label>
           </div>
+        </AdminPanel>
+        <AdminPanel title="Diwali special offer">
+          <p className="admin-muted">
+            Offer dates use Asia/Kolkata. Expiry must be exactly 72 hours after activation.
+            Current status: <strong>{diwaliOffer?.status ?? 'Loading'}</strong>
+          </p>
+          <div className="admin-settings__grid">
+            <label className="admin-checkbox">
+              <input
+                checked={Boolean(offerForm?.enabled)}
+                disabled={!offerForm || actor?.role !== 'super_admin'}
+                onChange={(event) => updateOfferField('enabled', event.target.checked)}
+                type="checkbox"
+              />
+              Enable Diwali offer
+            </label>
+            <label>Regular price (₹)<input
+              min="1"
+              onChange={(event) => updateOfferField('regularPrice', event.target.value)}
+              type="number"
+              value={offerForm?.regularPrice ?? ''}
+            /></label>
+            <label>Offer price (₹)<input
+              min="1"
+              onChange={(event) => updateOfferField('offerPrice', event.target.value)}
+              type="number"
+              value={offerForm?.offerPrice ?? ''}
+            /></label>
+            <label>Activation date and time (IST)<input
+              onChange={(event) => updateOfferField('activationAt', event.target.value)}
+              type="datetime-local"
+              value={toIstDateTimeInput(offerForm?.activationAt)}
+            /></label>
+            <label>Expiry date and time (IST)<input
+              onChange={(event) => updateOfferField('expiresAt', event.target.value)}
+              type="datetime-local"
+              value={toIstDateTimeInput(offerForm?.expiresAt)}
+            /></label>
+          </div>
+          <p className="admin-muted">
+            Savings: ₹{Math.max(0, Number(offerForm?.regularPrice ?? 0) - Number(offerForm?.offerPrice ?? 0))}
+          </p>
+          {actor?.role === 'super_admin' && (
+            <button className="admin-button admin-button--secondary" onClick={() => void saveOffer()} type="button">
+              Save Diwali offer
+            </button>
+          )}
         </AdminPanel>
         <AdminPanel title="Event categories">
           <p className="admin-muted">Category availability and names are stored in the platform database.</p>

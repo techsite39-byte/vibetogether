@@ -92,110 +92,117 @@ only if using a browser-based Google credential flow. Production admin session
 cookies use `SameSite=None; Secure` so credentialed API calls work across the
 Vercel and Render origins; CORS remains restricted to the configured frontend.
 
-The booking enquiry payment screen currently runs in demo mode. A demo payment
-updates the original booking enquiry with one idempotent demo payment status;
-it does not call Razorpay Checkout or collect money. The server-side provider
-boundary is deliberately separate so real order creation, Checkout,
-signature verification, and webhook verification can be added later.
+The booking flow uses a database-backed Diwali offer, initially activated once
+when the offer record is first created. Its activation and expiry are persisted;
+the expiry is exactly 72 hours after activation and is never reset on page
+refresh or server restart. Super-admins can edit the activation, expiry, enable
+flag, and prices in **Admin → Settings**. Backend order creation independently
+calculates the active price: ₹249 (24,900 paise) during the offer, otherwise
+₹299 (29,900 paise). An existing order retains its original price; a new order
+after a failed attempt uses the then-current server price.
 
-## WhatsApp booking confirmations
+Configure these server-only Render variables for Razorpay:
+`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET`.
+The webhook secret is the separate secret configured in the Razorpay dashboard.
+The signed checkout callback and payment-status fetch verify the order, amount,
+currency, signature, and captured status before atomically assigning a permanent
+booking reference. Failed payment sessions remain retryable without a
+permanent reference. Never prefix or expose any Razorpay secret to Vite.
+Without the key ID and key secret, the page uses the explicit demo simulator;
+it does not charge money.
 
-The existing booking-enquiry flow sends a transactional WhatsApp confirmation
-only after MongoDB saves the enquiry and only when the customer checked the
-WhatsApp consent box. It uses the permanent sequential booking reference stored
-on that same record. Duplicate enquiry submissions do not send another message.
-If WhatsApp is unavailable, the booking remains saved and its notification
-state is visible to the customer and admins. Explicitly rejected, retryable API
-requests are retried by a persisted background worker; timeouts and other
-ambiguous outcomes are not resent automatically because the provider may have
-accepted them. Admin retries are limited to failures known to be safe to retry.
-Delivery is recorded only from a signed Meta webhook.
+Razorpay webhook endpoint:
+`https://vibetogether-ahgy.onrender.com/api/razorpay/webhook`
 
-Set these variables on the Render API service (never as `VITE_*` variables):
+WhatsApp booking notifications use the official Meta Cloud API and are sent to
+the customer's consented, validated mobile number (not the business number).
+Set `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_API_VERSION`,
+`WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_SUCCESS_TEMPLATE_NAME`, and
+`WHATSAPP_FAILURE_TEMPLATE_NAME` in Render. Set `WHATSAPP_APP_SECRET` to verify
+Meta webhook signatures. The configured phone number ID must be the Vibe
+Together sender in Meta; the recipient is always the customer's consented
+number from the booking form.
+Templates must be submitted and approved in Meta WhatsApp Manager, use
+`en_US`, and match the following body text and placeholder order.
 
-- `WHATSAPP_PHONE_NUMBER_ID` — Meta phone number ID used by the Cloud API.
-- `WHATSAPP_BUSINESS_ACCOUNT_ID` — WhatsApp Business Account ID.
-- `WHATSAPP_ACCESS_TOKEN` — permanent System User access token with
-  `whatsapp_business_messaging` permission.
-- `WHATSAPP_API_VERSION` — a currently supported Meta Graph API version
-  (required when enabling live requests; the server does not guess an API
-  version).
-- `WHATSAPP_APP_SECRET` — Meta app secret used to validate
-  `X-Hub-Signature-256`.
-- `WHATSAPP_WEBHOOK_VERIFY_TOKEN` — private random token used for the initial
-  webhook subscription challenge.
-- `WHATSAPP_TEMPLATE_NAME` — defaults to `vibe_booking_confirmation_v1`.
-- `WHATSAPP_TEMPLATE_LANGUAGE` — defaults to `en`.
-- `WHATSAPP_TEST_PHONE_NUMBER` — the explicitly authorized E.164 test number
-  used by the Admin Settings test action.
-
-In WhatsApp Manager, create and submit a **Utility** template named
-`vibe_booking_confirmation_v1` in language `English (en)`. The approved body
-must use the following nine text variables in this exact order:
-
-1. Customer name
-2. Saved booking reference
-3. Customer mobile
-4. Saved category or event
-5. Gender
-6. Booking submission date in `Asia/Kolkata`
-7. Booking submission time in `Asia/Kolkata`
-8. Payment status (`Unpaid` or `Demo Paid (no real money collected)`)
-9. Booking status (`Booking Received (not yet approved)`)
-
-Suggested template body (Meta must approve the actual template):
+Success template:
 
 ```text
-✨ WELCOME TO VIBE TOGETHER! ✨
-
-Hello {{1}},
-Thank you for choosing Vibe Together! ❤️
-Your booking enquiry has been successfully received.
-
-🎟️ YOUR BOOKING REFERENCE
+✨ VIBE TOGETHER – BOOKING CONFIRMATION ✨
+Hello {{1}}! 👋
+Thank you for choosing Vibe Together! 💜
+Your payment has been successfully completed and your booking has been registered.
+🎟️ YOUR BOOKING REFERENCE:
 {{2}}
-
 📋 BOOKING DETAILS
-Name: {{1}}
-Mobile: {{3}}
-Category / event: {{4}}
-Gender: {{5}}
-Booking date: {{6}}
-Booking time: {{7}}
-
-💳 PAYMENT INFORMATION
-Amount: ₹299
-Payment status: {{8}}
-
-📌 BOOKING STATUS
+Name: {{3}}
+Mobile: {{4}}
+Email: {{5}}
+Category: {{6}}
+Gender: {{7}}
+Booking Date: {{8}}
+💳 PAYMENT DETAILS
 {{9}}
-
+Payment Status: {{10}}
+📌 BOOKING STATUS: {{11}}
 Thank you for being part of Vibe Together!
-Your next story starts here. 💜
-For booking assistance, please contact our Vibe Together team.
-https://www.vibetogether.show/
-
+Your next story starts here! ✨
+🌐 https://www.vibetogether.show/
 VIBE TOGETHER
-Connect. Celebrate. Experience.
+Connect. Celebrate. Experience. 💜
 ```
 
-The current enquiry form does not collect customer email, so email is omitted
-rather than fabricated. Booking date/time in this message are the saved enquiry
-submission time, not an event schedule. Enable confirmations and configure the
-approved template under Admin → Settings → WhatsApp Business confirmations.
-The test button can send only to `WHATSAPP_TEST_PHONE_NUMBER`.
+`{{9}}` is populated from the finalized booking with regular price and amount
+paid, plus the Diwali offer price only when the booking actually received it.
+`{{11}}` is `Approved` or `Pending Approval`.
 
-Subscribe the Meta app to the `messages` webhook field for the WABA and register
-this callback URL:
+Failure/payment-assistance template:
 
-`https://vibetogether-ahgy.onrender.com/api/webhooks/whatsapp`
+```text
+✨ VIBE TOGETHER – PAYMENT ASSISTANCE ✨
+Hello {{1}}! 👋
+We noticed that your Vibe Together booking payment was not completed.
+Don't worry! You can try again.
+📋 YOUR BOOKING DETAILS
+Name: {{1}}
+Mobile: {{2}}
+Category: {{3}}
+💳 Payment Amount: {{4}}
+Payment Status: {{5}}
+Your booking has not yet been confirmed.
+Please return to Vibe Together and retry your payment to complete your booking.
+Need assistance? Contact our team.
+🌐 https://www.vibetogether.show/
+VIBE TOGETHER
+Your next story starts here! 💜
+```
 
-Use the same verify token as `WHATSAPP_WEBHOOK_VERIFY_TOKEN`. The endpoint
-validates Meta's HMAC signature before processing delivery/read/failure
-statuses or an inbound `STOP`, `UNSUBSCRIBE`, or `CANCEL` opt-out. The current
-workspace has no supplied live Meta credentials or approved template, so the
-integration is not connected to a live WhatsApp account; tests use mocked API
-responses.
+For the failure template, `{{1}}` is the customer name, `{{2}}` mobile,
+`{{3}}` category, `{{4}}` applicable amount, and `{{5}}` failed/cancelled
+payment status. Do not include a permanent booking reference.
+
+The Meta webhook endpoint is
+`https://vibetogether-ahgy.onrender.com/api/whatsapp/webhook`. Configure that
+callback URL and `WHATSAPP_WEBHOOK_VERIFY_TOKEN` in Meta. API acceptance is
+reported as **Sent**, not **Delivered**; delivery, read, and failure statuses
+are recorded only from signed status webhooks. Missing consent is recorded as
+**Skipped**, and notification errors never undo a finalized payment or booking.
+
+## Payment-first category bookings
+
+Category booking submissions are saved as seven-day temporary payment sessions
+with no permanent booking reference. In demo mode, the explicit simulator records
+`Demo Paid` and does not charge money. The atomic reference counter preserves the
+first reference `10812026501` and advances beyond all saved references.
+
+Run `npm run bookings:reconcile` in the backend directory for a read-only summary
+of referenced unpaid records, demo/actual paid records, failed payment records,
+temporary sessions, legacy WhatsApp failures, the maximum assigned reference,
+and the saved counter value. To backfill expiry only for unreferenced temporary
+sessions missing it, explicitly run
+`npm run bookings:reconcile -- --backfill-temporary-expiry`; this sets their
+expiry to seven days after creation and never deletes or changes payment/reference
+data.
 
 Use `/api/health` for a process liveness check and `/api/health/ready` to
 confirm MongoDB connectivity. The API now waits for MongoDB and startup
@@ -211,23 +218,25 @@ deployment instead of appearing healthy with unavailable data APIs.
   collection. Startup adds the existing event catalog only when the collection
   is empty and fills fields missing from matching legacy records without
   replacing existing values.
-- `POST /api/booking-enquiries` validates and stores enquiries in the
-  `user-db` collection under `MONGODB_DB_NAME`. The request uses `name`,
-  `mobile`, `eventId`, `gender`, and a UUID `requestId`. Event names,
-  timestamps, source (`Website booking journey`), and pending status are resolved
-  by the server.
+- `POST /api/booking-enquiries` validates and stores a temporary payment session
+  in the `user-db` collection under `MONGODB_DB_NAME`. The request uses `name`,
+  optional `email`, `mobile`, `categoryId` or `eventId`, `gender`, and a UUID
+  `requestId`. Temporary sessions have no reference and expire after seven days.
 - `GET /api/booking-enquiries/:requestId` returns the saved enquiry summary for
-  the payment page. `POST /api/booking-enquiries/:requestId/demo-payment`
-  atomically records one fixed ₹299 demo payment on that same record.
+  the payment page. `POST /api/booking-enquiries/:requestId/razorpay-order`
+  creates or reuses a server-priced order; `POST
+  /api/booking-enquiries/:requestId/verify-payment` verifies checkout
+  signatures and captured status before finalizing. When Razorpay is not
+  configured, `POST /api/booking-enquiries/:requestId/demo-payment` is an
+  explicit simulator; it records `Demo Paid` and finalizes that same record.
+  `POST /api/booking-enquiries/:requestId/demo-payment-failure` records a
+  failed/cancelled demo attempt without assigning a reference.
 - `POST /api/booking-enquiries/:requestId/whatsapp-opt-out` revokes the
-  customer's transactional WhatsApp consent for the saved enquiry.
-- `GET /api/webhooks/whatsapp` verifies the Meta webhook subscription;
-  `POST /api/webhooks/whatsapp` validates signed status and opt-out events.
-- Authenticated `/api/admin/bookings/:reference/whatsapp` returns notification
-  history, and `POST /api/admin/bookings/:reference/whatsapp/retry` retries an
-  eligible failed notification. Super-admin-only `/api/admin/settings/whatsapp`
-  manages non-secret settings; `POST /api/admin/settings/whatsapp/test` sends
-  only to the configured test phone.
+  customer's WhatsApp notification consent for the saved enquiry.
+- `POST /api/whatsapp/webhook` verifies Meta webhook signatures and records
+  delivery statuses; `/api/razorpay/webhook` verifies Razorpay signatures and
+  processes payment updates idempotently. Authenticated
+  `/api/admin/bookings/:reference/whatsapp` returns notification history.
 - `POST /api/newsletter` stores subscriptions in `newsletter-db`.
 - `POST /api/enquiries/contact` and `POST /api/enquiries/host-event` store
   contact and event-hosting requests in `enquiry-db`.

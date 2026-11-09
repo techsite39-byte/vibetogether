@@ -34,6 +34,7 @@ const emptyWorkspace = {
   gallery: [],
   admins: [],
   activity: [],
+  diwaliOffer: null,
   settings: defaultPlatformSettings,
 }
 
@@ -106,6 +107,7 @@ function mapWorkspace(workspace) {
   return {
     ...emptyWorkspace,
     ...workspace,
+    diwaliOffer: workspace.diwaliOffer ?? null,
     users: (workspace.users ?? []).map(mapUser),
     organizers: (workspace.organizers ?? []).map(mapOrganizer),
     bookings: (workspace.bookings ?? []).map(mapBooking),
@@ -306,6 +308,16 @@ export function AdminDataProvider({ children, actor }) {
     return true
   }, [mutate])
 
+  const updateDiwaliOffer = useCallback((offer) => mutate(
+    '/admin/settings/diwali-offer',
+    'PUT',
+    offer,
+    ({ offer: savedOffer }) => setData((current) => ({
+      ...current,
+      diwaliOffer: savedOffer,
+    })),
+  ), [mutate])
+
   return (
     <AdminDataContext.Provider
       value={{
@@ -324,6 +336,7 @@ export function AdminDataProvider({ children, actor }) {
         updateOrganizer,
         updateBooking,
         updateSettings,
+        updateDiwaliOffer,
       }}
     >
       {loading && (

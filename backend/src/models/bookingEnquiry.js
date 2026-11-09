@@ -23,6 +23,13 @@ const bookingEnquirySchema = new mongoose.Schema(
       required: true,
       maxlength: 16,
     },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      maxlength: 254,
+      default: '',
+    },
     whatsappConsent: {
       type: Boolean,
       required: true,
@@ -39,8 +46,18 @@ const bookingEnquirySchema = new mongoose.Schema(
     whatsappNotification: {
       messageType: {
         type: String,
-        enum: ['booking_confirmation'],
+        enum: ['booking_confirmation', 'payment_assistance'],
         default: 'booking_confirmation',
+      },
+      recipient: {
+        type: String,
+        maxlength: 16,
+        default: '',
+      },
+      idempotencyKey: {
+        type: String,
+        maxlength: 120,
+        default: '',
       },
       bookingReference: {
         type: String,
@@ -97,6 +114,7 @@ const bookingEnquirySchema = new mongoose.Schema(
           at: { type: Date, required: true },
           source: { type: String, enum: ['system', 'admin', 'webhook'], required: true },
           note: { type: String, maxlength: 300, default: '' },
+          eventKey: { type: String, maxlength: 200, default: '' },
         }],
         default: [],
       },
@@ -147,7 +165,7 @@ const bookingEnquirySchema = new mongoose.Schema(
     paymentStatus: {
       type: String,
       required: true,
-      enum: ['unpaid', 'demo_paid'],
+      enum: ['unpaid', 'processing', 'failed', 'demo_paid', 'paid', 'refunded'],
       default: 'unpaid',
     },
     paymentAmount: {
@@ -155,9 +173,57 @@ const bookingEnquirySchema = new mongoose.Schema(
       min: 0,
       default: 299,
     },
+    paymentAmountPaise: {
+      type: Number,
+      min: 0,
+      default: 29900,
+    },
+    paymentOrderAmountPaise: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    paymentOrders: {
+      type: [{
+        orderId: { type: String, required: true, maxlength: 80 },
+        amount: { type: Number, required: true, min: 1 },
+        amountPaise: { type: Number, required: true, min: 100 },
+        regularPrice: { type: Number, required: true, min: 1 },
+        offerPrice: { type: Number, required: true, min: 1 },
+        diwaliOfferApplied: { type: Boolean, required: true },
+        offerActivationAt: { type: Date, default: null },
+        offerExpiresAt: { type: Date, default: null },
+        status: { type: String, enum: ['created', 'failed', 'paid'], default: 'created' },
+        createdAt: { type: Date, required: true },
+        paymentId: { type: String, default: '', maxlength: 80 },
+      }],
+      default: [],
+    },
+    regularPrice: {
+      type: Number,
+      min: 0,
+      default: 299,
+    },
+    offerPrice: {
+      type: Number,
+      min: 0,
+      default: 249,
+    },
+    diwaliOfferApplied: {
+      type: Boolean,
+      default: false,
+    },
+    offerActivationAt: {
+      type: Date,
+      default: null,
+    },
+    offerExpiresAt: {
+      type: Date,
+      default: null,
+    },
     paymentProvider: {
       type: String,
-      enum: ['razorpay_demo'],
+      enum: ['razorpay_demo', 'razorpay'],
       default: null,
     },
     paymentReference: {
@@ -165,7 +231,51 @@ const bookingEnquirySchema = new mongoose.Schema(
       maxlength: 80,
       default: '',
     },
+    paymentOrderId: {
+      type: String,
+      maxlength: 80,
+      default: '',
+    },
+    razorpayPaymentId: {
+      type: String,
+      maxlength: 80,
+      default: '',
+    },
+    paymentOrderCreatedAt: {
+      type: Date,
+      default: null,
+    },
+    paymentOrderAttemptNumber: {
+      type: Number,
+      min: 1,
+      default: 0,
+    },
     paidAt: {
+      type: Date,
+      default: null,
+    },
+    paymentVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    paymentFailureReason: {
+      type: String,
+      enum: ['', 'failed', 'cancelled'],
+      default: '',
+    },
+    paymentAttemptId: {
+      type: String,
+      maxlength: 36,
+    },
+    paymentAttemptPricing: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    paymentAttemptedAt: {
+      type: Date,
+      default: null,
+    },
+    expiresAt: {
       type: Date,
       default: null,
     },
@@ -178,6 +288,7 @@ const bookingEnquirySchema = new mongoose.Schema(
 
 bookingEnquirySchema.index({ requestId: 1 }, { unique: true, sparse: true })
 bookingEnquirySchema.index({ reference: 1 }, { unique: true, sparse: true })
+bookingEnquirySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 bookingEnquirySchema.index({ 'whatsappNotification.providerMessageId': 1 }, { sparse: true })
 
 export const BookingEnquiry =

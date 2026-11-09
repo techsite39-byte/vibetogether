@@ -464,9 +464,9 @@ function cleanPlatformSettings(value) {
 function bookingFromEnquiry(enquiry) {
   return {
     id: enquiry.requestId,
-    reference: enquiry.reference ?? enquiry.requestId,
+    reference: enquiry.reference ?? '',
     customer: enquiry.name,
-    customerEmail: '',
+    customerEmail: enquiry.email ?? '',
     mobile: enquiry.mobile,
     eventId: enquiry.eventId,
     event: enquiry.event,
@@ -475,14 +475,29 @@ function bookingFromEnquiry(enquiry) {
     ticketCount: 1,
     createdAt: enquiry.createdAt,
     amount: enquiry.paymentAmount ?? 299,
+    paymentAmountPaise: enquiry.paymentAmountPaise ?? (enquiry.paymentAmount ?? 299) * 100,
+    regularPrice: enquiry.regularPrice ?? 299,
+    offerPrice: enquiry.offerPrice ?? 249,
+    diwaliOfferApplied: Boolean(enquiry.diwaliOfferApplied),
+    offerActivationAt: enquiry.offerActivationAt ?? null,
+    offerExpiresAt: enquiry.offerExpiresAt ?? null,
     currency: 'INR',
     paymentStatus: enquiry.paymentStatus ?? 'unpaid',
+    paymentProvider: enquiry.paymentProvider ?? '',
+    paymentReference: enquiry.paymentReference ?? '',
+    paymentOrderId: enquiry.paymentOrderId ?? '',
+    razorpayPaymentId: enquiry.razorpayPaymentId ?? '',
+    paidAt: enquiry.paidAt ?? null,
+    paymentVerifiedAt: enquiry.paymentVerifiedAt ?? null,
+    paymentFailureReason: enquiry.paymentFailureReason ?? '',
     status: enquiry.status,
     source: 'booking-enquiry',
     whatsappConsent: Boolean(enquiry.whatsappConsent),
+    whatsappActionStatus: 'not_available',
     whatsappConsentAt: enquiry.whatsappConsentAt ?? null,
+    whatsappOptedOutAt: enquiry.whatsappOptedOutAt ?? null,
     whatsappNotification: enquiry.whatsappNotification ?? {
-      status: enquiry.whatsappConsent ? 'pending' : 'skipped',
+      status: 'not_available',
       history: [],
     },
   }
@@ -496,7 +511,7 @@ async function listBookings(request) {
   ])
   let items = [
     ...bookings.map(jsonRecord),
-    ...enquiries.map(bookingFromEnquiry),
+    ...enquiries.filter((enquiry) => Boolean(enquiry.reference)).map(bookingFromEnquiry),
   ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   const status = typeof request.query.status === 'string'
     ? request.query.status.trim()
@@ -507,7 +522,7 @@ async function listBookings(request) {
   const paymentStatus = typeof request.query.paymentStatus === 'string'
     ? request.query.paymentStatus.trim()
     : ''
-  if (['not_required', 'pending', 'verified', 'failed', 'unpaid', 'demo_paid'].includes(paymentStatus)) {
+  if (['not_required', 'pending', 'verified', 'paid', 'failed', 'unpaid', 'demo_paid', 'processing', 'refunded'].includes(paymentStatus)) {
     items = items.filter((item) => item.paymentStatus === paymentStatus)
   }
   const search = typeof request.query.search === 'string'
@@ -538,7 +553,7 @@ async function listBookings(request) {
   }
 }
 
-async function getWorkspace() {
+async function getWorkspace({ diwaliOfferService } = {}) {
   const [
     users,
     organizers,
@@ -553,6 +568,7 @@ async function getWorkspace() {
     admins,
     activity,
     settingsRecord,
+    diwaliOffer,
   ] = await Promise.all([
     User.find({}).sort({ createdAt: -1 }).limit(500).lean(),
     Organizer.find({}).sort({ createdAt: -1 }).limit(500).lean(),
@@ -567,6 +583,7 @@ async function getWorkspace() {
     AdminCredential.find({}).select('username role active createdAt lastLoginAt').sort({ createdAt: -1 }).limit(500).lean(),
     ActivityLog.find({}).sort({ createdAt: -1 }).limit(100).lean(),
     PlatformSetting.findOne({ key: 'platform' }).lean(),
+    diwaliOfferService?.getOffer?.() ?? Promise.resolve(null),
   ])
 
   return {
@@ -575,7 +592,7 @@ async function getWorkspace() {
     events: events.map(jsonRecord),
     bookings: [
       ...bookings.map((item) => ({ ...jsonRecord(item), source: 'booking' })),
-      ...bookingEnquiries.map(bookingFromEnquiry),
+      ...bookingEnquiries.filter((enquiry) => Boolean(enquiry.reference)).map(bookingFromEnquiry),
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
     categories: categories.map(jsonRecord),
     testimonials: testimonials.map(jsonRecord),
@@ -585,6 +602,7 @@ async function getWorkspace() {
     admins: admins.map(jsonRecord),
     activity: activity.map(jsonRecord),
     settings: settingsRecord?.value ?? null,
+    diwaliOffer,
   }
 }
 
@@ -609,7 +627,7 @@ async function getOverview() {
     Organizer.countDocuments(),
     Event.countDocuments(),
     Booking.countDocuments(),
-    BookingEnquiry.countDocuments(),
+    BookingEnquiry.countDocuments({ reference: { $exists: true, $ne: '' } }),
     Category.countDocuments(),
     Testimonial.countDocuments(),
     Subscriber.countDocuments({ status: 'subscribed' }),
@@ -660,8 +678,7 @@ export function createAdminRouter({
   adminModel = AdminCredential,
   sessionModel = AdminSession,
   bookingEnquiryRepository,
-  whatsappService,
-  whatsappTestPhoneNumber = '',
+  diwaliOfferService,
 }) {
   const router = Router()
   const requireAdmin = createRequireAdmin({
@@ -681,7 +698,7 @@ export function createAdminRouter({
 
   router.get('/workspace', async (_request, response, next) => {
     try {
-      response.json(await getWorkspace())
+      response.json(await getWorkspace({ diwaliOfferService }))
     } catch (error) {
       next(error)
     }
@@ -712,73 +729,12 @@ export function createAdminRouter({
       }
       response.json({
         reference: enquiry.reference,
-        status: enquiry.whatsappNotification?.status ?? 'skipped',
+        status: enquiry.whatsappNotification?.status ?? 'not_available',
         attemptCount: enquiry.whatsappNotification?.attemptCount ?? 0,
         lastAttemptAt: enquiry.whatsappNotification?.lastAttemptAt ?? null,
         deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
         providerMessageId: enquiry.whatsappNotification?.providerMessageId ?? '',
         history: enquiry.whatsappNotification?.history ?? [],
-      })
-    } catch (error) {
-      next(error)
-    }
-  })
-
-  router.post('/bookings/:reference/whatsapp/retry', async (request, response, next) => {
-    try {
-      const enquiry = await bookingEnquiryRepository?.findByReference?.(request.params.reference)
-      if (!enquiry) {
-        response.status(404).json({ message: 'Booking enquiry was not found.' })
-        return
-      }
-      if (!enquiry.whatsappConsent) {
-        response.status(409).json({ message: 'The customer did not consent to WhatsApp messages.' })
-        return
-      }
-      if (['sent', 'delivered', 'read'].includes(enquiry.whatsappNotification?.status)) {
-        response.status(409).json({ message: 'A successful WhatsApp confirmation cannot be resent.' })
-        return
-      }
-      if (enquiry.whatsappNotification?.status !== 'failed') {
-        response.status(409).json({ message: 'Only failed WhatsApp confirmations can be retried.' })
-        return
-      }
-      if (!enquiry.whatsappNotification?.retryable) {
-        response.status(409).json({ message: 'This failure may have reached WhatsApp. It cannot be retried automatically to avoid duplicate messages.' })
-        return
-      }
-      if (
-        typeof bookingEnquiryRepository?.claimWhatsAppAttempt !== 'function' ||
-        typeof bookingEnquiryRepository?.completeWhatsAppAttempt !== 'function' ||
-        typeof whatsappService?.sendBookingConfirmation !== 'function'
-      ) {
-        response.status(503).json({ message: 'WhatsApp retry is not configured.' })
-        return
-      }
-      const claimed = await bookingEnquiryRepository.claimWhatsAppAttempt(enquiry.requestId, {
-        retryFailed: true,
-      })
-      if (!claimed) {
-        response.status(409).json({ message: 'This WhatsApp notification is already being processed.' })
-        return
-      }
-      const settings = await bookingEnquiryRepository.getWhatsAppSettings?.() ?? {}
-      const result = await whatsappService.sendBookingConfirmation(claimed, settings)
-      const updated = await bookingEnquiryRepository.completeWhatsAppAttempt(
-        enquiry.requestId,
-        result,
-        'admin',
-      )
-      await writeAudit(
-        request,
-        'WhatsApp confirmation retried',
-        'booking',
-        enquiry.reference,
-        `Admin retried WhatsApp confirmation for booking ${enquiry.reference}.`,
-      )
-      response.json({
-        booking: bookingFromEnquiry(updated ?? claimed),
-        status: updated?.whatsappNotification?.status ?? result.status,
       })
     } catch (error) {
       next(error)
@@ -1079,96 +1035,29 @@ export function createAdminRouter({
     }
   })
 
-  router.get('/settings/whatsapp', async (_request, response, next) => {
-    if (!requireSuperAdmin(_request, response)) {
-      return
-    }
+  router.get('/settings/diwali-offer', async (request, response, next) => {
+    if (!requireSuperAdmin(request, response)) return
     try {
-      const stored = await PlatformSetting.findOne({ key: 'whatsapp' }).lean()
-      const settings = {
-        enabled: stored?.value?.enabled ?? true,
-        displayNumber: stored?.value?.displayNumber ?? '',
-        businessContact: stored?.value?.businessContact ?? '',
-        templateName: stored?.value?.templateName || whatsappService?.getConfigurationStatus?.().templateName || 'vibe_booking_confirmation_v1',
-        templateLanguage: stored?.value?.templateLanguage || whatsappService?.getConfigurationStatus?.().templateLanguage || 'en',
+      if (!diwaliOfferService?.getOffer) {
+        response.status(503).json({ message: 'Offer settings are temporarily unavailable.' })
+        return
       }
-      response.json({
-        settings,
-        configuration: {
-          ...whatsappService?.getConfigurationStatus?.(settings),
-          testNumberConfigured: Boolean(whatsappTestPhoneNumber),
-        },
-      })
+      response.json({ offer: await diwaliOfferService.getOffer() })
     } catch (error) {
       next(error)
     }
   })
 
-  router.put('/settings/whatsapp', async (request, response, next) => {
-    if (!requireSuperAdmin(request, response)) {
-      return
-    }
+  router.put('/settings/diwali-offer', async (request, response, next) => {
+    if (!requireSuperAdmin(request, response)) return
     try {
-      const value = request.body
-      const allowed = ['enabled', 'displayNumber', 'businessContact', 'templateName', 'templateLanguage']
-      if (
-        !value ||
-        typeof value !== 'object' ||
-        Array.isArray(value) ||
-        Object.keys(value).some((key) => !allowed.includes(key)) ||
-        typeof value.enabled !== 'boolean'
-      ) {
-        response.status(400).json({ message: 'Provide valid WhatsApp settings.' })
+      if (!diwaliOfferService?.updateOffer) {
+        response.status(503).json({ message: 'Offer settings are temporarily unavailable.' })
         return
       }
-      const settings = {
-        enabled: value.enabled,
-        displayNumber: typeof value.displayNumber === 'string' ? value.displayNumber.trim() : '',
-        businessContact: typeof value.businessContact === 'string' ? value.businessContact.trim() : '',
-        templateName: typeof value.templateName === 'string' ? value.templateName.trim() : '',
-        templateLanguage: typeof value.templateLanguage === 'string' ? value.templateLanguage.trim() : '',
-      }
-      const normalizedDisplayNumber = settings.displayNumber.replace(/[\s().-]/g, '')
-      if (
-        settings.displayNumber.length > 30 ||
-        settings.businessContact.length > 200 ||
-        (normalizedDisplayNumber && !/^\+?[1-9]\d{7,14}$/.test(normalizedDisplayNumber)) ||
-        !/^[a-zA-Z0-9._-]{1,80}$/.test(settings.templateName) ||
-        !/^[a-z]{2}(?:_[A-Z]{2})?$/.test(settings.templateLanguage)
-      ) {
-        response.status(400).json({ message: 'Check the WhatsApp number, template name, language, and contact information.' })
-        return
-      }
-      const record = await PlatformSetting.findOneAndUpdate(
-        { key: 'whatsapp' },
-        { $set: { value: settings } },
-        { new: true, upsert: true, runValidators: true },
-      ).lean()
-      await writeAudit(request, 'WhatsApp settings updated', 'settings', 'whatsapp', 'WhatsApp settings updated.')
-      response.json({ settings: record.value, configuration: whatsappService?.getConfigurationStatus?.(record.value) })
-    } catch (error) {
-      next(error)
-    }
-  })
-
-  router.post('/settings/whatsapp/test', async (request, response, next) => {
-    if (!requireSuperAdmin(request, response)) {
-      return
-    }
-    try {
-      if (!whatsappTestPhoneNumber || typeof whatsappService?.sendTestMessage !== 'function') {
-        response.status(503).json({ message: 'An authorized WhatsApp test number is not configured.' })
-        return
-      }
-      const stored = await PlatformSetting.findOne({ key: 'whatsapp' }).lean()
-      const settings = stored?.value ?? {}
-      const result = await whatsappService.sendTestMessage(whatsappTestPhoneNumber, settings)
-      await writeAudit(request, 'WhatsApp configuration test sent', 'settings', 'whatsapp', 'WhatsApp test sent to the configured test number.')
-      if (result.status !== 'sent') {
-        response.status(503).json({ message: result.reason ?? 'WhatsApp test message failed.' })
-        return
-      }
-      response.json({ status: 'sent', messageId: result.messageId })
+      const offer = await diwaliOfferService.updateOffer(request.body)
+      await writeAudit(request, 'Diwali offer updated', 'settings', 'diwali-special', 'Diwali offer settings updated.')
+      response.json({ offer })
     } catch (error) {
       next(error)
     }

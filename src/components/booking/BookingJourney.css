@@ -291,6 +291,7 @@
 
 .booking-journey__answer {
   display: grid;
+  gap: 0.75rem;
   width: min(100%, 39rem);
   margin-top: clamp(1.8rem, 5vh, 3rem);
   animation: booking-journey-answer-in 550ms 100ms both;
@@ -540,6 +541,129 @@
   flex: 0 0 auto;
   margin: 0.12rem 0 0;
   accent-color: #b352ff;
+}
+
+.booking-journey__diwali-offer {
+  position: relative;
+  display: grid;
+  width: min(100%, 50rem);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem 1rem;
+  justify-self: center;
+  margin: 0 0 1.15rem;
+  padding: 0.8rem 1rem;
+  overflow: hidden;
+  border: 1px solid rgb(245 198 108 / 42%);
+  border-radius: 0.95rem;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgb(255 199 92 / 13%), transparent 50%),
+    linear-gradient(110deg, rgb(55 32 91 / 88%), rgb(29 18 48 / 94%));
+  box-shadow: 0 8px 28px rgb(22 10 38 / 35%);
+  animation: booking-diwali-glow 3.2s ease-in-out infinite alternate;
+}
+
+.booking-journey__diwali-copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.booking-journey__diwali-copy > span {
+  color: #ffd88c;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.booking-journey__diwali-copy > strong {
+  color: #fff7e8;
+  font-size: 0.9rem;
+}
+
+.booking-journey__diwali-copy > small {
+  color: #d6c6e8;
+  font-size: 0.72rem;
+}
+
+.booking-journey__diwali-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.booking-journey__diwali-price s {
+  color: #b6a9c2;
+  font-size: 0.82rem;
+}
+
+.booking-journey__diwali-price strong {
+  color: #ffe09f;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  letter-spacing: -0.05em;
+  text-shadow: 0 0 18px rgb(255 201 99 / 24%);
+}
+
+.booking-journey__diwali-price small {
+  align-self: center;
+  color: #ffe2a6;
+  font-size: 0.68rem;
+}
+
+.booking-journey__diwali-offer > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #ddcfee;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.booking-journey__diwali-offer > p strong {
+  color: #ffdc94;
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+}
+
+.booking-journey__diwali-offer > p span {
+  color: #bcaecb;
+}
+
+.booking-journey__offer-error {
+  margin: 0 auto 0.75rem;
+  color: #d6c6e8;
+  font-size: 0.72rem;
+}
+
+.booking-journey__price-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.4rem 0.65rem;
+  margin: 1rem 0 0;
+  color: #d7c9e6;
+  font-size: 0.86rem;
+}
+
+.booking-journey__price-summary strong {
+  color: #ffe09f;
+  font-size: 1.25rem;
+}
+
+.booking-journey__price-summary s {
+  color: #ab9db8;
+}
+
+.booking-journey__price-summary span {
+  flex-basis: 100%;
+  color: #e4c881;
+  font-size: 0.74rem;
+}
+
+@keyframes booking-diwali-glow {
+  from { box-shadow: 0 8px 28px rgb(22 10 38 / 35%); }
+  to { box-shadow: 0 8px 28px rgb(22 10 38 / 35%), 0 0 24px rgb(255 199 92 / 13%); }
 }
 
 .booking-journey__gender-option:focus-within {
@@ -828,6 +952,35 @@
 
   .booking-journey__body {
     padding: 1rem 0 2.8rem;
+  }
+
+  .booking-journey__diwali-offer {
+    gap: 0.4rem 0.45rem;
+    padding: 0.65rem 0.7rem;
+  }
+
+  .booking-journey__diwali-copy > span {
+    font-size: 0.55rem;
+  }
+
+  .booking-journey__diwali-copy > strong {
+    font-size: 0.78rem;
+  }
+
+  .booking-journey__diwali-copy > small {
+    font-size: 0.65rem;
+  }
+
+  .booking-journey__diwali-price {
+    gap: 0.3rem;
+  }
+
+  .booking-journey__diwali-price strong {
+    font-size: 1.4rem;
+  }
+
+  .booking-journey__diwali-price small {
+    display: none;
   }
 
   .booking-journey__progress {

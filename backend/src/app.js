@@ -6,11 +6,13 @@ import { createEventsRouter } from './routes/events.js'
 import { createAdminAuthRouter } from './auth/adminAuth.js'
 import { createAdminRouter } from './routes/admin.js'
 import { createBookingsRouter } from './routes/bookings.js'
-import { createWhatsAppWebhookRouter } from './routes/whatsappWebhook.js'
 import { createPublicEnquiriesRouter } from './routes/publicEnquiries.js'
 import { createPublicSettingsRouter } from './routes/publicSettings.js'
+import { createWhatsAppWebhookRouter } from './routes/whatsappWebhook.js'
+import { createRazorpayWebhookRouter } from './routes/razorpayWebhook.js'
 import healthRouter from './routes/health.js'
 import { PlatformSetting } from './models/adminRecords.js'
+import { DiwaliOffer } from './models/diwaliOffer.js'
 
 export function createApp({
   adminPasswordHash = '',
@@ -29,8 +31,12 @@ export function createApp({
   bookingEventModel,
   bookingReferenceCounterModel,
   bookingEnquiryRepository,
-  whatsappService,
-  whatsappTestPhoneNumber = '',
+  razorpayPayments,
+  razorpayConfigured = false,
+  razorpayWebhookSecret = '',
+  whatsappNotifications,
+  whatsappWebhookConfig = {},
+  diwaliOfferService,
   corsOrigins,
   databaseReady,
   enquiryModel,
@@ -73,17 +79,17 @@ export function createApp({
       },
     }),
   )
-  if (bookingEnquiryRepository) {
-    app.use(
-      '/api/webhooks/whatsapp',
-      express.raw({ type: 'application/json', limit: '256kb' }),
-      createWhatsAppWebhookRouter({
-        whatsappService,
-        repository: bookingEnquiryRepository,
-      }),
-    )
-  }
-  app.use(express.json({ limit: '1mb' }))
+  app.use(express.json({
+    limit: '1mb',
+    verify(request, _response, buffer) {
+      if (request.originalUrl.startsWith('/api/whatsapp/webhook')) {
+        request.rawBody = Buffer.from(buffer)
+      }
+      if (request.originalUrl.startsWith('/api/razorpay/webhook')) {
+        request.rawBody = Buffer.from(buffer)
+      }
+    },
+  }))
   app.use('/api/health', healthRouter)
   app.use('/api/admin/auth', createAdminAuthRouter({
     bootstrapPasswordHash: adminPasswordHash,
@@ -110,11 +116,23 @@ export function createApp({
     sessionModel: adminSessionModel,
     sessionSecret: adminSessionSecret,
     bookingEnquiryRepository,
-    whatsappService,
-    whatsappTestPhoneNumber,
+    diwaliOfferService,
+    diwaliOfferModel: DiwaliOffer,
   }))
   app.use('/api', createPublicEnquiriesRouter({ enquiryModel, subscriberModel }))
-  app.use('/api/public-settings', createPublicSettingsRouter({ platformSettingModel }))
+  app.use('/api/public-settings', createPublicSettingsRouter({
+    platformSettingModel,
+    diwaliOfferService,
+  }))
+  app.use('/api/whatsapp/webhook', createWhatsAppWebhookRouter({
+    notifications: whatsappNotifications,
+    ...whatsappWebhookConfig,
+  }))
+  app.use('/api/razorpay/webhook', createRazorpayWebhookRouter({
+    payments: razorpayPayments,
+    notifications: whatsappNotifications,
+    secret: razorpayWebhookSecret,
+  }))
   app.use('/api/bookings', createBookingsRouter({
     bookingModel,
     eventModel: bookingEventModel,
@@ -131,7 +149,10 @@ export function createApp({
         events,
         eventRepository,
         repository: bookingEnquiryRepository,
-        whatsappService,
+        razorpayPayments,
+        razorpayConfigured,
+        diwaliOfferService,
+        whatsappNotifications,
       }),
     )
   }

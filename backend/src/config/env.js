@@ -123,11 +123,27 @@ const smtpPassword = process.env.SMTP_PASSWORD?.trim() ?? ''
 const smtpFromEmail =
   process.env.SMTP_FROM_EMAIL?.trim() ??
   (smtpUser ? `"Vibe Together" <${smtpUser}>` : 'Vibe Together <no-reply@vibetogether.com>')
-
+const razorpayKeyId = process.env.RAZORPAY_KEY_ID?.trim() ?? ''
+const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET?.trim() ?? ''
+const razorpayWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim() ?? ''
+const razorpayConfigured = Boolean(razorpayKeyId && razorpayKeySecret)
+const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ?? ''
+const whatsappAccessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim() ?? ''
 const whatsappApiVersion = process.env.WHATSAPP_API_VERSION?.trim() ?? ''
+const whatsappWebhookVerifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim() ?? ''
+const whatsappAppSecret = process.env.WHATSAPP_APP_SECRET?.trim() ?? ''
+const whatsappSuccessTemplateName = process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ?? ''
+const whatsappFailureTemplateName = process.env.WHATSAPP_FAILURE_TEMPLATE_NAME?.trim() ?? ''
 if (whatsappApiVersion && !/^v\d+\.\d+$/.test(whatsappApiVersion)) {
-  throw new Error('WHATSAPP_API_VERSION must use the Meta Graph API version format, e.g. v21.0.')
+  throw new Error('WHATSAPP_API_VERSION must use the format vNN.N.')
 }
+const whatsappConfigured = Boolean(
+  whatsappPhoneNumberId &&
+  whatsappAccessToken &&
+  whatsappApiVersion &&
+  whatsappSuccessTemplateName &&
+  whatsappFailureTemplateName,
+)
 
 export const config = Object.freeze({
   adminAuthConfigured,
@@ -149,13 +165,16 @@ export const config = Object.freeze({
   smtpUser,
   smtpPassword,
   smtpFromEmail,
-  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ?? '',
-  whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID?.trim() ?? '',
-  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN?.trim() ?? '',
+  razorpayConfigured,
+  razorpayKeyId,
+  razorpayKeySecret,
+  razorpayWebhookSecret,
+  whatsappPhoneNumberId,
+  whatsappAccessToken,
   whatsappApiVersion,
-  whatsappAppSecret: process.env.WHATSAPP_APP_SECRET?.trim() ?? '',
-  whatsappWebhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim() ?? '',
-  whatsappTemplateName: process.env.WHATSAPP_TEMPLATE_NAME?.trim() || 'vibe_booking_confirmation_v1',
-  whatsappTemplateLanguage: process.env.WHATSAPP_TEMPLATE_LANGUAGE?.trim() || 'en',
-  whatsappTestPhoneNumber: process.env.WHATSAPP_TEST_PHONE_NUMBER?.trim() ?? '',
+  whatsappWebhookVerifyToken,
+  whatsappAppSecret,
+  whatsappSuccessTemplateName,
+  whatsappFailureTemplateName,
+  whatsappConfigured,
 })

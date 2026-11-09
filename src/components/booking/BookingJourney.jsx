@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { categories } from '../../data/categories.js'
 import { submitBookingEnquiry } from '../../services/bookingEnquiry.js'
+import { formatOfferExpiry, getDiwaliOffer, getOfferRemainingMs } from '../../services/diwaliOffer.js'
 import './BookingJourney.css'
 
 const steps = ['Name', 'Mobile', 'Category', 'Gender']
@@ -55,6 +56,7 @@ export default function BookingJourney({ onClose }) {
   const navigate = useNavigate()
   const [form, setForm] = useState({
     name: '',
+    email: '',
     mobile: '',
     categoryId: '',
     gender: '',
@@ -68,6 +70,9 @@ export default function BookingJourney({ onClose }) {
   const [submissionError, setSubmissionError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [diwaliOffer, setDiwaliOffer] = useState(null)
+  const [offerClock, setOfferClock] = useState(Date.now())
+  const [offerError, setOfferError] = useState('')
   const journeyRef = useRef(null)
   const requestId = useRef(crypto.randomUUID())
   const submitting = useRef(false)
@@ -122,6 +127,21 @@ export default function BookingJourney({ onClose }) {
   }, [onClose])
 
   useEffect(() => {
+    const controller = new AbortController()
+    getDiwaliOffer(controller.signal)
+      .then(setDiwaliOffer)
+      .catch((error) => {
+        if (error.name !== 'AbortError') setOfferError(error.message)
+      })
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setOfferClock(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
     if (transitionStage !== 'enter') {
       return undefined
     }
@@ -151,6 +171,9 @@ export default function BookingJourney({ onClose }) {
   function validateStep() {
     if (step === 0 && !isValidName(form.name)) {
       return 'Enter your full name to continue.'
+    }
+    if (step === 0 && form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      return 'Enter a valid email address or leave it blank.'
     }
     if (step === 1 && !getNormalizedMobile(form.mobile, countryCode)) {
       return 'Enter a valid mobile number with 7 to 15 digits.'
@@ -215,6 +238,7 @@ export default function BookingJourney({ onClose }) {
       await submitBookingEnquiry({
         requestId: requestId.current,
         name: form.name.normalize('NFKC').trim(),
+        email: form.email.trim(),
         mobile: getNormalizedMobile(form.mobile, countryCode),
         categoryId: form.categoryId,
         gender: form.gender,
@@ -237,6 +261,17 @@ export default function BookingJourney({ onClose }) {
   const selectedCategory = bookingCategories.find(
     ({ id }) => id === form.categoryId,
   )
+  const offerActive =
+    Boolean(diwaliOffer?.enabled) &&
+    offerClock >= new Date(diwaliOffer.activationAt).getTime() &&
+    offerClock < new Date(diwaliOffer.expiresAt).getTime()
+  const offerRemaining = getOfferRemainingMs(diwaliOffer?.expiresAt, offerClock)
+  const countdown = [
+    Math.floor(offerRemaining / 86_400_000),
+    Math.floor((offerRemaining % 86_400_000) / 3_600_000),
+    Math.floor((offerRemaining % 3_600_000) / 60_000),
+    Math.floor((offerRemaining % 60_000) / 1000),
+  ].map((value) => String(value).padStart(2, '0')).join(':')
 
   return (
     <section
@@ -285,6 +320,27 @@ export default function BookingJourney({ onClose }) {
       </header>
 
       <div className="booking-journey__body">
+          {step >= 2 && offerActive && (
+            <aside className="booking-journey__diwali-offer" aria-label="Diwali special offer">
+              <div className="booking-journey__diwali-copy">
+                <span>🪔 DIWALI SPECIAL OFFER</span>
+                <strong>Celebrate with Vibe Together!</strong>
+                <small>Limited-time offer – 3 days only!</small>
+              </div>
+              <div className="booking-journey__diwali-price">
+                <s>₹{diwaliOffer.regularPrice}</s>
+                <strong>₹{diwaliOffer.offerPrice}</strong>
+                <small>Save ₹{diwaliOffer.savings}</small>
+              </div>
+              <p>
+                Offer ends in <strong>{countdown}</strong>
+                <span> · IST · {formatOfferExpiry(diwaliOffer.expiresAt)}</span>
+              </p>
+            </aside>
+          )}
+          {step >= 2 && !offerActive && offerError && (
+            <p className="booking-journey__offer-error" role="status">{offerError}</p>
+          )}
           <nav aria-label="Booking progress" className="booking-journey__progress">
             {steps.map((label, index) => (
               <div
@@ -332,18 +388,32 @@ export default function BookingJourney({ onClose }) {
 
             <div className="booking-journey__answer">
               {step === 0 && (
-                <label className="booking-journey__input-wrap">
-                  <span className="booking-journey__visually-hidden">Full name</span>
-                  <input
-                    autoComplete="name"
-                    data-journey-focus
-                    maxLength={80}
-                    name="name"
-                    onChange={updateField}
-                    placeholder="Enter your full name"
-                    value={form.name}
-                  />
-                </label>
+                <>
+                  <label className="booking-journey__input-wrap">
+                    <span className="booking-journey__visually-hidden">Full name</span>
+                    <input
+                      autoComplete="name"
+                      data-journey-focus
+                      maxLength={80}
+                      name="name"
+                      onChange={updateField}
+                      placeholder="Enter your full name"
+                      value={form.name}
+                    />
+                  </label>
+                  <label className="booking-journey__input-wrap">
+                    <span className="booking-journey__visually-hidden">Email address (optional)</span>
+                    <input
+                      autoComplete="email"
+                      maxLength={254}
+                      name="email"
+                      onChange={updateField}
+                      placeholder="Email address (optional)"
+                      type="email"
+                      value={form.email}
+                    />
+                  </label>
+                </>
               )}
 
               {step === 1 && (
@@ -448,6 +518,14 @@ export default function BookingJourney({ onClose }) {
               </p>
             )}
             {step === 3 && (
+              <p className="booking-journey__price-summary">
+                Booking amount:
+                {offerActive && <s>₹{diwaliOffer.regularPrice}</s>}
+                <strong>₹{offerActive ? diwaliOffer.offerPrice : diwaliOffer?.regularPrice ?? 299}</strong>
+                {offerActive && <span>Save ₹{diwaliOffer.savings} with the Diwali offer</span>}
+              </p>
+            )}
+            {step === 3 && (
               <label className="booking-journey__whatsapp-consent">
                 <input
                   checked={form.whatsappConsent}
@@ -461,8 +539,9 @@ export default function BookingJourney({ onClose }) {
                   type="checkbox"
                 />
                 <span>
-                  I agree to receive booking confirmations and important booking
-                  updates from Vibe Together on WhatsApp. This is not marketing consent.
+                  I consent to receive WhatsApp booking updates and payment assistance
+                  from Vibe Together at the mobile number I provided. This is optional
+                  and I can opt out later.
                 </span>
               </label>
             )}

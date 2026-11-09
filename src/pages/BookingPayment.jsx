@@ -1,12 +1,49 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CheckCircle2, LoaderCircle, LockKeyhole } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  checkRazorpayPaymentStatus,
+  createRazorpayOrder,
   getBookingEnquiry,
-  optOutOfWhatsAppUpdates,
+  recordRazorpayPaymentFailure,
+  recordDemoBookingFailure,
   recordDemoBookingPayment,
+  verifyRazorpayPayment,
 } from '../services/bookingEnquiryPayment.js'
 import './BookingPayment.css'
+
+const paymentAttemptTimeoutMs = 2 * 60 * 1000
+const razorpayScriptUrl = 'https://checkout.razorpay.com/v1/checkout.js'
+
+function loadRazorpayCheckout() {
+  if (window.Razorpay) {
+    return Promise.resolve(true)
+  }
+
+  return new Promise((resolve) => {
+    const existing = document.querySelector(`script[src="${razorpayScriptUrl}"]`)
+    if (existing) {
+      existing.addEventListener('load', () => resolve(Boolean(window.Razorpay)), { once: true })
+      existing.addEventListener('error', () => resolve(false), { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = razorpayScriptUrl
+    script.async = true
+    script.onload = () => resolve(Boolean(window.Razorpay))
+    script.onerror = () => resolve(false)
+    document.head.append(script)
+  })
+}
+
+function isRecentProcessing(booking) {
+  if (booking?.paymentStatus !== 'processing') {
+    return false
+  }
+  const attemptedAt = new Date(booking.paymentAttemptedAt ?? '').getTime()
+  return !Number.isFinite(attemptedAt) || Date.now() - attemptedAt < paymentAttemptTimeoutMs
+}
 
 function formatBookingDate(value) {
   const date = new Date(value)
@@ -20,6 +57,8 @@ function formatBookingDate(value) {
 
 export default function BookingPayment() {
   const { requestId } = useParams()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [bookingState, setBookingState] = useState({
     requestId,
     status: 'loading',
@@ -28,14 +67,31 @@ export default function BookingPayment() {
   })
   const [isPaying, setIsPaying] = useState(false)
   const [paymentError, setPaymentError] = useState('')
-  const [whatsappError, setWhatsAppError] = useState('')
-  const [isOptingOut, setIsOptingOut] = useState(false)
+  const [paymentUncertain, setPaymentUncertain] = useState(false)
   const paying = useRef(false)
+  const paymentOutcomeHandled = useRef(false)
 
   useEffect(() => {
     const controller = new AbortController()
     getBookingEnquiry(requestId, controller.signal)
-      .then((booking) => setBookingState({ requestId, status: 'ready', booking, error: '' }))
+      .then(async (initialBooking) => {
+        let booking = initialBooking
+        let statusCheckFailed = false
+        if (
+          booking.razorpayConfigured &&
+          booking.paymentOrderId &&
+          booking.paymentStatus !== 'paid'
+        ) {
+          try {
+            const result = await checkRazorpayPaymentStatus(requestId)
+            booking = result.booking
+          } catch {
+            statusCheckFailed = true
+          }
+        }
+        setBookingState({ requestId, status: 'ready', booking, error: '' })
+        setPaymentUncertain(statusCheckFailed || isRecentProcessing(booking))
+      })
       .catch((error) => {
         if (error.name !== 'AbortError') {
           setBookingState({
@@ -50,40 +106,237 @@ export default function BookingPayment() {
     return () => controller.abort()
   }, [requestId])
 
-  async function handlePay() {
-    if (paying.current || bookingState.booking?.paymentStatus === 'demo_paid') {
+  useEffect(() => {
+    const booking = bookingState.booking
+    const status = booking?.whatsappNotification?.status
+    if (
+      !booking?.reference ||
+      !['pending', 'sent'].includes(status)
+    ) {
+      return undefined
+    }
+
+    let active = true
+    const timer = window.setInterval(async () => {
+      try {
+        const latest = await getBookingEnquiry(requestId)
+        if (active) {
+          setBookingState({ requestId, status: 'ready', booking: latest, error: '' })
+        }
+      } catch {
+        // The current server-provided notification status remains visible until the next refresh.
+      }
+    }, 4000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [bookingState.booking?.reference, bookingState.booking?.whatsappNotification?.status, requestId])
+
+  async function refreshPaymentStatus() {
+    setPaymentError('')
+    try {
+      let booking = await getBookingEnquiry(requestId)
+      if (booking.razorpayConfigured && booking.paymentOrderId && booking.paymentStatus !== 'paid') {
+        const status = await checkRazorpayPaymentStatus(requestId)
+        booking = status.booking
+      }
+      setBookingState({ requestId, status: 'ready', booking, error: '' })
+      setPaymentUncertain(isRecentProcessing(booking))
+      if (['demo_paid', 'paid'].includes(booking.paymentStatus) && booking.reference) {
+        navigate(`/booking/payment/${encodeURIComponent(requestId)}`, { replace: true })
+      }
+      return booking
+    } catch (error) {
+      setPaymentUncertain(true)
+      setPaymentError(
+        error instanceof Error
+          ? 'Payment status could not be verified. Check again before trying to pay.'
+          : 'Payment status could not be verified. Check again before trying to pay.',
+      )
+      return null
+    }
+  }
+
+  async function handleRazorpayFailure(failure) {
+    if (paymentOutcomeHandled.current) {
       return
     }
+    paymentOutcomeHandled.current = true
     paying.current = true
     setIsPaying(true)
     setPaymentError('')
     try {
-      await new Promise((resolve) => window.setTimeout(resolve, 900))
-      const booking = await recordDemoBookingPayment(requestId)
-      setBookingState({ requestId, status: 'ready', booking, error: '' })
+      const result = await recordRazorpayPaymentFailure(requestId, failure)
+      setBookingState({ requestId, status: 'ready', booking: result.booking, error: '' })
+      setPaymentUncertain(Boolean(result.pending) || isRecentProcessing(result.booking))
+      if (!result.pending && result.booking.paymentStatus === 'failed') {
+        navigate(`/booking/payment/${encodeURIComponent(requestId)}`, { replace: true })
+      }
     } catch (error) {
-      setPaymentError(
-        error instanceof Error ? error.message : 'Demo payment could not be recorded. Please retry.',
-      )
+      const message = error instanceof Error ? error.message : 'Payment status could not be verified.'
+      const refreshed = await refreshPaymentStatus()
+      if (refreshed && !['paid', 'demo_paid'].includes(refreshed.paymentStatus)) {
+        setPaymentError(message)
+      }
     } finally {
       paying.current = false
       setIsPaying(false)
     }
   }
 
-  async function handleWhatsAppOptOut() {
-    if (isOptingOut || !bookingState.booking?.whatsappConsent) {
+  async function handleRazorpayPay() {
+    if (paying.current || paymentUncertain || bookingState.booking?.reference) {
       return
     }
-    setIsOptingOut(true)
-    setWhatsAppError('')
+    paying.current = true
+    paymentOutcomeHandled.current = false
+    setIsPaying(true)
+    setPaymentError('')
+
     try {
-      const booking = await optOutOfWhatsAppUpdates(requestId)
-      setBookingState({ requestId, status: 'ready', booking, error: '' })
+      const order = await createRazorpayOrder(requestId)
+      if (order.pending) {
+        setBookingState({ requestId, status: 'ready', booking: order.booking, error: '' })
+        setPaymentUncertain(true)
+        return
+      }
+      setBookingState((current) => ({
+        ...current,
+        booking: {
+          ...current.booking,
+          paymentAmount: order.amount / 100,
+          paymentAmountPaise: order.amount,
+          ...(order.pricing ?? {}),
+        },
+      }))
+      if (!(await loadRazorpayCheckout())) {
+        throw new Error('Razorpay Checkout could not be loaded. Check your connection and retry.')
+      }
+
+      const checkout = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'VIBE TOGETHER',
+        description: 'Booking payment',
+        order_id: order.order_id,
+        prefill: {
+          name: bookingState.booking?.name ?? '',
+          email: bookingState.booking?.email ?? '',
+          contact: bookingState.booking?.mobile ?? '',
+        },
+        theme: { color: '#773bff' },
+        modal: {
+          ondismiss: () => void handleRazorpayFailure({
+            orderId: order.order_id,
+            outcome: 'cancelled',
+          }),
+        },
+        handler: async (payment) => {
+          if (paymentOutcomeHandled.current) {
+            return
+          }
+          paymentOutcomeHandled.current = true
+          paying.current = true
+          setIsPaying(true)
+          setPaymentError('')
+          try {
+            const result = await verifyRazorpayPayment(requestId, payment)
+            setBookingState({ requestId, status: 'ready', booking: result.booking, error: '' })
+            setPaymentUncertain(Boolean(result.pending) || isRecentProcessing(result.booking))
+            if (result.booking.paymentStatus === 'paid' && result.booking.reference) {
+              navigate(`/booking/payment/${encodeURIComponent(requestId)}`, { replace: true })
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Payment signature could not be verified.'
+            const refreshed = await refreshPaymentStatus()
+            if (refreshed && !['paid', 'demo_paid'].includes(refreshed.paymentStatus)) {
+              setPaymentError(message)
+            }
+          } finally {
+            paying.current = false
+            setIsPaying(false)
+          }
+        },
+      })
+
+      checkout.on('payment.failed', (event) => {
+        void handleRazorpayFailure({
+          orderId: event.error?.metadata?.order_id || order.order_id,
+          paymentId: event.error?.metadata?.payment_id || '',
+          outcome: 'failed',
+        })
+      })
+      checkout.open()
     } catch (error) {
-      setWhatsAppError(error instanceof Error ? error.message : 'WhatsApp preferences could not be updated.')
+      const message = error instanceof Error ? error.message : 'Razorpay Checkout could not be started.'
+      const refreshed = await refreshPaymentStatus()
+      if (refreshed && !['paid', 'demo_paid'].includes(refreshed.paymentStatus)) {
+        setPaymentError(message)
+      }
     } finally {
-      setIsOptingOut(false)
+      paying.current = false
+      setIsPaying(false)
+    }
+  }
+
+  async function handlePay() {
+    if (bookingState.booking?.razorpayConfigured) {
+      await handleRazorpayPay()
+      return
+    }
+    if (paying.current || paymentUncertain || bookingState.booking?.reference) {
+      return
+    }
+    paying.current = true
+    setIsPaying(true)
+    setPaymentUncertain(true)
+    setPaymentError('')
+    try {
+      const booking = await recordDemoBookingPayment(requestId)
+      setBookingState({ requestId, status: 'ready', booking, error: '' })
+      setPaymentUncertain(isRecentProcessing(booking))
+      if (['demo_paid', 'paid'].includes(booking.paymentStatus) && booking.reference) {
+        navigate(`/booking/payment/${encodeURIComponent(requestId)}`, { replace: true })
+      }
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Demo payment could not be recorded. Please retry.'
+      const refreshed = await refreshPaymentStatus()
+      if (refreshed && !['paid', 'demo_paid'].includes(refreshed.paymentStatus)) {
+        setPaymentError(message)
+      }
+    } finally {
+      paying.current = false
+      setIsPaying(false)
+    }
+  }
+
+  async function handleDemoFailure(outcome) {
+    if (paying.current || bookingState.booking?.reference) {
+      return
+    }
+    paying.current = true
+    setIsPaying(true)
+    setPaymentError('')
+    try {
+      const booking = await recordDemoBookingFailure(requestId, outcome)
+      setBookingState({ requestId, status: 'ready', booking, error: '' })
+      setPaymentUncertain(false)
+      navigate(`/booking/payment/${encodeURIComponent(requestId)}`, { replace: true })
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Payment status could not be saved.'
+      const refreshed = await refreshPaymentStatus()
+      if (refreshed && !['paid', 'demo_paid'].includes(refreshed.paymentStatus)) {
+        setPaymentError(message)
+      }
+    } finally {
+      paying.current = false
+      setIsPaying(false)
     }
   }
 
@@ -91,20 +344,45 @@ export default function BookingPayment() {
     ? bookingState
     : { status: 'loading', booking: null, error: '' }
   const booking = currentBookingState.booking
-  const isPaid = booking?.paymentStatus === 'demo_paid'
-  const whatsappStatus = booking?.whatsappNotification?.status ?? (
-    booking?.whatsappConsent ? 'pending' : 'skipped'
-  )
+  const isPaid = ['demo_paid', 'paid'].includes(booking?.paymentStatus) && Boolean(booking?.reference)
+  const isDemoPayment = !booking?.razorpayConfigured
+  const isPaymentFailed = booking?.paymentStatus === 'failed'
+  const isFailureView = isPaymentFailed && !paymentUncertain && searchParams.get('retry') !== '1'
+  const isVerifying = paymentUncertain || isRecentProcessing(booking)
+  const paymentLabel = booking?.paymentStatus === 'demo_paid'
+    ? 'Demo Paid'
+    : booking?.paymentStatus === 'paid'
+      ? 'Paid'
+      : booking?.paymentStatus === 'failed'
+        ? 'Failed'
+        : 'Unpaid'
+  const bookingLabel = booking?.status === 'confirmed' ? 'Approved' : 'Pending Approval'
+  const notificationStatus = booking?.whatsappNotification?.status ?? 'not_available'
+  const notificationCopy = ({
+    pending: isPaymentFailed
+      ? 'Your payment-assistance notification is being sent to your WhatsApp number.'
+      : 'Your booking confirmation is being sent to your WhatsApp number.',
+    sent: isPaymentFailed
+      ? 'WhatsApp accepted the payment-assistance message and is awaiting delivery confirmation.'
+      : 'Your booking confirmation was accepted by WhatsApp and is awaiting delivery confirmation.',
+    delivered: isPaymentFailed
+      ? 'Your payment-assistance message was delivered to your WhatsApp number.'
+      : 'Your booking confirmation was delivered to your WhatsApp number.',
+    read: isPaymentFailed
+      ? 'Your payment-assistance message was read on WhatsApp.'
+      : 'Your booking confirmation was read on WhatsApp.',
+    failed: isPaymentFailed
+      ? 'We could not send the payment-assistance notification. You can still retry payment.'
+      : 'We could not send your WhatsApp confirmation. Your booking is still safely confirmed.',
+    skipped: booking?.whatsappConsent
+      ? 'No WhatsApp notification was sent for this booking.'
+      : 'WhatsApp notification skipped because you did not opt in.',
+  })[notificationStatus] ?? 'WhatsApp notification status is not available.'
 
-  function getWhatsAppMessage() {
-    if (whatsappStatus === 'sent') return 'WhatsApp confirmation sent. Delivery is not yet confirmed.'
-    if (whatsappStatus === 'delivered') return 'WhatsApp confirmation delivered.'
-    if (whatsappStatus === 'read') return 'WhatsApp confirmation read.'
-    if (whatsappStatus === 'pending') return 'Preparing your WhatsApp confirmation.'
-    if (whatsappStatus === 'failed') {
-      return 'Your booking is saved, but we could not send a WhatsApp confirmation. Our team can still assist you.'
-    }
-    return 'Your booking is saved. WhatsApp updates were not requested.'
+  function handleTryPaymentAgain() {
+    setPaymentError('')
+    setPaymentUncertain(false)
+    navigate(`/booking/payment/${encodeURIComponent(requestId)}?retry=1`, { replace: true })
   }
 
   return (
@@ -131,7 +409,9 @@ export default function BookingPayment() {
               <Link className="booking-payment__back" to="/" aria-label="Back to Vibe Together">
                 <ArrowLeft size={17} aria-hidden="true" /> VIBE TOGETHER
               </Link>
-              <span className="booking-payment__demo-tag">DEMO MODE</span>
+              <span className="booking-payment__demo-tag">
+                {isDemoPayment ? 'DEMO PAYMENT' : 'RAZORPAY CHECKOUT'}
+              </span>
             </div>
 
             {isPaid ? (
@@ -139,19 +419,37 @@ export default function BookingPayment() {
                 <span className="booking-payment__success-icon">
                   <CheckCircle2 size={32} aria-hidden="true" />
                 </span>
-                <p className="booking-payment__eyebrow">DEMO PAYMENT COMPLETE</p>
-                <h1>Demo payment successful</h1>
+                <p className="booking-payment__eyebrow">
+                  {booking.paymentStatus === 'demo_paid' ? 'DEMO PAYMENT COMPLETE' : 'PAYMENT SUCCESSFUL'}
+                </p>
+                <h1>
+                  {booking.paymentStatus === 'demo_paid'
+                    ? 'Demo Payment Successful'
+                    : 'Payment Successful!'}
+                </h1>
                 <p className="booking-payment__description">
-                  Your enquiry is saved and its demo payment status has been recorded.
-                  No real payment was processed and no money was collected.
+                  {booking.paymentStatus === 'demo_paid'
+                    ? 'Your booking is finalized as a demo payment record; no real payment was processed and no money was collected.'
+                    : 'Your Razorpay payment was verified and your booking is finalized.'}
+                </p>
+              </div>
+            ) : isFailureView ? (
+              <div className="booking-payment__failure" role="alert">
+                <p className="booking-payment__eyebrow">PAYMENT NOT COMPLETED</p>
+                <h1>Your payment was not completed.</h1>
+                <p className="booking-payment__description">
+                  Don&apos;t worry! Your booking details are saved temporarily. Please
+                  try again to complete your booking.
                 </p>
               </div>
             ) : (
               <>
                 <p className="booking-payment__eyebrow">ONE LAST STEP</p>
-                <h1>Confirm your enquiry</h1>
+                <h1>Complete your booking</h1>
                 <p className="booking-payment__description">
-                  Review your details and continue to our secure payment experience.
+                  {isDemoPayment
+                    ? `Review your details and continue with the ₹${booking.paymentAmount} demo payment.`
+                    : 'Review your details and continue securely with Razorpay Checkout.'}
                 </p>
               </>
             )}
@@ -163,70 +461,93 @@ export default function BookingPayment() {
                   <h2>{booking.category || booking.event || 'Vibe Together experience'}</h2>
                 </div>
                 <div className="booking-payment__amount">
-                  <span>AMOUNT</span>
+                  <span>{isPaid ? 'AMOUNT PAID' : 'AMOUNT'}</span>
                   <strong>₹{booking.paymentAmount}</strong>
+                  {booking.diwaliOfferApplied && (
+                    <small className="booking-payment__offer-tag">DIWALI OFFER · SAVED ₹{booking.regularPrice - booking.paymentAmount}</small>
+                  )}
+                  {booking.diwaliOfferApplied && <s>₹{booking.regularPrice}</s>}
                 </div>
               </div>
               <dl className="booking-payment__details">
                 <div><dt>Name</dt><dd>{booking.name}</dd></div>
                 <div><dt>Mobile</dt><dd>{booking.mobile}</dd></div>
+                <div><dt>Email</dt><dd>{booking.email || 'Not provided'}</dd></div>
                 <div><dt>Category</dt><dd>{booking.category || booking.event || '—'}</dd></div>
                 <div><dt>Gender</dt><dd>{booking.gender}</dd></div>
-                <div><dt>Enquiry submitted</dt><dd>{formatBookingDate(booking.createdAt)}</dd></div>
+                <div><dt>Booking date</dt><dd>{formatBookingDate(booking.createdAt)}</dd></div>
               </dl>
             </div>
-            <section className="booking-payment__confirmation" aria-label="Booking confirmation">
-              <span className="booking-payment__muted">BOOKING REFERENCE</span>
-              <strong>{booking.reference || 'Reference unavailable'}</strong>
-              <p>
-                Booking status: <b>{booking.status === 'confirmed' ? 'Approved' : 'Booking received — pending review'}</b>
-              </p>
-              <p className={`booking-payment__whatsapp booking-payment__whatsapp--${whatsappStatus}`} role="status">
-                {getWhatsAppMessage()}
-              </p>
-              {booking.whatsappConsent && (
-                <button className="booking-payment__opt-out" disabled={isOptingOut} onClick={() => void handleWhatsAppOptOut()} type="button">
-                  {isOptingOut ? 'Updating preference…' : 'Stop WhatsApp updates'}
-                </button>
-              )}
-              {whatsappError && <p className="booking-payment__error" role="alert">{whatsappError}</p>}
-            </section>
-
-            <div className="booking-payment__provider">
-              <span className="booking-payment__lock"><LockKeyhole size={17} aria-hidden="true" /></span>
-              <span>Checkout experience</span>
-              <strong>Razorpay</strong>
-            </div>
-            <p className="booking-payment__secure-note">
-              Secure payment powered by Razorpay.
-            </p>
-            <p className="booking-payment__demo-note">
-              Demo mode is active. The Pay button records a simulated status only;
-              Razorpay Checkout is not connected and no real payment will be taken.
-            </p>
-
-            {paymentError && <p className="booking-payment__error" role="alert">{paymentError}</p>}
-
             {isPaid ? (
-              <div className="booking-payment__reference">
-                Demo reference <code>{booking.paymentReference}</code>
-              </div>
+              <>
+                <section className="booking-payment__confirmation" aria-label="Booking confirmation">
+                  <span className="booking-payment__muted">BOOKING REFERENCE</span>
+                  <strong>{booking.reference}</strong>
+                  <p>Payment status: <b>{paymentLabel}</b></p>
+                  <p>Booking status: <b>{bookingLabel}</b></p>
+                </section>
+                <p className={`booking-payment__notification booking-payment__notification--${notificationStatus}`} role="status">
+                  <b>WhatsApp update · {notificationStatus.replaceAll('_', ' ')}</b>
+                  <span>{notificationCopy}</span>
+                </p>
+              </>
+            ) : isFailureView ? (
+              <>
+                <p className={`booking-payment__notification booking-payment__notification--${notificationStatus}`} role="status">
+                  <b>WhatsApp update · {notificationStatus.replaceAll('_', ' ')}</b>
+                  <span>{notificationCopy}</span>
+                </p>
+                <div className="booking-payment__retry-actions">
+                  <button className="booking-payment__pay" onClick={handleTryPaymentAgain} type="button">
+                    Try Payment Again
+                  </button>
+                </div>
+              </>
             ) : (
-              <button
-                className="booking-payment__pay"
-                disabled={isPaying}
-                onClick={handlePay}
-                type="button"
-              >
-                {isPaying ? (
-                  <>
-                    <LoaderCircle className="booking-payment__spinner" size={18} aria-hidden="true" />
-                    Processing demo payment…
-                  </>
+              <>
+                <div className="booking-payment__provider">
+                  <span className="booking-payment__lock"><LockKeyhole size={17} aria-hidden="true" /></span>
+                  <span>Payment mode</span>
+                  <strong>{isDemoPayment ? 'Demo Payment' : 'Razorpay'}</strong>
+                </div>
+                {isDemoPayment ? (
+                  <p className="booking-payment__demo-note">
+                    Razorpay Checkout is not configured. This development-only simulator
+                    records Demo Paid or Failed on the backend; no real money is charged.
+                  </p>
                 ) : (
-                  <>Pay ₹{booking.paymentAmount}</>
+                  <p className="booking-payment__secure-note">
+                    Orders are created and verified by the booking server. Your booking
+                    is finalized only after Razorpay confirms the payment.
+                  </p>
                 )}
-              </button>
+                {paymentError && <p className="booking-payment__error" role="alert">{paymentError}</p>}
+                {isVerifying ? (
+                  <button className="booking-payment__pay" disabled={isPaying} onClick={() => void refreshPaymentStatus()} type="button">
+                    {isPaying ? 'Checking payment status…' : 'Check Payment Status'}
+                  </button>
+                ) : (
+                  <>
+                    <button className="booking-payment__pay" disabled={isPaying} onClick={() => void handlePay()} type="button">
+                      {isPaying
+                        ? 'Starting secure checkout…'
+                        : isDemoPayment
+                          ? `Simulate Demo Payment Success · ₹${booking.paymentAmount}`
+                          : `Pay ₹${booking.paymentAmount} with Razorpay`}
+                    </button>
+                    {isDemoPayment && (
+                      <div className="booking-payment__retry-actions">
+                        <button className="booking-payment__secondary" disabled={isPaying} onClick={() => void handleDemoFailure('failed')} type="button">
+                          Simulate Failed Payment
+                        </button>
+                        <button className="booking-payment__secondary" disabled={isPaying} onClick={() => void handleDemoFailure('cancelled')} type="button">
+                          Cancel Demo Payment
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
             <Link className="booking-payment__continue" to="/">
               Continue exploring

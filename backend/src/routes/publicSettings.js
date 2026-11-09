@@ -25,6 +25,7 @@ function safeSocialUrl(value) {
 
 export function createPublicSettingsRouter({
   platformSettingModel = PlatformSetting,
+  diwaliOfferService,
 } = {}) {
   const router = Router()
 
@@ -38,6 +39,20 @@ export function createPublicSettingsRouter({
       })
 
       response.set('Cache-Control', 'no-store').json({ socialLinks })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/diwali-offer', async (_request, response, next) => {
+    try {
+      if (!diwaliOfferService?.getOffer) {
+        response.status(503).json({ message: 'Offer pricing is temporarily unavailable.' })
+        return
+      }
+      response.set('Cache-Control', 'no-store').json({
+        offer: await diwaliOfferService.getOffer(),
+      })
     } catch (error) {
       next(error)
     }

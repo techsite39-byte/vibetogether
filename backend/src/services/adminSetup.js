@@ -6,6 +6,7 @@ import {
   GoogleOAuthTransaction,
   PasswordReset,
 } from '../models/adminRecords.js'
+import { ensureDiwaliOffer } from './diwaliOffer.js'
 import { hashAdminPassword, verifyAdminPassword } from '../auth/adminAuth.js'
 
 export async function provisionAdminAccount({ name = 'Admin', username, password, model = AdminCredential }) {
@@ -64,6 +65,7 @@ export async function initializeAdminRecords({
     GoogleOAuthTransaction.init(),
     Category.init(),
     PasswordReset.init(),
+    ensureDiwaliOffer(),
   ])
 
   if (username && bootstrapPasswordHash) {
