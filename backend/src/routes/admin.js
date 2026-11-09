@@ -386,7 +386,9 @@ function cleanPlatformSettings(value) {
     'contactPhone',
     'whatsappNumber',
     'socialInstagram',
+    'socialFacebook',
     'socialYoutube',
+    'socialLinkedin',
     'bookingPolicy',
     'notifications',
   ])
@@ -406,7 +408,9 @@ function cleanPlatformSettings(value) {
     contactPhone: 24,
     whatsappNumber: 15,
     socialInstagram: 2048,
+    socialFacebook: 2048,
     socialYoutube: 2048,
+    socialLinkedin: 2048,
     bookingPolicy: 1000,
   }
   const result = {}
@@ -427,7 +431,7 @@ function cleanPlatformSettings(value) {
   if (result.whatsappNumber && !/^\d{8,15}$/.test(result.whatsappNumber)) {
     throw Object.assign(new Error('WhatsApp number must include 8 to 15 digits.'), { status: 400 })
   }
-  for (const field of ['socialInstagram', 'socialYoutube']) {
+  for (const field of ['socialInstagram', 'socialFacebook', 'socialYoutube', 'socialLinkedin']) {
     if (result[field]) {
       let url
       try {
@@ -460,20 +464,27 @@ function cleanPlatformSettings(value) {
 function bookingFromEnquiry(enquiry) {
   return {
     id: enquiry.requestId,
-    reference: enquiry.requestId,
+    reference: enquiry.reference ?? enquiry.requestId,
     customer: enquiry.name,
     customerEmail: '',
+    mobile: enquiry.mobile,
     eventId: enquiry.eventId,
     event: enquiry.event,
     categoryId: enquiry.categoryId ?? '',
     category: enquiry.category ?? '',
     ticketCount: 1,
     createdAt: enquiry.createdAt,
-    amount: 0,
+    amount: enquiry.paymentAmount ?? 299,
     currency: 'INR',
-    paymentStatus: 'not_required',
+    paymentStatus: enquiry.paymentStatus ?? 'unpaid',
     status: enquiry.status,
     source: 'booking-enquiry',
+    whatsappConsent: Boolean(enquiry.whatsappConsent),
+    whatsappConsentAt: enquiry.whatsappConsentAt ?? null,
+    whatsappNotification: enquiry.whatsappNotification ?? {
+      status: enquiry.whatsappConsent ? 'pending' : 'skipped',
+      history: [],
+    },
   }
 }
 
@@ -496,7 +507,7 @@ async function listBookings(request) {
   const paymentStatus = typeof request.query.paymentStatus === 'string'
     ? request.query.paymentStatus.trim()
     : ''
-  if (['not_required', 'pending', 'verified', 'failed'].includes(paymentStatus)) {
+  if (['not_required', 'pending', 'verified', 'failed', 'unpaid', 'demo_paid'].includes(paymentStatus)) {
     items = items.filter((item) => item.paymentStatus === paymentStatus)
   }
   const search = typeof request.query.search === 'string'
@@ -508,6 +519,8 @@ async function listBookings(request) {
         item.reference,
         item.customer,
         item.customerEmail,
+        item.mobile,
+        item.category,
         item.event,
         item.event?.title,
       ]
@@ -646,6 +659,9 @@ export function createAdminRouter({
   sessionSecret,
   adminModel = AdminCredential,
   sessionModel = AdminSession,
+  bookingEnquiryRepository,
+  whatsappService,
+  whatsappTestPhoneNumber = '',
 }) {
   const router = Router()
   const requireAdmin = createRequireAdmin({
@@ -682,6 +698,88 @@ export function createAdminRouter({
   router.get('/bookings', async (request, response, next) => {
     try {
       response.json(await listBookings(request))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/bookings/:reference/whatsapp', async (request, response, next) => {
+    try {
+      const enquiry = await bookingEnquiryRepository?.findByReference?.(request.params.reference)
+      if (!enquiry) {
+        response.status(404).json({ message: 'Booking enquiry was not found.' })
+        return
+      }
+      response.json({
+        reference: enquiry.reference,
+        status: enquiry.whatsappNotification?.status ?? 'skipped',
+        attemptCount: enquiry.whatsappNotification?.attemptCount ?? 0,
+        lastAttemptAt: enquiry.whatsappNotification?.lastAttemptAt ?? null,
+        deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
+        providerMessageId: enquiry.whatsappNotification?.providerMessageId ?? '',
+        history: enquiry.whatsappNotification?.history ?? [],
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/bookings/:reference/whatsapp/retry', async (request, response, next) => {
+    try {
+      const enquiry = await bookingEnquiryRepository?.findByReference?.(request.params.reference)
+      if (!enquiry) {
+        response.status(404).json({ message: 'Booking enquiry was not found.' })
+        return
+      }
+      if (!enquiry.whatsappConsent) {
+        response.status(409).json({ message: 'The customer did not consent to WhatsApp messages.' })
+        return
+      }
+      if (['sent', 'delivered', 'read'].includes(enquiry.whatsappNotification?.status)) {
+        response.status(409).json({ message: 'A successful WhatsApp confirmation cannot be resent.' })
+        return
+      }
+      if (enquiry.whatsappNotification?.status !== 'failed') {
+        response.status(409).json({ message: 'Only failed WhatsApp confirmations can be retried.' })
+        return
+      }
+      if (!enquiry.whatsappNotification?.retryable) {
+        response.status(409).json({ message: 'This failure may have reached WhatsApp. It cannot be retried automatically to avoid duplicate messages.' })
+        return
+      }
+      if (
+        typeof bookingEnquiryRepository?.claimWhatsAppAttempt !== 'function' ||
+        typeof bookingEnquiryRepository?.completeWhatsAppAttempt !== 'function' ||
+        typeof whatsappService?.sendBookingConfirmation !== 'function'
+      ) {
+        response.status(503).json({ message: 'WhatsApp retry is not configured.' })
+        return
+      }
+      const claimed = await bookingEnquiryRepository.claimWhatsAppAttempt(enquiry.requestId, {
+        retryFailed: true,
+      })
+      if (!claimed) {
+        response.status(409).json({ message: 'This WhatsApp notification is already being processed.' })
+        return
+      }
+      const settings = await bookingEnquiryRepository.getWhatsAppSettings?.() ?? {}
+      const result = await whatsappService.sendBookingConfirmation(claimed, settings)
+      const updated = await bookingEnquiryRepository.completeWhatsAppAttempt(
+        enquiry.requestId,
+        result,
+        'admin',
+      )
+      await writeAudit(
+        request,
+        'WhatsApp confirmation retried',
+        'booking',
+        enquiry.reference,
+        `Admin retried WhatsApp confirmation for booking ${enquiry.reference}.`,
+      )
+      response.json({
+        booking: bookingFromEnquiry(updated ?? claimed),
+        status: updated?.whatsappNotification?.status ?? result.status,
+      })
     } catch (error) {
       next(error)
     }
@@ -802,7 +900,9 @@ export function createAdminRouter({
         return
       }
 
-      const enquiry = await BookingEnquiry.findOne({ requestId: reference }).exec()
+      const enquiry = await BookingEnquiry.findOne({
+        $or: [{ reference }, { requestId: reference }],
+      }).exec()
       if (!enquiry) {
         response.status(404).json({ message: 'Booking record was not found.' })
         return
@@ -831,7 +931,9 @@ export function createAdminRouter({
         response.status(204).end()
         return
       }
-      const enquiry = await BookingEnquiry.findOneAndDelete({ requestId: reference }).lean()
+      const enquiry = await BookingEnquiry.findOneAndDelete({
+        $or: [{ reference }, { requestId: reference }],
+      }).lean()
       if (!enquiry) {
         response.status(404).json({ message: 'Booking record was not found.' })
         return
@@ -972,6 +1074,101 @@ export function createAdminRouter({
     try {
       const record = await PlatformSetting.findOne({ key: 'platform' }).lean()
       response.json({ settings: record?.value ?? null })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/settings/whatsapp', async (_request, response, next) => {
+    if (!requireSuperAdmin(_request, response)) {
+      return
+    }
+    try {
+      const stored = await PlatformSetting.findOne({ key: 'whatsapp' }).lean()
+      const settings = {
+        enabled: stored?.value?.enabled ?? true,
+        displayNumber: stored?.value?.displayNumber ?? '',
+        businessContact: stored?.value?.businessContact ?? '',
+        templateName: stored?.value?.templateName || whatsappService?.getConfigurationStatus?.().templateName || 'vibe_booking_confirmation_v1',
+        templateLanguage: stored?.value?.templateLanguage || whatsappService?.getConfigurationStatus?.().templateLanguage || 'en',
+      }
+      response.json({
+        settings,
+        configuration: {
+          ...whatsappService?.getConfigurationStatus?.(settings),
+          testNumberConfigured: Boolean(whatsappTestPhoneNumber),
+        },
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.put('/settings/whatsapp', async (request, response, next) => {
+    if (!requireSuperAdmin(request, response)) {
+      return
+    }
+    try {
+      const value = request.body
+      const allowed = ['enabled', 'displayNumber', 'businessContact', 'templateName', 'templateLanguage']
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        Object.keys(value).some((key) => !allowed.includes(key)) ||
+        typeof value.enabled !== 'boolean'
+      ) {
+        response.status(400).json({ message: 'Provide valid WhatsApp settings.' })
+        return
+      }
+      const settings = {
+        enabled: value.enabled,
+        displayNumber: typeof value.displayNumber === 'string' ? value.displayNumber.trim() : '',
+        businessContact: typeof value.businessContact === 'string' ? value.businessContact.trim() : '',
+        templateName: typeof value.templateName === 'string' ? value.templateName.trim() : '',
+        templateLanguage: typeof value.templateLanguage === 'string' ? value.templateLanguage.trim() : '',
+      }
+      const normalizedDisplayNumber = settings.displayNumber.replace(/[\s().-]/g, '')
+      if (
+        settings.displayNumber.length > 30 ||
+        settings.businessContact.length > 200 ||
+        (normalizedDisplayNumber && !/^\+?[1-9]\d{7,14}$/.test(normalizedDisplayNumber)) ||
+        !/^[a-zA-Z0-9._-]{1,80}$/.test(settings.templateName) ||
+        !/^[a-z]{2}(?:_[A-Z]{2})?$/.test(settings.templateLanguage)
+      ) {
+        response.status(400).json({ message: 'Check the WhatsApp number, template name, language, and contact information.' })
+        return
+      }
+      const record = await PlatformSetting.findOneAndUpdate(
+        { key: 'whatsapp' },
+        { $set: { value: settings } },
+        { new: true, upsert: true, runValidators: true },
+      ).lean()
+      await writeAudit(request, 'WhatsApp settings updated', 'settings', 'whatsapp', 'WhatsApp settings updated.')
+      response.json({ settings: record.value, configuration: whatsappService?.getConfigurationStatus?.(record.value) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/settings/whatsapp/test', async (request, response, next) => {
+    if (!requireSuperAdmin(request, response)) {
+      return
+    }
+    try {
+      if (!whatsappTestPhoneNumber || typeof whatsappService?.sendTestMessage !== 'function') {
+        response.status(503).json({ message: 'An authorized WhatsApp test number is not configured.' })
+        return
+      }
+      const stored = await PlatformSetting.findOne({ key: 'whatsapp' }).lean()
+      const settings = stored?.value ?? {}
+      const result = await whatsappService.sendTestMessage(whatsappTestPhoneNumber, settings)
+      await writeAudit(request, 'WhatsApp configuration test sent', 'settings', 'whatsapp', 'WhatsApp test sent to the configured test number.')
+      if (result.status !== 'sent') {
+        response.status(503).json({ message: result.reason ?? 'WhatsApp test message failed.' })
+        return
+      }
+      response.json({ status: 'sent', messageId: result.messageId })
     } catch (error) {
       next(error)
     }

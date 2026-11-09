@@ -298,6 +298,63 @@
   overflow-wrap: anywhere;
 }
 
+.booking-payment__confirmation {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgb(195 160 231 / 22%);
+  border-radius: 0.9rem;
+  background: rgb(119 59 255 / 7%);
+}
+
+.booking-payment__confirmation > strong {
+  display: block;
+  margin-top: 0.4rem;
+  color: #f0dcff;
+  font-family: var(--font-mono);
+  font-size: clamp(1.15rem, 4vw, 1.55rem);
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+}
+
+.booking-payment__confirmation p {
+  margin: 0.65rem 0 0;
+  color: #c9bdd6;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.booking-payment__confirmation b {
+  color: #f3eaff;
+}
+
+.booking-payment__whatsapp {
+  padding-top: 0.65rem;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+
+.booking-payment__whatsapp--failed,
+.booking-payment__whatsapp--skipped {
+  color: #e4c9a1 !important;
+}
+
+.booking-payment__opt-out {
+  margin-top: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #b7a9c5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.booking-payment__opt-out:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .booking-payment__state {
   display: grid;
   min-height: 16rem;

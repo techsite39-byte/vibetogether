@@ -58,7 +58,7 @@
 
 .whatsapp-action--floating {
   position: fixed;
-  z-index: var(--z-sticky);
+  z-index: 1100;
   right: max(1rem, env(safe-area-inset-right));
   bottom: max(1rem, env(safe-area-inset-bottom));
   justify-items: end;
@@ -84,6 +84,10 @@
 
 .whatsapp-action--floating .whatsapp-action__button:hover {
   background: #1c9d58;
+  box-shadow:
+    0 14px 34px rgb(0 0 0 / 40%),
+    0 0 28px rgb(37 179 101 / 30%);
+  transform: translateY(-2px) scale(1.04);
 }
 
 .whatsapp-action--floating .whatsapp-action__button.is-unconfigured:disabled {

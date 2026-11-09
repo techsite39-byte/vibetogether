@@ -12,11 +12,12 @@ function WhatsAppIcon() {
 
 export default function WhatsAppLink({
   className = '',
+  href,
   iconOnly = false,
   label = 'Chat on WhatsApp',
   message = 'Hi VIBE TOGETHER, I would like to get in touch.',
 }) {
-  const url = getWhatsAppUrl(message)
+  const url = href || getWhatsAppUrl(message)
   const noticeId = useId()
 
   return (

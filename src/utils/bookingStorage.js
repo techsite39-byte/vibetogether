@@ -2,7 +2,9 @@ import { validateBookingForm } from './bookingValidation.js'
 
 const STORAGE_KEY = 'vibe-together.mock-bookings.v1'
 const BOOKING_REFERENCES_KEY = 'vibe-together.booking-references.v1'
+const BOOKING_REFERENCE_COUNTER_KEY = 'vibe-together.booking-reference-counter.v1'
 const BOOKINGS_CHANGED_EVENT = 'vibe-together:mock-bookings-changed'
+const BOOKING_REFERENCE_START = 10812026501
 
 function getStorage() {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -142,14 +144,35 @@ export function getAvailableSeats(event, bookings) {
   )
 }
 
-function createBookingReference() {
-  const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
-  const randomId =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()
-      : Math.random().toString(36).slice(2, 12).toUpperCase()
+function readBookingReferenceCounter() {
+  const storage = getStorage()
+  const rawValue = storage.getItem(BOOKING_REFERENCE_COUNTER_KEY)
+  if (rawValue === null || rawValue === '') {
+    return BOOKING_REFERENCE_START - 1
+  }
 
-  return `VT-${date}-${randomId}`
+  const parsed = Number(rawValue)
+  return Number.isInteger(parsed) && parsed >= BOOKING_REFERENCE_START - 1 ? parsed : BOOKING_REFERENCE_START - 1
+}
+
+export function createBookingReference() {
+  const bookings = getBookings()
+  const seedValue = BOOKING_REFERENCE_START - 1
+  const highestStoredValue = bookings.reduce((max, booking) => {
+    const value = Number(String(booking.reference).match(/\d+/)?.[0] ?? '')
+    return Number.isInteger(value) ? Math.max(max, value) : max
+  }, seedValue)
+
+  const currentValue = Math.max(readBookingReferenceCounter(), highestStoredValue)
+  const nextValue = Math.max(currentValue + 1, highestStoredValue + 1, BOOKING_REFERENCE_START)
+
+  try {
+    getStorage().setItem(BOOKING_REFERENCE_COUNTER_KEY, String(nextValue))
+  } catch {
+    throw new Error('The booking reference could not be stored on this device.')
+  }
+
+  return String(nextValue)
 }
 
 export function createFreeBooking({

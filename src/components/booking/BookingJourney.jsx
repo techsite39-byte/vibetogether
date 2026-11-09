@@ -58,6 +58,7 @@ export default function BookingJourney({ onClose }) {
     mobile: '',
     categoryId: '',
     gender: '',
+    whatsappConsent: false,
   })
   const [countryCode, setCountryCode] = useState('+91')
   const [step, setStep] = useState(0)
@@ -217,6 +218,7 @@ export default function BookingJourney({ onClose }) {
         mobile: getNormalizedMobile(form.mobile, countryCode),
         categoryId: form.categoryId,
         gender: form.gender,
+        whatsappConsent: form.whatsappConsent,
       })
       onClose()
       navigate(`/booking/payment/${requestId.current}`)
@@ -444,6 +446,25 @@ export default function BookingJourney({ onClose }) {
               <p className="booking-journey__selected-event">
                 Your interest: <strong>{selectedCategory.title}</strong>
               </p>
+            )}
+            {step === 3 && (
+              <label className="booking-journey__whatsapp-consent">
+                <input
+                  checked={form.whatsappConsent}
+                  onChange={(event) => {
+                    resetRequestAfterEdit()
+                    setForm((current) => ({
+                      ...current,
+                      whatsappConsent: event.target.checked,
+                    }))
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  I agree to receive booking confirmations and important booking
+                  updates from Vibe Together on WhatsApp. This is not marketing consent.
+                </span>
+              </label>
             )}
             {(fieldError || submissionError) && (
               <p className="booking-journey__error" role="alert">

@@ -321,7 +321,9 @@ export const defaultPlatformSettings = {
   contactPhone: '',
   whatsappNumber: '',
   socialInstagram: '',
+  socialFacebook: '',
   socialYoutube: '',
+  socialLinkedin: '',
   bookingPolicy:
     'Free bookings are development-only. Paid bookings require server-side payment verification.',
   categories: categories.map(({ id, title }) => ({ id, title, enabled: true })),

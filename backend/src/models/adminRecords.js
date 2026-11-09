@@ -73,6 +73,21 @@ export const AdminSession = createModel(
   ],
 )
 
+export const GoogleOAuthTransaction = createModel(
+  'GoogleOAuthTransaction',
+  'google-oauth-transactions',
+  {
+    stateHash: { type: String, required: true, trim: true, maxlength: 64 },
+    browserBindingHash: { type: String, required: true, trim: true, maxlength: 64 },
+    frontendOrigin: { type: String, required: true, trim: true, maxlength: 300 },
+    expiresAt: { type: Date, required: true },
+  },
+  [
+    [{ stateHash: 1 }, { unique: true }],
+    [{ expiresAt: 1 }, { expireAfterSeconds: 0 }],
+  ],
+)
+
 export const User = createModel(
   'User',
   'users-db',
@@ -101,6 +116,16 @@ export const Organizer = createModel(
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   },
   [[{ contactEmail: 1 }, { unique: true, partialFilterExpression: { contactEmail: { $type: 'string', $gt: '' } } }]],
+)
+
+export const BookingReferenceCounter = createModel(
+  'BookingReferenceCounter',
+  'booking-reference-counter',
+  {
+    _id: { type: String, default: 'booking-reference-counter' },
+    value: { type: Number, required: true, default: 10812026500, min: 10812026500 },
+  },
+  [[{ _id: 1 }]],
 )
 
 export const Booking = createModel(

@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import { categories as defaultCategories } from '../../../src/data/categories.js'
 import { events as defaultEvents } from '../../../src/data/events.js'
+import { normalizeWhatsAppNumber } from '../services/whatsapp.js'
 
 const requestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const eventIdPattern = /^[a-z0-9-]{1,80}$/
-const mobilePattern = /^\+?[0-9][0-9\s().-]{6,23}$/
 const rateLimitWindowMs = 15 * 60 * 1000
 const rateLimitMaxRequests = 5
 
@@ -80,10 +80,8 @@ async function validateBookingEnquiry(body, eventRepository) {
   }
 
   const name = normalizeText(body.name, 'name', 80)
-  const mobile =
-    typeof body.mobile === 'string' && mobilePattern.test(body.mobile.trim())
-      ? body.mobile.replace(/[\s().-]/g, '')
-      : ''
+  const normalizedMobile = normalizeWhatsAppNumber(body.mobile)
+  const mobile = normalizedMobile ? `+${normalizedMobile}` : ''
   const eventId =
     typeof body.eventId === 'string' && eventIdPattern.test(body.eventId)
       ? body.eventId
@@ -94,6 +92,12 @@ async function validateBookingEnquiry(body, eventRepository) {
       ? body.categoryId
       : ''
   const gender = body.gender
+  if (
+    body.whatsappConsent !== undefined &&
+    typeof body.whatsappConsent !== 'boolean'
+  ) {
+    return { error: 'WhatsApp communication consent must be selected explicitly.' }
+  }
 
   if (!name) {
     return { error: 'Enter a valid full name.' }
@@ -146,6 +150,8 @@ async function validateBookingEnquiry(body, eventRepository) {
       mobile,
       ...enquirySelection,
       gender,
+      whatsappConsent: body.whatsappConsent === true,
+      whatsappConsentAt: body.whatsappConsent === true ? new Date() : null,
       createdAt: new Date(),
       source: 'Website booking journey',
       status: 'pending',
@@ -157,6 +163,7 @@ export function createBookingEnquiriesRouter({
   events = defaultEvents,
   eventRepository,
   repository,
+  whatsappService,
 }) {
   if (
     !repository ||
@@ -178,6 +185,7 @@ export function createBookingEnquiriesRouter({
     }
   function serializeEnquiry(enquiry) {
     return {
+      reference: enquiry.reference ?? '',
       requestId: enquiry.requestId,
       name: enquiry.name,
       mobile: enquiry.mobile,
@@ -191,6 +199,53 @@ export function createBookingEnquiriesRouter({
       paymentProvider: enquiry.paymentProvider ?? '',
       paymentReference: enquiry.paymentReference ?? '',
       paidAt: enquiry.paidAt ?? null,
+      whatsappConsent: Boolean(enquiry.whatsappConsent),
+      whatsappConsentAt: enquiry.whatsappConsentAt ?? null,
+      whatsappOptedOutAt: enquiry.whatsappOptedOutAt ?? null,
+      whatsappNotification: {
+        messageType: enquiry.whatsappNotification?.messageType ?? 'booking_confirmation',
+        bookingReference: enquiry.whatsappNotification?.bookingReference ?? enquiry.reference ?? '',
+        status: enquiry.whatsappConsent
+          ? enquiry.whatsappNotification?.status ?? 'pending'
+          : 'skipped',
+        attemptCount: enquiry.whatsappNotification?.attemptCount ?? 0,
+        lastAttemptAt: enquiry.whatsappNotification?.lastAttemptAt ?? null,
+        deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
+      },
+    }
+  }
+
+  async function sendInitialConfirmation(enquiry) {
+    if (
+      !enquiry.whatsappConsent ||
+      typeof repository.claimWhatsAppAttempt !== 'function' ||
+      typeof repository.completeWhatsAppAttempt !== 'function' ||
+      typeof whatsappService?.sendBookingConfirmation !== 'function'
+    ) {
+      return enquiry
+    }
+
+    const claimed = await repository.claimWhatsAppAttempt(enquiry.requestId)
+    if (!claimed) {
+      return enquiry
+    }
+    let result
+    try {
+      const settings = typeof repository.getWhatsAppSettings === 'function'
+        ? await repository.getWhatsAppSettings()
+        : {}
+      result = await whatsappService.sendBookingConfirmation(claimed, settings)
+    } catch {
+      result = {
+        status: 'failed',
+        reason: 'WhatsApp confirmation could not be sent. An administrator can retry it.',
+      }
+    }
+    try {
+      return await repository.completeWhatsAppAttempt(enquiry.requestId, result) ?? claimed
+    } catch {
+      console.error('WhatsApp notification status could not be saved.')
+      return claimed
     }
   }
 
@@ -206,9 +261,18 @@ export function createBookingEnquiriesRouter({
       }
 
       const result = await repository.save(validation.value)
+      let savedEnquiry = result.enquiry
+      if (!result.duplicate) {
+        try {
+          savedEnquiry = await sendInitialConfirmation(savedEnquiry)
+        } catch {
+          console.error('WhatsApp confirmation attempt could not be completed.')
+        }
+      }
       response.status(result.duplicate ? 200 : 201).json({
         message: 'Your booking request has been received.',
         duplicate: result.duplicate,
+        booking: serializeEnquiry(savedEnquiry),
       })
     } catch (error) {
       if (error.status === 409) {
@@ -246,6 +310,25 @@ export function createBookingEnquiriesRouter({
       response.status(503).json({
         message: 'Booking details are temporarily unavailable. Please try again.',
       })
+    }
+  })
+
+  router.post('/:requestId/whatsapp-opt-out', async (request, response) => {
+    const { requestId } = request.params
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+    try {
+      const enquiry = await repository.optOutWhatsApp?.(requestId)
+      if (!enquiry) {
+        response.status(404).json({ message: 'Booking enquiry not found.' })
+        return
+      }
+      response.json({ booking: serializeEnquiry(enquiry) })
+    } catch {
+      console.error('WhatsApp opt-out could not be saved.')
+      response.status(503).json({ message: 'WhatsApp preferences could not be updated. Please try again.' })
     }
   })
 

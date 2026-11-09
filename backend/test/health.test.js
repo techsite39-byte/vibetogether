@@ -43,6 +43,14 @@ test('health endpoint reports the backend port', async () => {
   assert.equal((await response.json()).port, Number(new URL(baseUrl).port))
 })
 
+test('trusts the Render reverse proxy only in production', () => {
+  const productionApp = createApp({ nodeEnv: 'production' })
+  const developmentApp = createApp({ nodeEnv: 'development' })
+
+  assert.equal(productionApp.get('trust proxy'), 1)
+  assert.equal(developmentApp.get('trust proxy'), false)
+})
+
 test('readiness endpoint reports an unavailable database', async () => {
   await mongoose.disconnect()
   const response = await fetch(`${baseUrl}/api/health/ready`)

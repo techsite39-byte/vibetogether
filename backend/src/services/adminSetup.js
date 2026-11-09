@@ -1,5 +1,11 @@
 import { categories as sourceCategories } from '../../../src/data/categories.js'
-import { AdminCredential, AdminSession, Category, PasswordReset } from '../models/adminRecords.js'
+import {
+  AdminCredential,
+  AdminSession,
+  Category,
+  GoogleOAuthTransaction,
+  PasswordReset,
+} from '../models/adminRecords.js'
 import { hashAdminPassword, verifyAdminPassword } from '../auth/adminAuth.js'
 
 export async function provisionAdminAccount({ name = 'Admin', username, password, model = AdminCredential }) {
@@ -55,6 +61,7 @@ export async function initializeAdminRecords({
   await Promise.all([
     AdminCredential.init(),
     AdminSession.init(),
+    GoogleOAuthTransaction.init(),
     Category.init(),
     PasswordReset.init(),
   ])

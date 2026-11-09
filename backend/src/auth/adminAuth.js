@@ -14,8 +14,8 @@ import { AdminCredential, AdminSession, PasswordReset } from '../models/adminRec
 const scrypt = promisify(scryptCallback)
 const sessionCookie = 'vt_admin_session'
 const csrfCookie = 'vt_admin_csrf'
-const googleStateCookie = 'vt_google_oauth_state'
-const googleFrontendOriginCookie = 'vt_google_frontend_origin'
+const googleBindingCookie = 'vt_google_browser_binding'
+const secureGoogleBindingCookie = '__Host-vt_google_browser_binding'
 const defaultSessionLifetimeSeconds = 8 * 60 * 60 // 8 hours
 const rememberMeLifetimeSeconds = 30 * 24 * 60 * 60 // 30 days
 const loginWindowMilliseconds = 15 * 60 * 1000 // 15 minutes
@@ -130,23 +130,11 @@ function cookieOptions({ secure, maxAge, httpOnly }) {
     .join('; ')
 }
 
-function googleStateCookieValue(state, secure, maxAge = 600) {
+function googleBindingCookieValue(binding, secure, maxAge = 600) {
+  const name = secure ? secureGoogleBindingCookie : googleBindingCookie
   return [
-    `${googleStateCookie}=${encodeURIComponent(state)}`,
-    'Path=/api/admin/auth',
-    'SameSite=Lax',
-    `Max-Age=${maxAge}`,
-    'HttpOnly',
-    secure ? 'Secure' : '',
-  ]
-    .filter(Boolean)
-    .join('; ')
-}
-
-function googleFrontendOriginCookieValue(origin, secure, maxAge = 600) {
-  return [
-    `${googleFrontendOriginCookie}=${encodeURIComponent(origin)}`,
-    'Path=/api/admin/auth',
+    `${name}=${encodeURIComponent(binding)}`,
+    'Path=/',
     'SameSite=Lax',
     `Max-Age=${maxAge}`,
     'HttpOnly',
@@ -374,6 +362,7 @@ export function createAdminAuthRouter({
   googleClientSecret = '',
   googleCallbackUrl = '',
   googleCallbackUrlValid = false,
+  googleOAuthTransactionStore,
   backendPort = 4000,
   frontendOrigin = 'http://localhost:5173',
   corsOrigins = [],
@@ -455,6 +444,11 @@ export function createAdminAuthRouter({
   })
 
   router.use((_request, response, next) => {
+    if (_request.path === '/google/callback') {
+      next()
+      return
+    }
+
     if (!databaseReady()) {
       response.status(503).json({
         message: 'The admin database is unavailable. Please try again when the service is ready.',
@@ -597,18 +591,57 @@ export function createAdminAuthRouter({
     }
   }
 
-  router.get(['/google', '/google/redirect'], (request, response) => {
+  function redirectToLogin(response, origin, reason) {
+    const loginUrl = new URL('/admin/login', origin || frontendOrigin)
+    if (reason) {
+      loginUrl.searchParams.set('google_error', reason)
+    }
+    response.redirect(302, loginUrl.toString())
+  }
+
+  router.get(['/google', '/google/redirect'], async (request, response) => {
     if (!googleClientId || !googleClientSecret || !googleCallbackUrlValid) {
       response.status(503).json({
         message: 'Google Sign-In requires valid GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL settings on the backend.',
       })
       return
     }
+    if (
+      !googleOAuthTransactionStore ||
+      typeof googleOAuthTransactionStore.create !== 'function' ||
+      typeof googleOAuthTransactionStore.consume !== 'function'
+    ) {
+      response.status(503).json({
+        message: 'Google Sign-In is temporarily unavailable. Please try again later.',
+      })
+      return
+    }
 
     const state = randomBytes(32).toString('base64url')
+    const bindingCookie = secureCookies
+      ? secureGoogleBindingCookie
+      : googleBindingCookie
+    const existingBinding = readCookie(request, bindingCookie)
+    const browserBinding = /^[A-Za-z0-9_-]{40,64}$/.test(existingBinding)
+      ? existingBinding
+      : randomBytes(32).toString('base64url')
     const requestedFrontendOrigin =
       allowedFrontendOrigin(request.query.frontend_origin, { corsOrigins, nodeEnv }) ||
       frontendOrigin
+    try {
+      await googleOAuthTransactionStore.create({
+        state,
+        browserBinding,
+        frontendOrigin: requestedFrontendOrigin,
+      })
+    } catch {
+      console.error('[Google OAuth] Could not persist authorization transaction.')
+      response.status(503).json({
+        message: 'Google Sign-In is temporarily unavailable. Please try again later.',
+      })
+      return
+    }
+
     const authorizationUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
     authorizationUrl.search = new URLSearchParams({
       client_id: googleClientId,
@@ -617,61 +650,85 @@ export function createAdminAuthRouter({
       scope: 'openid email profile',
       state,
     }).toString()
-    console.info(
-      '[Google OAuth] Authorization request',
-      JSON.stringify({
-        clientId: googleClientId,
-        redirectUri: googleCallbackUrl,
-        frontendOrigin: requestedFrontendOrigin,
-      }),
-    )
+    console.info('[Google OAuth] Authorization transaction created.')
     response.setHeader('Cache-Control', 'no-store')
-    response.setHeader('Set-Cookie', [
-      googleStateCookieValue(state, secureCookies),
-      googleFrontendOriginCookieValue(requestedFrontendOrigin, secureCookies),
-    ])
+    response.setHeader('Set-Cookie', googleBindingCookieValue(browserBinding, secureCookies))
     response.redirect(302, authorizationUrl.toString())
   })
 
   router.get('/google/callback', async (request, response, next) => {
-    response.setHeader('Set-Cookie', [
-      googleStateCookieValue('', secureCookies, 0),
-      googleFrontendOriginCookieValue('', secureCookies, 0),
-    ])
-    const callbackFrontendOrigin =
-      allowedFrontendOrigin(readCookie(request, googleFrontendOriginCookie), {
-        corsOrigins,
-        nodeEnv,
-      }) || frontendOrigin
-    const googleError = typeof request.query.error === 'string' ? request.query.error : ''
-    if (googleError) {
-      const loginUrl = new URL('/admin/login', callbackFrontendOrigin)
-      loginUrl.searchParams.set(
-        'google_error',
-        googleError === 'access_denied' ? 'cancelled' : 'failed',
-      )
-      response.redirect(302, loginUrl.toString())
+    const state = typeof request.query.state === 'string' ? request.query.state : ''
+    const bindingCookie = secureCookies
+      ? secureGoogleBindingCookie
+      : googleBindingCookie
+    const browserBinding = readCookie(request, bindingCookie)
+    response.setHeader('Cache-Control', 'no-store')
+    const code = typeof request.query.code === 'string' ? request.query.code : ''
+    if (!googleOAuthTransactionStore) {
+      console.error('[Google OAuth] Callback could not access the transaction store.')
+      redirectToLogin(response, frontendOrigin, 'failed')
+      return
+    }
+    if (
+      !/^[A-Za-z0-9_-]{40,64}$/.test(state) ||
+      !/^[A-Za-z0-9_-]{40,64}$/.test(browserBinding)
+    ) {
+      console.warn('[Google OAuth] Callback rejected: missing or malformed transaction binding.')
+      redirectToLogin(response, frontendOrigin, 'state')
       return
     }
 
-    const state = typeof request.query.state === 'string' ? request.query.state : ''
-    const cookieState = readCookie(request, googleStateCookie)
-    const code = typeof request.query.code === 'string' ? request.query.code : ''
-    if (!state || !cookieState || !safeEqual(state, cookieState)) {
-      response.status(403).json({ message: 'Google sign-in state could not be verified. Please try again.' })
+    let consumed
+    try {
+      consumed = await googleOAuthTransactionStore.consume({ state, browserBinding })
+    } catch {
+      console.error('[Google OAuth] Could not validate authorization transaction.')
+      redirectToLogin(response, frontendOrigin, 'failed')
+      return
+    }
+    const transaction = consumed?.transaction
+    const callbackFrontendOrigin = transaction
+      ? allowedFrontendOrigin(transaction.frontendOrigin, { corsOrigins, nodeEnv }) ||
+        frontendOrigin
+      : frontendOrigin
+    if (!transaction) {
+      const reason = consumed?.error === 'expired' ? 'expired' : 'state'
+      console.warn(`[Google OAuth] Callback rejected: ${reason} transaction.`)
+      redirectToLogin(response, callbackFrontendOrigin, reason)
+      return
+    }
+
+    const googleError = typeof request.query.error === 'string' ? request.query.error : ''
+    if (googleError) {
+      const reason = googleError === 'access_denied' ? 'cancelled' : 'failed'
+      console.info(`[Google OAuth] Authorization ended by provider: ${reason}.`)
+      redirectToLogin(response, callbackFrontendOrigin, reason)
       return
     }
     if (!code) {
-      response.status(400).json({ message: 'Google did not return an authorization code.' })
+      console.warn('[Google OAuth] Callback rejected: authorization code missing.')
+      redirectToLogin(response, callbackFrontendOrigin, 'failed')
       return
     }
 
     try {
       const googleUser = await exchangeGoogleCode(code)
       await establishGoogleSession(googleUser, response)
+      console.info('[Google OAuth] Authorized admin session established.')
       response.redirect(302, new URL('/admin/dashboard', callbackFrontendOrigin).toString())
     } catch (error) {
-      next(error)
+      if (error.status === 403) {
+        console.warn('[Google OAuth] Sign-in denied: Google identity is not an active authorized admin.')
+        redirectToLogin(response, callbackFrontendOrigin, 'unauthorized')
+        return
+      }
+
+      console.error('[Google OAuth] Callback failed during code exchange or session creation.')
+      if (response.headersSent) {
+        next(error)
+        return
+      }
+      redirectToLogin(response, callbackFrontendOrigin, 'failed')
     }
   })
 

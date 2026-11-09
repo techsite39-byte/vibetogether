@@ -10,7 +10,9 @@ const defaultPlatformSettings = {
   contactPhone: '',
   whatsappNumber: '',
   socialInstagram: '',
+  socialFacebook: '',
   socialYoutube: '',
+  socialLinkedin: '',
   bookingPolicy: '',
   categories: [],
   notifications: {

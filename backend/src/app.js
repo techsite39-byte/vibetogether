@@ -6,8 +6,11 @@ import { createEventsRouter } from './routes/events.js'
 import { createAdminAuthRouter } from './auth/adminAuth.js'
 import { createAdminRouter } from './routes/admin.js'
 import { createBookingsRouter } from './routes/bookings.js'
+import { createWhatsAppWebhookRouter } from './routes/whatsappWebhook.js'
 import { createPublicEnquiriesRouter } from './routes/publicEnquiries.js'
+import { createPublicSettingsRouter } from './routes/publicSettings.js'
 import healthRouter from './routes/health.js'
+import { PlatformSetting } from './models/adminRecords.js'
 
 export function createApp({
   adminPasswordHash = '',
@@ -21,14 +24,19 @@ export function createApp({
   googleClientSecret = '',
   googleCallbackUrl = '',
   googleCallbackUrlValid = false,
+  googleOAuthTransactionStore,
   bookingModel,
   bookingEventModel,
+  bookingReferenceCounterModel,
   bookingEnquiryRepository,
+  whatsappService,
+  whatsappTestPhoneNumber = '',
   corsOrigins,
   databaseReady,
   enquiryModel,
   events,
   eventRepository,
+  platformSettingModel = PlatformSetting,
   frontendOrigin,
   backendPort = 4000,
   nodeEnv = 'production',
@@ -37,6 +45,7 @@ export function createApp({
 }) {
   const app = express()
 
+  app.set('trust proxy', nodeEnv === 'production' ? 1 : false)
   app.disable('x-powered-by')
   app.use(helmet())
   app.get('/', (request, response) => {
@@ -64,6 +73,16 @@ export function createApp({
       },
     }),
   )
+  if (bookingEnquiryRepository) {
+    app.use(
+      '/api/webhooks/whatsapp',
+      express.raw({ type: 'application/json', limit: '256kb' }),
+      createWhatsAppWebhookRouter({
+        whatsappService,
+        repository: bookingEnquiryRepository,
+      }),
+    )
+  }
   app.use(express.json({ limit: '1mb' }))
   app.use('/api/health', healthRouter)
   app.use('/api/admin/auth', createAdminAuthRouter({
@@ -73,6 +92,7 @@ export function createApp({
     googleClientSecret,
     googleCallbackUrl,
     googleCallbackUrlValid,
+    googleOAuthTransactionStore,
     backendPort,
     frontendOrigin,
     corsOrigins,
@@ -89,11 +109,16 @@ export function createApp({
     adminModel,
     sessionModel: adminSessionModel,
     sessionSecret: adminSessionSecret,
+    bookingEnquiryRepository,
+    whatsappService,
+    whatsappTestPhoneNumber,
   }))
   app.use('/api', createPublicEnquiriesRouter({ enquiryModel, subscriberModel }))
+  app.use('/api/public-settings', createPublicSettingsRouter({ platformSettingModel }))
   app.use('/api/bookings', createBookingsRouter({
     bookingModel,
     eventModel: bookingEventModel,
+    bookingReferenceCounterModel,
   }))
   app.use(
     '/api/events',
@@ -106,6 +131,7 @@ export function createApp({
         events,
         eventRepository,
         repository: bookingEnquiryRepository,
+        whatsappService,
       }),
     )
   }

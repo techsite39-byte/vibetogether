@@ -98,6 +98,105 @@ it does not call Razorpay Checkout or collect money. The server-side provider
 boundary is deliberately separate so real order creation, Checkout,
 signature verification, and webhook verification can be added later.
 
+## WhatsApp booking confirmations
+
+The existing booking-enquiry flow sends a transactional WhatsApp confirmation
+only after MongoDB saves the enquiry and only when the customer checked the
+WhatsApp consent box. It uses the permanent sequential booking reference stored
+on that same record. Duplicate enquiry submissions do not send another message.
+If WhatsApp is unavailable, the booking remains saved and its notification
+state is visible to the customer and admins. Explicitly rejected, retryable API
+requests are retried by a persisted background worker; timeouts and other
+ambiguous outcomes are not resent automatically because the provider may have
+accepted them. Admin retries are limited to failures known to be safe to retry.
+Delivery is recorded only from a signed Meta webhook.
+
+Set these variables on the Render API service (never as `VITE_*` variables):
+
+- `WHATSAPP_PHONE_NUMBER_ID` — Meta phone number ID used by the Cloud API.
+- `WHATSAPP_BUSINESS_ACCOUNT_ID` — WhatsApp Business Account ID.
+- `WHATSAPP_ACCESS_TOKEN` — permanent System User access token with
+  `whatsapp_business_messaging` permission.
+- `WHATSAPP_API_VERSION` — a currently supported Meta Graph API version
+  (required when enabling live requests; the server does not guess an API
+  version).
+- `WHATSAPP_APP_SECRET` — Meta app secret used to validate
+  `X-Hub-Signature-256`.
+- `WHATSAPP_WEBHOOK_VERIFY_TOKEN` — private random token used for the initial
+  webhook subscription challenge.
+- `WHATSAPP_TEMPLATE_NAME` — defaults to `vibe_booking_confirmation_v1`.
+- `WHATSAPP_TEMPLATE_LANGUAGE` — defaults to `en`.
+- `WHATSAPP_TEST_PHONE_NUMBER` — the explicitly authorized E.164 test number
+  used by the Admin Settings test action.
+
+In WhatsApp Manager, create and submit a **Utility** template named
+`vibe_booking_confirmation_v1` in language `English (en)`. The approved body
+must use the following nine text variables in this exact order:
+
+1. Customer name
+2. Saved booking reference
+3. Customer mobile
+4. Saved category or event
+5. Gender
+6. Booking submission date in `Asia/Kolkata`
+7. Booking submission time in `Asia/Kolkata`
+8. Payment status (`Unpaid` or `Demo Paid (no real money collected)`)
+9. Booking status (`Booking Received (not yet approved)`)
+
+Suggested template body (Meta must approve the actual template):
+
+```text
+✨ WELCOME TO VIBE TOGETHER! ✨
+
+Hello {{1}},
+Thank you for choosing Vibe Together! ❤️
+Your booking enquiry has been successfully received.
+
+🎟️ YOUR BOOKING REFERENCE
+{{2}}
+
+📋 BOOKING DETAILS
+Name: {{1}}
+Mobile: {{3}}
+Category / event: {{4}}
+Gender: {{5}}
+Booking date: {{6}}
+Booking time: {{7}}
+
+💳 PAYMENT INFORMATION
+Amount: ₹299
+Payment status: {{8}}
+
+📌 BOOKING STATUS
+{{9}}
+
+Thank you for being part of Vibe Together!
+Your next story starts here. 💜
+For booking assistance, please contact our Vibe Together team.
+https://www.vibetogether.show/
+
+VIBE TOGETHER
+Connect. Celebrate. Experience.
+```
+
+The current enquiry form does not collect customer email, so email is omitted
+rather than fabricated. Booking date/time in this message are the saved enquiry
+submission time, not an event schedule. Enable confirmations and configure the
+approved template under Admin → Settings → WhatsApp Business confirmations.
+The test button can send only to `WHATSAPP_TEST_PHONE_NUMBER`.
+
+Subscribe the Meta app to the `messages` webhook field for the WABA and register
+this callback URL:
+
+`https://vibetogether-ahgy.onrender.com/api/webhooks/whatsapp`
+
+Use the same verify token as `WHATSAPP_WEBHOOK_VERIFY_TOKEN`. The endpoint
+validates Meta's HMAC signature before processing delivery/read/failure
+statuses or an inbound `STOP`, `UNSUBSCRIBE`, or `CANCEL` opt-out. The current
+workspace has no supplied live Meta credentials or approved template, so the
+integration is not connected to a live WhatsApp account; tests use mocked API
+responses.
+
 Use `/api/health` for a process liveness check and `/api/health/ready` to
 confirm MongoDB connectivity. The API now waits for MongoDB and startup
 initialization before listening, so a failed database connection fails the
@@ -120,6 +219,15 @@ deployment instead of appearing healthy with unavailable data APIs.
 - `GET /api/booking-enquiries/:requestId` returns the saved enquiry summary for
   the payment page. `POST /api/booking-enquiries/:requestId/demo-payment`
   atomically records one fixed ₹299 demo payment on that same record.
+- `POST /api/booking-enquiries/:requestId/whatsapp-opt-out` revokes the
+  customer's transactional WhatsApp consent for the saved enquiry.
+- `GET /api/webhooks/whatsapp` verifies the Meta webhook subscription;
+  `POST /api/webhooks/whatsapp` validates signed status and opt-out events.
+- Authenticated `/api/admin/bookings/:reference/whatsapp` returns notification
+  history, and `POST /api/admin/bookings/:reference/whatsapp/retry` retries an
+  eligible failed notification. Super-admin-only `/api/admin/settings/whatsapp`
+  manages non-secret settings; `POST /api/admin/settings/whatsapp/test` sends
+  only to the configured test phone.
 - `POST /api/newsletter` stores subscriptions in `newsletter-db`.
 - `POST /api/enquiries/contact` and `POST /api/enquiries/host-event` store
   contact and event-hosting requests in `enquiry-db`.

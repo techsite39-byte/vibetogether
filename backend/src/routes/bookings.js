@@ -1,7 +1,8 @@
-import { randomBytes } from 'node:crypto'
 import { Router } from 'express'
-import { Booking } from '../models/adminRecords.js'
+import { Booking, BookingReferenceCounter } from '../models/adminRecords.js'
+import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { Event } from '../models/event.js'
+import { nextBookingReference } from '../services/bookingReferences.js'
 
 const requestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -130,7 +131,11 @@ async function validateRequest(body, eventModel) {
   }
 }
 
-export function createBookingsRouter({ bookingModel = Booking, eventModel = Event } = {}) {
+export function createBookingsRouter({
+  bookingModel = Booking,
+  eventModel = Event,
+  bookingReferenceCounterModel = BookingReferenceCounter,
+} = {}) {
   const router = Router()
   const rateLimit = createRateLimiter()
 
@@ -176,8 +181,11 @@ export function createBookingsRouter({ bookingModel = Booking, eventModel = Even
         ...input.event,
         seatsAvailable: updatedEvent.seatsAvailable,
       }
-      const date = new Date().toISOString().slice(0, 10).replaceAll('-', '')
-      const reference = `VT-${date}-${randomBytes(12).toString('hex').toUpperCase()}`
+      const reference = await nextBookingReference({
+        bookingModel,
+        bookingEnquiryModel: BookingEnquiry,
+        counterModel: bookingReferenceCounterModel,
+      })
       const booking = await bookingModel.create({
         ...input,
         reference,

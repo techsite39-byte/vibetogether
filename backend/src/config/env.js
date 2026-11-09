@@ -124,6 +124,11 @@ const smtpFromEmail =
   process.env.SMTP_FROM_EMAIL?.trim() ??
   (smtpUser ? `"Vibe Together" <${smtpUser}>` : 'Vibe Together <no-reply@vibetogether.com>')
 
+const whatsappApiVersion = process.env.WHATSAPP_API_VERSION?.trim() ?? ''
+if (whatsappApiVersion && !/^v\d+\.\d+$/.test(whatsappApiVersion)) {
+  throw new Error('WHATSAPP_API_VERSION must use the Meta Graph API version format, e.g. v21.0.')
+}
+
 export const config = Object.freeze({
   adminAuthConfigured,
   adminPasswordHash,
@@ -144,4 +149,13 @@ export const config = Object.freeze({
   smtpUser,
   smtpPassword,
   smtpFromEmail,
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ?? '',
+  whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID?.trim() ?? '',
+  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN?.trim() ?? '',
+  whatsappApiVersion,
+  whatsappAppSecret: process.env.WHATSAPP_APP_SECRET?.trim() ?? '',
+  whatsappWebhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim() ?? '',
+  whatsappTemplateName: process.env.WHATSAPP_TEMPLATE_NAME?.trim() || 'vibe_booking_confirmation_v1',
+  whatsappTemplateLanguage: process.env.WHATSAPP_TEMPLATE_LANGUAGE?.trim() || 'en',
+  whatsappTestPhoneNumber: process.env.WHATSAPP_TEST_PHONE_NUMBER?.trim() ?? '',
 })

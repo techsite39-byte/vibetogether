@@ -2,6 +2,11 @@ import mongoose from 'mongoose'
 
 const bookingEnquirySchema = new mongoose.Schema(
   {
+    reference: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+    },
     requestId: {
       type: String,
       required: true,
@@ -17,6 +22,84 @@ const bookingEnquirySchema = new mongoose.Schema(
       type: String,
       required: true,
       maxlength: 16,
+    },
+    whatsappConsent: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    whatsappConsentAt: {
+      type: Date,
+      default: null,
+    },
+    whatsappOptedOutAt: {
+      type: Date,
+      default: null,
+    },
+    whatsappNotification: {
+      messageType: {
+        type: String,
+        enum: ['booking_confirmation'],
+        default: 'booking_confirmation',
+      },
+      bookingReference: {
+        type: String,
+        maxlength: 80,
+        default: '',
+      },
+      status: {
+        type: String,
+        enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'skipped'],
+        default: 'skipped',
+      },
+      providerMessageId: {
+        type: String,
+        maxlength: 200,
+        default: '',
+      },
+      attemptCount: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      lastAttemptAt: {
+        type: Date,
+        default: null,
+      },
+      nextRetryAt: {
+        type: Date,
+        default: null,
+      },
+      deliveredAt: {
+        type: Date,
+        default: null,
+      },
+      failureReason: {
+        type: String,
+        maxlength: 300,
+        default: '',
+      },
+      retryable: {
+        type: Boolean,
+        default: false,
+      },
+      inProgress: {
+        type: Boolean,
+        default: false,
+      },
+      history: {
+        type: [{
+          status: {
+            type: String,
+            enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'skipped'],
+            required: true,
+          },
+          at: { type: Date, required: true },
+          source: { type: String, enum: ['system', 'admin', 'webhook'], required: true },
+          note: { type: String, maxlength: 300, default: '' },
+        }],
+        default: [],
+      },
     },
     eventId: {
       type: String,
@@ -94,6 +177,8 @@ const bookingEnquirySchema = new mongoose.Schema(
 )
 
 bookingEnquirySchema.index({ requestId: 1 }, { unique: true, sparse: true })
+bookingEnquirySchema.index({ reference: 1 }, { unique: true, sparse: true })
+bookingEnquirySchema.index({ 'whatsappNotification.providerMessageId': 1 }, { sparse: true })
 
 export const BookingEnquiry =
   mongoose.models.BookingEnquiry ??

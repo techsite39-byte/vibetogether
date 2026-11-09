@@ -61,6 +61,15 @@ export default function AdminLoginPage() {
     if (googleError === 'cancelled') {
       return 'Google sign-in was cancelled. You can try again whenever you’re ready.'
     }
+    if (googleError === 'state') {
+      return 'That Google sign-in could not be verified. For your security, please start again.'
+    }
+    if (googleError === 'expired') {
+      return 'That Google sign-in expired. Please try again.'
+    }
+    if (googleError === 'unauthorized') {
+      return 'This Google account is not authorized for the admin workspace.'
+    }
     if (googleError === 'failed') {
       return 'Google sign-in could not be completed. Please try again.'
     }
@@ -322,7 +331,25 @@ export default function AdminLoginPage() {
         <div className="admin-auth-page__glow-orb admin-auth-page__glow-orb--3" />
       </div>
 
-      <div className="admin-auth-card">
+      <main className="admin-auth-layout">
+        <aside className="admin-auth-story" aria-label="Vibe Together admin workspace">
+          <div className="admin-auth-story__eyebrow">
+            <span className="admin-auth-story__pulse" />
+            Private admin workspace
+          </div>
+          <h2>Make every gathering feel like a moment.</h2>
+          <p>
+            Your Vibe Together workspace brings bookings, experiences, and the
+            community together in one place.
+          </p>
+          <div className="admin-auth-story__features">
+            <div><ShieldCheck size={18} /><span>Secure administrator access</span></div>
+            <div><KeyRound size={18} /><span>Protected booking operations</span></div>
+          </div>
+          <div className="admin-auth-story__signature">VIBE TOGETHER <span>•</span> MAKE IT A MOMENT</div>
+        </aside>
+
+        <div className="admin-auth-card">
         {/* Header Branding */}
         <header className="admin-auth-header">
           <Link to="/" className="admin-auth-logo-link" title="Return to Vibe Together Home">
@@ -721,7 +748,8 @@ export default function AdminLoginPage() {
             &larr; Return to Vibe Together Public Site
           </Link>
         </div>
-      </div>
+        </div>
+      </main>
 
       {/* =========================================================================
           GOOGLE OAUTH SETUP GUIDE MODAL (Requirement 11)

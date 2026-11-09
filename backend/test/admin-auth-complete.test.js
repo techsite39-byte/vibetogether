@@ -29,6 +29,42 @@ function createSessionModel() {
   }
 }
 
+function createGoogleOAuthTransactionStore() {
+  const transactions = new Map()
+  const operations = []
+
+  return {
+    operations,
+    async create(transaction) {
+      operations.push('create')
+      transactions.set(transaction.state, {
+        ...transaction,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      })
+    },
+    async consume({ state, browserBinding }) {
+      operations.push('consume')
+      const transaction = transactions.get(state)
+      if (!transaction || transaction.browserBinding !== browserBinding) {
+        return { transaction: null, error: 'invalid' }
+      }
+      if (transaction.expiresAt <= Date.now()) {
+        transactions.delete(state)
+        return { transaction: null, error: 'expired' }
+      }
+      transactions.delete(state)
+      return {
+        transaction: { frontendOrigin: transaction.frontendOrigin },
+        error: '',
+      }
+    },
+    expire(state) {
+      const transaction = transactions.get(state)
+      if (transaction) transaction.expiresAt = Date.now() - 1
+    },
+  }
+}
+
 async function startAuthServer(options) {
   const app = express()
   app.use(express.json())
@@ -412,8 +448,12 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
     },
   }
   const callbackUrl = 'http://localhost:4000/api/admin/auth/google/callback'
+  const googleOAuthTransactionStore = createGoogleOAuthTransactionStore()
+  const sessionModel = createSessionModel()
   const baseUrl = await startAuthServer({
     model,
+    sessionModel,
+    googleOAuthTransactionStore,
     sessionSecret: secret,
     username: adminRecord.email,
     googleClientId: 'vibe-test.apps.googleusercontent.com',
@@ -422,8 +462,36 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
     googleCallbackUrlValid: true,
     nodeEnv: 'development',
   })
+  const secondInstanceUrl = await startAuthServer({
+    model,
+    sessionModel,
+    googleOAuthTransactionStore,
+    sessionSecret: secret,
+    username: adminRecord.email,
+    googleClientId: 'vibe-test.apps.googleusercontent.com',
+    googleClientSecret: 'server-only-client-secret',
+    googleCallbackUrl: callbackUrl,
+    googleCallbackUrlValid: true,
+    nodeEnv: 'development',
+  })
+  const productionUrl = await startAuthServer({
+    model,
+    sessionModel,
+    googleOAuthTransactionStore,
+    sessionSecret: secret,
+    username: adminRecord.email,
+    googleClientId: 'vibe-test.apps.googleusercontent.com',
+    googleClientSecret: 'server-only-client-secret',
+    googleCallbackUrl: 'https://vibetogether-ahgy.onrender.com/api/admin/auth/google/callback',
+    googleCallbackUrlValid: true,
+    frontendOrigin: 'https://www.vibetogether.show',
+    corsOrigins: ['https://www.vibetogether.show'],
+    secureCookies: true,
+    nodeEnv: 'production',
+  })
 
   const originalFetch = globalThis.fetch
+  let googleIdentityEmail = adminRecord.email
   globalThis.fetch = async (input, options) => {
     const url = String(input)
     if (url.startsWith(baseUrl)) return originalFetch(input, options)
@@ -439,7 +507,7 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
         iss: 'https://accounts.google.com',
         exp: String(Math.floor(Date.now() / 1000) + 3600),
         sub: 'google-subject-123',
-        email: adminRecord.email,
+        email: googleIdentityEmail,
         email_verified: 'true',
         name: adminRecord.name,
       })
@@ -458,35 +526,113 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
     assert.equal(authorizationUrl.searchParams.get('client_id'), 'vibe-test.apps.googleusercontent.com')
     assert.equal(authorizationUrl.searchParams.get('redirect_uri'), callbackUrl)
     assert.equal(authorizationUrl.searchParams.get('response_type'), 'code')
+    assert.deepEqual(googleOAuthTransactionStore.operations, ['create'])
+
+    const cookies = startResponse.headers.getSetCookie()
+    const bindingCookie = cookies.find((cookie) =>
+      cookie.startsWith('vt_google_browser_binding='),
+    )
+    const browserBinding = bindingCookie
+      ?.match(/vt_google_browser_binding=([^;]+)/)?.[1]
+    assert.ok(browserBinding)
+    assert.match(bindingCookie, /Path=\//)
+    assert.match(bindingCookie, /SameSite=Lax/)
+    assert.match(bindingCookie, /HttpOnly/)
+    const state = authorizationUrl.searchParams.get('state')
+    assert.ok(state)
 
     const redirectAliasResponse = await fetch(
       `${baseUrl}/api/admin/auth/google/redirect`,
-      { redirect: 'manual' },
+      {
+        headers: { Cookie: `vt_google_browser_binding=${browserBinding}` },
+        redirect: 'manual',
+      },
     )
     assert.equal(redirectAliasResponse.status, 302)
     assert.equal(
       new URL(redirectAliasResponse.headers.get('location')).searchParams.get('redirect_uri'),
       callbackUrl,
     )
+    assert.equal(
+      redirectAliasResponse.headers.getSetCookie()
+        .find((cookie) => cookie.startsWith('vt_google_browser_binding='))
+        .match(/vt_google_browser_binding=([^;]+)/)[1],
+      browserBinding,
+      'parallel OAuth attempts in the same browser must retain the same binding cookie',
+    )
 
-    const cookies = startResponse.headers.getSetCookie()
-    const stateCookie = cookies
-      .find((cookie) => cookie.startsWith('vt_google_oauth_state='))
-      ?.match(/vt_google_oauth_state=([^;]+)/)?.[1]
-    const frontendOriginCookie = cookies
-      .find((cookie) => cookie.startsWith('vt_google_frontend_origin='))
-      ?.match(/vt_google_frontend_origin=([^;]+)/)?.[1]
-    assert.ok(stateCookie)
-    assert.ok(frontendOriginCookie)
-    const state = authorizationUrl.searchParams.get('state')
-    assert.ok(state)
+    const productionStart = await fetch(
+      `${productionUrl}/api/admin/auth/google`,
+      { redirect: 'manual' },
+    )
+    assert.equal(productionStart.status, 302)
+    const productionBindingCookie = productionStart.headers.getSetCookie()
+      .find((cookie) => cookie.startsWith('__Host-vt_google_browser_binding='))
+    assert.ok(productionBindingCookie)
+    assert.match(productionBindingCookie, /Path=\//)
+    assert.match(productionBindingCookie, /SameSite=Lax/)
+    assert.match(productionBindingCookie, /HttpOnly/)
+    assert.match(productionBindingCookie, /Secure/)
+    assert.doesNotMatch(productionBindingCookie, /Domain=/i)
 
-    const cancelledCallback = await fetch(
-      `${baseUrl}/api/admin/auth/google/callback?error=access_denied`,
+    const missingBindingCallback = await fetch(
+      `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=${state}`,
+      { redirect: 'manual' },
+    )
+    assert.equal(missingBindingCallback.status, 302)
+    assert.equal(
+      new URL(missingBindingCallback.headers.get('location')).searchParams.get('google_error'),
+      'state',
+    )
+
+    const incorrectStateCallback = await fetch(
+      `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=${'A'.repeat(43)}`,
       {
-        headers: {
-          Cookie: `vt_google_oauth_state=${stateCookie}; vt_google_frontend_origin=${frontendOriginCookie}`,
-        },
+        headers: { Cookie: `vt_google_browser_binding=${browserBinding}` },
+        redirect: 'manual',
+      },
+    )
+    assert.equal(incorrectStateCallback.status, 302)
+    assert.equal(
+      new URL(incorrectStateCallback.headers.get('location')).searchParams.get('google_error'),
+      'state',
+    )
+
+    const expiredStart = await fetch(
+      `${baseUrl}/api/admin/auth/google?frontend_origin=${encodeURIComponent('http://localhost:5174')}`,
+      { redirect: 'manual' },
+    )
+    const expiredState = new URL(expiredStart.headers.get('location')).searchParams.get('state')
+    const expiredBinding = expiredStart.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith('vt_google_browser_binding='))
+      .match(/vt_google_browser_binding=([^;]+)/)[1]
+    googleOAuthTransactionStore.expire(expiredState)
+    const expiredCallback = await fetch(
+      `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=${expiredState}`,
+      {
+        headers: { Cookie: `vt_google_browser_binding=${expiredBinding}` },
+        redirect: 'manual',
+      },
+    )
+    assert.equal(
+      new URL(expiredCallback.headers.get('location')).searchParams.get('google_error'),
+      'expired',
+    )
+
+    const cancelledStart = await fetch(
+      `${baseUrl}/api/admin/auth/google?frontend_origin=${encodeURIComponent('http://localhost:5174')}`,
+      { redirect: 'manual' },
+    )
+    const cancelledState = new URL(cancelledStart.headers.get('location')).searchParams.get('state')
+    const cancelledBinding = cancelledStart.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith('vt_google_browser_binding='))
+      .match(/vt_google_browser_binding=([^;]+)/)[1]
+    const cancelledCallback = await fetch(
+      `${baseUrl}/api/admin/auth/google/callback?error=access_denied&state=${cancelledState}`,
+      {
+        headers: { Cookie: `vt_google_browser_binding=${cancelledBinding}` },
         redirect: 'manual',
       },
     )
@@ -496,22 +642,38 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
       'http://localhost:5174/admin/login?google_error=cancelled',
     )
 
-    const rejectedCallback = await fetch(
-      `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=invalid`,
+    const unauthorizedStart = await fetch(
+      `${baseUrl}/api/admin/auth/google`,
       {
-        headers: {
-          Cookie: `vt_google_oauth_state=${stateCookie}; vt_google_frontend_origin=${frontendOriginCookie}`,
-        },
+        headers: { Cookie: `vt_google_browser_binding=${browserBinding}` },
+        redirect: 'manual',
       },
     )
-    assert.equal(rejectedCallback.status, 403)
+    const unauthorizedState = new URL(unauthorizedStart.headers.get('location'))
+      .searchParams.get('state')
+    googleIdentityEmail = 'ordinary-user@example.com'
+    const unauthorizedCallback = await fetch(
+      `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=${unauthorizedState}`,
+      {
+        headers: { Cookie: `vt_google_browser_binding=${browserBinding}` },
+        redirect: 'manual',
+      },
+    )
+    assert.equal(
+      new URL(unauthorizedCallback.headers.get('location')).searchParams.get('google_error'),
+      'unauthorized',
+    )
+    assert.equal(
+      unauthorizedCallback.headers.getSetCookie()
+        .some((cookie) => cookie.startsWith('vt_admin_session=')),
+      false,
+    )
+    googleIdentityEmail = adminRecord.email
 
     const callbackResponse = await fetch(
-      `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=${state}`,
+      `${secondInstanceUrl}/api/admin/auth/google/callback?code=auth-code&state=${state}`,
       {
-        headers: {
-          Cookie: `vt_google_oauth_state=${stateCookie}; vt_google_frontend_origin=${frontendOriginCookie}`,
-        },
+        headers: { Cookie: `vt_google_browser_binding=${browserBinding}` },
         redirect: 'manual',
       },
     )
@@ -523,11 +685,22 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
     assert.ok(sessionCookies.some((cookie) => cookie.startsWith('vt_admin_csrf=')))
     assert.equal(adminRecord.googleId, 'google-subject-123')
 
-    const sessionResponse = await fetch(`${baseUrl}/api/admin/auth/me`, {
+    const sessionResponse = await fetch(`${secondInstanceUrl}/api/admin/auth/me`, {
       headers: { Cookie: sessionCookie.split(';', 1)[0] },
     })
     assert.equal(sessionResponse.status, 200)
     assert.equal((await sessionResponse.json()).admin.email, adminRecord.email)
+    const replayResponse = await fetch(
+      `${baseUrl}/api/admin/auth/google/callback?code=auth-code&state=${state}`,
+      {
+        headers: { Cookie: `vt_google_browser_binding=${browserBinding}` },
+        redirect: 'manual',
+      },
+    )
+    assert.equal(
+      new URL(replayResponse.headers.get('location')).searchParams.get('google_error'),
+      'state',
+    )
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -567,4 +740,27 @@ test('Google OAuth diagnostics expose safe development configuration only', asyn
     `${productionUrl}/api/admin/auth/google/debug`,
   )
   assert.equal(productionResponse.status, 404)
+})
+
+test('Google OAuth callback redirects transaction-store failures to the login page', async () => {
+  const baseUrl = await startAuthServer({
+    sessionSecret: 'super-secure-session-secret-key-with-more-than-32-chars!',
+    username: 'admin@vibetogether.com',
+    frontendOrigin: 'http://localhost:5174',
+    nodeEnv: 'development',
+  })
+  const response = await fetch(
+    `${baseUrl}/api/admin/auth/google/callback?state=${'A'.repeat(43)}`,
+    {
+      headers: { Cookie: `vt_google_browser_binding=${'B'.repeat(43)}` },
+      redirect: 'manual',
+    },
+  )
+
+  assert.equal(response.status, 302)
+  assert.equal(
+    response.headers.get('location'),
+    'http://localhost:5174/admin/login?google_error=failed',
+  )
+  assert.doesNotMatch(response.headers.get('content-type') ?? '', /application\/json/)
 })

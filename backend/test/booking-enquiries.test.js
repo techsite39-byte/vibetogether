@@ -5,7 +5,7 @@ import { events } from '../../src/data/events.js'
 
 const servers = []
 
-async function startTestServer({ eventRepository } = {}) {
+async function startTestServer({ eventRepository, whatsappService } = {}) {
   const saved = new Map()
   const repository = {
     async save(enquiry) {
@@ -25,17 +25,61 @@ async function startTestServer({ eventRepository } = {}) {
 
       const savedEnquiry = {
         ...enquiry,
+        reference: String(10812026501 + saved.size),
         paymentStatus: 'unpaid',
         paymentAmount: 299,
         paymentProvider: null,
         paymentReference: '',
         paidAt: null,
+        whatsappConsentAt: enquiry.whatsappConsent ? new Date() : null,
+        whatsappNotification: {
+          messageType: 'booking_confirmation',
+          bookingReference: String(10812026501 + saved.size),
+          status: enquiry.whatsappConsent ? 'pending' : 'skipped',
+          attemptCount: 0,
+          history: [],
+        },
       }
       saved.set(enquiry.requestId, savedEnquiry)
       return { enquiry: savedEnquiry, duplicate: false }
     },
     async findByRequestId(requestId) {
       return saved.get(requestId) ?? null
+    },
+    async findByReference(reference) {
+      return [...saved.values()].find((enquiry) => enquiry.reference === reference) ?? null
+    },
+    async claimWhatsAppAttempt(requestId) {
+      const enquiry = saved.get(requestId)
+      if (!enquiry?.whatsappConsent || enquiry.whatsappNotification.status !== 'pending' ||
+        enquiry.whatsappNotification.attemptCount > 0) return null
+      enquiry.whatsappNotification.attemptCount += 1
+      enquiry.whatsappNotification.inProgress = true
+      enquiry.whatsappNotification.lastAttemptAt = new Date()
+      return enquiry
+    },
+    async completeWhatsAppAttempt(requestId, result) {
+      const enquiry = saved.get(requestId)
+      if (!enquiry) return null
+      enquiry.whatsappNotification.status = result.status
+      enquiry.whatsappNotification.inProgress = false
+      enquiry.whatsappNotification.providerMessageId = result.messageId ?? ''
+      enquiry.whatsappNotification.failureReason = result.reason ?? ''
+      enquiry.whatsappNotification.retryable = result.retryable ?? false
+      return enquiry
+    },
+    async getWhatsAppSettings() {
+      return { enabled: true }
+    },
+    async optOutWhatsApp(requestId) {
+      const enquiry = saved.get(requestId)
+      if (!enquiry) return null
+      enquiry.whatsappConsent = false
+      enquiry.whatsappOptedOutAt = new Date()
+      if (enquiry.whatsappNotification.status === 'pending') {
+        enquiry.whatsappNotification.status = 'skipped'
+      }
+      return enquiry
     },
     async markDemoPaid(requestId) {
       const enquiry = saved.get(requestId)
@@ -58,6 +102,7 @@ async function startTestServer({ eventRepository } = {}) {
     bookingEnquiryRepository: repository,
     corsOrigins: ['http://localhost:5173'],
     eventRepository,
+    whatsappService,
   }).listen(0)
   servers.push(server)
   await new Promise((resolve) => server.once('listening', resolve))
@@ -129,6 +174,133 @@ test('lists existing events and saves one idempotent booking enquiry', async () 
   })
   assert.equal(conflictingResponse.status, 409)
   assert.equal(saved.size, 1)
+})
+
+test('sends one consented confirmation using the saved sequential booking reference', async () => {
+  const sentMessages = []
+  const { baseUrl, saved } = await startTestServer({
+    whatsappService: {
+      async sendBookingConfirmation(booking) {
+        sentMessages.push({
+          reference: booking.reference,
+          mobile: booking.mobile,
+          consent: booking.whatsappConsent,
+        })
+        return { status: 'sent', messageId: 'wamid.confirmation.1' }
+      },
+    },
+  })
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    categoryId: 'fun-games',
+    gender: 'Female',
+    whatsappConsent: true,
+  }
+  const firstResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  const firstPayload = await firstResponse.json()
+  assert.equal(firstResponse.status, 201)
+  assert.equal(firstPayload.booking.reference, '10812026501')
+  assert.equal(firstPayload.booking.whatsappNotification.status, 'sent')
+  assert.equal(saved.get(request.requestId).whatsappNotification.providerMessageId, 'wamid.confirmation.1')
+  assert.equal(sentMessages.length, 1)
+  assert.deepEqual(sentMessages[0], {
+    reference: '10812026501',
+    mobile: '+919876543210',
+    consent: true,
+  })
+  assert.ok(saved.get(request.requestId).whatsappConsentAt instanceof Date)
+
+  const duplicateResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  assert.equal(duplicateResponse.status, 200)
+  assert.equal((await duplicateResponse.json()).booking.reference, '10812026501')
+  assert.equal(sentMessages.length, 1)
+})
+
+test('keeps saved booking when WhatsApp fails and skips sending without consent', async () => {
+  const sentMessages = []
+  const { baseUrl, saved } = await startTestServer({
+    whatsappService: {
+      async sendBookingConfirmation() {
+        sentMessages.push(true)
+        return { status: 'failed', retryable: true, reason: 'WhatsApp rate limit reached.' }
+      },
+    },
+  })
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    categoryId: 'fun-games',
+    gender: 'Female',
+    whatsappConsent: true,
+  }
+  const failureResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  const failurePayload = await failureResponse.json()
+  assert.equal(failureResponse.status, 201)
+  assert.equal(saved.size, 1)
+  assert.equal(failurePayload.booking.reference, '10812026501')
+  assert.equal(failurePayload.booking.whatsappNotification.status, 'failed')
+  assert.equal(saved.get(request.requestId).whatsappNotification.failureReason, 'WhatsApp rate limit reached.')
+  assert.equal('failureReason' in failurePayload.booking.whatsappNotification, false)
+
+  const noConsent = {
+    ...request,
+    requestId: crypto.randomUUID(),
+    whatsappConsent: false,
+  }
+  const skippedResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(noConsent),
+  })
+  const skippedPayload = await skippedResponse.json()
+  assert.equal(skippedResponse.status, 201)
+  assert.equal(skippedPayload.booking.whatsappNotification.status, 'skipped')
+  assert.equal(sentMessages.length, 1)
+  assert.equal(saved.size, 2)
+})
+
+test('records customer opt-out on the saved enquiry without changing its booking reference', async () => {
+  const { baseUrl, saved } = await startTestServer()
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    categoryId: 'fun-games',
+    gender: 'Female',
+    whatsappConsent: true,
+  }
+  const created = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  const originalBooking = (await created.json()).booking
+  const optOut = await fetch(
+    `${baseUrl}/api/booking-enquiries/${request.requestId}/whatsapp-opt-out`,
+    { method: 'POST' },
+  )
+  const optedOutBooking = (await optOut.json()).booking
+
+  assert.equal(optOut.status, 200)
+  assert.equal(optedOutBooking.reference, originalBooking.reference)
+  assert.equal(optedOutBooking.whatsappConsent, false)
+  assert.ok(optedOutBooking.whatsappOptedOutAt)
+  assert.equal(saved.get(request.requestId).reference, originalBooking.reference)
 })
 
 test('serves database events and validates booking selections against them', async () => {

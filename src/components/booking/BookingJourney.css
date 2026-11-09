@@ -522,6 +522,26 @@
   color: #fff;
 }
 
+.booking-journey__whatsapp-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: 1.1rem auto 0;
+  max-width: 38rem;
+  color: #d4c9e0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  text-align: left;
+}
+
+.booking-journey__whatsapp-consent input {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  margin: 0.12rem 0 0;
+  accent-color: #b352ff;
+}
+
 .booking-journey__gender-option:focus-within {
   outline: 2px solid #dcb4ff;
   outline-offset: 3px;

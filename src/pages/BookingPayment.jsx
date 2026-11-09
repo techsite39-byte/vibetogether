@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CheckCircle2, LoaderCircle, LockKeyhole } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
-import { getBookingEnquiry, recordDemoBookingPayment } from '../services/bookingEnquiryPayment.js'
+import {
+  getBookingEnquiry,
+  optOutOfWhatsAppUpdates,
+  recordDemoBookingPayment,
+} from '../services/bookingEnquiryPayment.js'
 import './BookingPayment.css'
 
 function formatBookingDate(value) {
@@ -24,6 +28,8 @@ export default function BookingPayment() {
   })
   const [isPaying, setIsPaying] = useState(false)
   const [paymentError, setPaymentError] = useState('')
+  const [whatsappError, setWhatsAppError] = useState('')
+  const [isOptingOut, setIsOptingOut] = useState(false)
   const paying = useRef(false)
 
   useEffect(() => {
@@ -48,7 +54,6 @@ export default function BookingPayment() {
     if (paying.current || bookingState.booking?.paymentStatus === 'demo_paid') {
       return
     }
-
     paying.current = true
     setIsPaying(true)
     setPaymentError('')
@@ -66,11 +71,41 @@ export default function BookingPayment() {
     }
   }
 
+  async function handleWhatsAppOptOut() {
+    if (isOptingOut || !bookingState.booking?.whatsappConsent) {
+      return
+    }
+    setIsOptingOut(true)
+    setWhatsAppError('')
+    try {
+      const booking = await optOutOfWhatsAppUpdates(requestId)
+      setBookingState({ requestId, status: 'ready', booking, error: '' })
+    } catch (error) {
+      setWhatsAppError(error instanceof Error ? error.message : 'WhatsApp preferences could not be updated.')
+    } finally {
+      setIsOptingOut(false)
+    }
+  }
+
   const currentBookingState = bookingState.requestId === requestId
     ? bookingState
     : { status: 'loading', booking: null, error: '' }
   const booking = currentBookingState.booking
   const isPaid = booking?.paymentStatus === 'demo_paid'
+  const whatsappStatus = booking?.whatsappNotification?.status ?? (
+    booking?.whatsappConsent ? 'pending' : 'skipped'
+  )
+
+  function getWhatsAppMessage() {
+    if (whatsappStatus === 'sent') return 'WhatsApp confirmation sent. Delivery is not yet confirmed.'
+    if (whatsappStatus === 'delivered') return 'WhatsApp confirmation delivered.'
+    if (whatsappStatus === 'read') return 'WhatsApp confirmation read.'
+    if (whatsappStatus === 'pending') return 'Preparing your WhatsApp confirmation.'
+    if (whatsappStatus === 'failed') {
+      return 'Your booking is saved, but we could not send a WhatsApp confirmation. Our team can still assist you.'
+    }
+    return 'Your booking is saved. WhatsApp updates were not requested.'
+  }
 
   return (
     <section className="booking-payment">
@@ -140,6 +175,22 @@ export default function BookingPayment() {
                 <div><dt>Enquiry submitted</dt><dd>{formatBookingDate(booking.createdAt)}</dd></div>
               </dl>
             </div>
+            <section className="booking-payment__confirmation" aria-label="Booking confirmation">
+              <span className="booking-payment__muted">BOOKING REFERENCE</span>
+              <strong>{booking.reference || 'Reference unavailable'}</strong>
+              <p>
+                Booking status: <b>{booking.status === 'confirmed' ? 'Approved' : 'Booking received — pending review'}</b>
+              </p>
+              <p className={`booking-payment__whatsapp booking-payment__whatsapp--${whatsappStatus}`} role="status">
+                {getWhatsAppMessage()}
+              </p>
+              {booking.whatsappConsent && (
+                <button className="booking-payment__opt-out" disabled={isOptingOut} onClick={() => void handleWhatsAppOptOut()} type="button">
+                  {isOptingOut ? 'Updating preference…' : 'Stop WhatsApp updates'}
+                </button>
+              )}
+              {whatsappError && <p className="booking-payment__error" role="alert">{whatsappError}</p>}
+            </section>
 
             <div className="booking-payment__provider">
               <span className="booking-payment__lock"><LockKeyhole size={17} aria-hidden="true" /></span>

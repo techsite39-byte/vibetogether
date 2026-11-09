@@ -44,3 +44,10 @@ export async function recordDemoBookingPayment(requestId) {
     { method: 'POST' },
   )
 }
+
+export async function optOutOfWhatsAppUpdates(requestId) {
+  return requestBooking(
+    `${encodeURIComponent(requestId)}/whatsapp-opt-out`,
+    { method: 'POST' },
+  )
+}
