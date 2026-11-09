@@ -106,7 +106,11 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
       }
       setCurrentBooking(updated)
       setRetryResult({
-        tone: response.result?.alreadyDelivered ? 'neutral' : response.result?.sent ? 'success' : 'error',
+        tone: response.result?.alreadyDelivered || response.result?.uncertain
+          ? 'neutral'
+          : response.result?.sent
+            ? 'success'
+            : 'error',
         text: response.message,
       })
       if (typeof onBookingUpdated === 'function') {
@@ -151,6 +155,8 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Customer WhatsApp number</dt><dd>{currentBooking.mobile || '—'}</dd></div>
           <div><dt>WhatsApp notification status</dt><dd><StatusBadge status={notification.status}>{formatWhatsAppStatus(notification.status, currentBooking.whatsappConsent)}</StatusBadge></dd></div>
           <div><dt>Last attempt</dt><dd>{formatBookingDate(notification.lastAttemptAt)}</dd></div>
+          <div><dt>Sent at</dt><dd>{formatBookingDate(notification.sentAt)}</dd></div>
+          <div><dt>Delivered at</dt><dd>{formatBookingDate(notification.deliveredAt)}</dd></div>
           <div><dt>Provider message ID</dt><dd>{notification.providerMessageId || '—'}</dd></div>
         </dl>
         {notification.failureReason && <AdminNotice tone="error">{notification.failureReason}</AdminNotice>}

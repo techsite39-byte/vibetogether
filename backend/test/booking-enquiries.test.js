@@ -239,7 +239,7 @@ test('keeps temporary booking data separate from WhatsApp send status', async ()
   assert.equal(failurePayload.booking.reference, '')
   assert.equal(failurePayload.booking.whatsappNotification.status, 'skipped')
   assert.equal(saved.get(request.requestId).whatsappNotification.failureReason, undefined)
-  assert.equal(failurePayload.booking.whatsappNotification.failureReason, '')
+  assert.equal(failurePayload.booking.whatsappNotification.failureReason, undefined)
 
   const noConsent = {
     ...request,

@@ -54,6 +54,8 @@ const whatsappNotifications = createWhatsAppNotificationService({
   apiVersion: config.whatsappApiVersion,
   successTemplateName: config.whatsappSuccessTemplateName,
   failureTemplateName: config.whatsappFailureTemplateName,
+  webhookVerifyToken: config.whatsappWebhookVerifyToken,
+  appSecret: config.whatsappAppSecret,
 })
 
 const app = createApp({
@@ -82,6 +84,7 @@ const app = createApp({
   },
   razorpayPayments,
   razorpayConfigured: config.razorpayConfigured,
+  razorpayKeyId: config.razorpayKeyId,
   razorpayWebhookSecret: config.razorpayWebhookSecret,
   whatsappNotifications,
   whatsappWebhookConfig: {
@@ -124,9 +127,18 @@ if (databaseInitialized) {
   const server = app.listen(config.port, host, () => {
     console.info(`Backend listening on ${host}:${config.port}`)
   })
+  void whatsappNotifications.processRetries().catch((error) => {
+    console.error('WhatsApp notification startup retry job failed.', {
+      name: error?.name ?? 'UnknownError',
+      code: error?.code ?? '',
+    })
+  })
   const notificationRetryTimer = setInterval(() => {
-    void whatsappNotifications.processRetries().catch(() => {
-      console.error('WhatsApp notification retry job failed.')
+    void whatsappNotifications.processRetries().catch((error) => {
+      console.error('WhatsApp notification retry job failed.', {
+        name: error?.name ?? 'UnknownError',
+        code: error?.code ?? '',
+      })
     })
   }, 60_000)
   notificationRetryTimer.unref()

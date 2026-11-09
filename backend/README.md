@@ -114,6 +114,13 @@ it does not charge money.
 Razorpay webhook endpoint:
 `https://vibetogether-ahgy.onrender.com/api/razorpay/webhook`
 
+Configure the same `RAZORPAY_WEBHOOK_SECRET` value in Render and in the
+Razorpay Test Mode webhook settings. Subscribe to `payment.captured`,
+`payment.failed`, and `order.paid`. A failed payment attempt is not treated as
+a terminal booking failure by itself; the checkout dismissal/status check
+reconciles all attempts before sending assistance, so a later successful retry
+is not preceded by a false failure message.
+
 WhatsApp booking notifications use the official Meta Cloud API and are sent to
 the customer's consented, validated mobile number (not the business number).
 Set `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_API_VERSION`,
@@ -187,6 +194,11 @@ callback URL and `WHATSAPP_WEBHOOK_VERIFY_TOKEN` in Meta. API acceptance is
 reported as **Sent**, not **Delivered**; delivery, read, and failure statuses
 are recorded only from signed status webhooks. Missing consent is recorded as
 **Skipped**, and notification errors never undo a finalized payment or booking.
+The authenticated admin endpoint
+`GET /api/admin/integrations/diagnostics` reports configured-variable names,
+Razorpay mode/webhook readiness, and whether Meta accepts the configured phone
+number ID and access token. It never returns credentials. Template approval and
+recipient test allowlisting must still be confirmed in WhatsApp Manager.
 
 ## Payment-first category bookings
 

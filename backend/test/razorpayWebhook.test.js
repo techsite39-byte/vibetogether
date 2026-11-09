@@ -103,3 +103,98 @@ test('rejects Razorpay webhooks when signature verification is not configured', 
 
   assert.equal(response.status, 503)
 })
+
+test('passes order.paid payloads to Razorpay reconciliation', async () => {
+  const secret = 'razorpay-webhook-order-paid-test-secret'
+  const received = []
+  const notifications = []
+  const baseUrl = await startServer({
+    razorpayWebhookSecret: secret,
+    razorpayPayments: {
+      async handleWebhook(event, payment, order) {
+        received.push({ event, payment, order })
+        return {
+          booking: {
+            requestId: 'session-order-paid',
+            reference: '10812026506',
+            paymentStatus: 'paid',
+          },
+        }
+      },
+    },
+    whatsappNotifications: {
+      async notify(requestId, type) {
+        notifications.push({ requestId, type })
+      },
+    },
+  })
+  const body = JSON.stringify({
+    event: 'order.paid',
+    payload: { order: { entity: { id: 'order_paid_test' } } },
+  })
+  const signature = createHmac('sha256', secret).update(body).digest('hex')
+
+  const response = await fetch(`${baseUrl}/api/razorpay/webhook`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-razorpay-signature': signature,
+    },
+    body,
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(received, [{
+    event: 'order.paid',
+    payment: undefined,
+    order: { id: 'order_paid_test' },
+  }])
+  assert.deepEqual(notifications, [{
+    requestId: 'session-order-paid',
+    type: 'booking_confirmation',
+  }])
+})
+
+test('payment.failed webhook does not send assistance while the attempt may be retried', async () => {
+  const secret = 'razorpay-webhook-failed-test-secret'
+  const notifications = []
+  const baseUrl = await startServer({
+    razorpayWebhookSecret: secret,
+    razorpayPayments: {
+      async handleWebhook() {
+        return {
+          pending: true,
+          booking: { requestId: 'session-retry', paymentStatus: 'unpaid' },
+        }
+      },
+    },
+    whatsappNotifications: {
+      async notify(requestId, type) {
+        notifications.push({ requestId, type })
+      },
+    },
+  })
+  const body = JSON.stringify({
+    event: 'payment.failed',
+    payload: { payment: { entity: {
+      id: 'pay_retryable',
+      order_id: 'order_retryable',
+      amount: 24900,
+      currency: 'INR',
+      status: 'failed',
+    } } },
+  })
+  const signature = createHmac('sha256', secret).update(body).digest('hex')
+
+  const response = await fetch(`${baseUrl}/api/razorpay/webhook`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-razorpay-signature': signature,
+    },
+    body,
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(notifications, [])
+})

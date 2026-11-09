@@ -11,8 +11,11 @@ export function createRazorpayWebhookRouter({
   async function notifyWithoutAffectingPayment(requestId, type) {
     try {
       await notifications?.notify?.(requestId, type)
-    } catch {
-      console.error('WhatsApp notification failed after Razorpay webhook.')
+    } catch (error) {
+      console.error('WhatsApp notification failed after Razorpay webhook.', {
+        name: error?.name ?? 'UnknownError',
+        code: error?.code ?? '',
+      })
     }
   }
 
@@ -37,7 +40,8 @@ export function createRazorpayWebhookRouter({
     try {
       const event = request.body?.event
       const payment = request.body?.payload?.payment?.entity
-      const result = await payments.handleWebhook(event, payment)
+      const order = request.body?.payload?.order?.entity
+      const result = await payments.handleWebhook(event, payment, order)
       if (result?.booking?.paymentStatus === 'paid' && result.booking.reference) {
         await notifyWithoutAffectingPayment(result.booking.requestId, 'booking_confirmation')
       } else if (result?.booking?.paymentStatus === 'failed') {

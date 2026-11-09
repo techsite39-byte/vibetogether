@@ -83,6 +83,10 @@ const bookingEnquirySchema = new mongoose.Schema(
         type: Date,
         default: null,
       },
+      sentAt: {
+        type: Date,
+        default: null,
+      },
       nextRetryAt: {
         type: Date,
         default: null,

@@ -643,7 +643,33 @@ export function createRazorpayPaymentService({
     return booking ? { booking } : null
   }
 
-  async function handleWebhook(event, payment) {
+  async function handleWebhook(event, payment, order) {
+    if (event === 'order.paid') {
+      const orderId = order?.id
+      if (typeof orderId !== 'string') return null
+      const enquiry = await bookingEnquiryModel.findOne({ paymentOrderId: orderId }).lean()
+      if (!enquiry) return null
+      if (!client || !keyId || !keySecret) {
+        throw serviceError(503, 'Razorpay Checkout is not configured on the booking server.')
+      }
+      const pricing = getOrderPricing(enquiry, orderId)
+      if (!pricing) {
+        throw serviceError(400, 'Razorpay order pricing could not be verified.')
+      }
+      const response = await client.orders.fetchPayments(orderId)
+      if (response.items?.some((payment) =>
+        payment.order_id !== orderId ||
+        payment.amount !== pricing.paymentAmountPaise ||
+        payment.currency !== currency,
+      )) {
+        throw serviceError(400, 'Razorpay payment details do not match this booking order.')
+      }
+      const captured = response.items?.find((payment) => payment.status === 'captured')
+      return captured
+        ? finalizeIfCaptured(enquiry.requestId, orderId, captured)
+        : { booking: enquiry, pending: true }
+    }
+
     const orderId = payment?.order_id
     const paymentId = payment?.id
     if (
@@ -668,11 +694,10 @@ export function createRazorpayPaymentService({
       return finalizeIfCaptured(enquiry.requestId, orderId, payment)
     }
     if (payment.status !== 'failed') return null
-    return recordFailure(enquiry.requestId, {
-      orderId,
-      paymentId,
-      outcome: 'failed',
-    })
+
+    // A failed attempt can be followed by a successful retry on the same order.
+    // Only the checkout dismissal/status check may make the booking terminal.
+    return { booking: enquiry, pending: true }
   }
 
   return { createOrder, verifyPayment, checkStatus, recordFailure, handleWebhook }

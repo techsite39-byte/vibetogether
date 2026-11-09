@@ -144,9 +144,15 @@ function statusRank(status) {
   return ({ pending: 0, sent: 1, delivered: 2, read: 3 })[status] ?? -1
 }
 
-function safeFailureReason(status, responseBody) {
+function safeFailureReason(status, responseBody, secrets = []) {
   const apiCode = responseBody?.error?.code
-  return `WhatsApp Cloud API returned HTTP ${status}${Number.isInteger(apiCode) ? ` (code ${apiCode})` : ''}.`
+  const apiMessage = typeof responseBody?.error?.message === 'string'
+    ? secrets.reduce(
+        (message, secret) => secret ? message.replaceAll(secret, '[redacted]') : message,
+        responseBody.error.message,
+      ).replace(/[\r\n]+/g, ' ').slice(0, 180)
+    : ''
+  return `WhatsApp Cloud API returned HTTP ${status}${Number.isInteger(apiCode) ? ` (code ${apiCode})` : ''}${apiMessage ? `: ${apiMessage}` : '.'}`
 }
 
 export function createWhatsAppNotificationService({
@@ -156,9 +162,22 @@ export function createWhatsAppNotificationService({
   apiVersion = '',
   successTemplateName = '',
   failureTemplateName = '',
+  webhookVerifyToken = '',
+  appSecret = '',
   fetchImpl = globalThis.fetch,
   now = () => new Date(),
 } = {}) {
+  const missingNotificationConfiguration = [
+    ['WHATSAPP_PHONE_NUMBER_ID', phoneNumberId],
+    ['WHATSAPP_ACCESS_TOKEN', accessToken],
+    ['WHATSAPP_API_VERSION', apiVersion],
+    ['WHATSAPP_SUCCESS_TEMPLATE_NAME', successTemplateName],
+    ['WHATSAPP_FAILURE_TEMPLATE_NAME', failureTemplateName],
+  ].filter(([, value]) => !value).map(([name]) => name)
+  const missingWebhookConfiguration = [
+    ['WHATSAPP_WEBHOOK_VERIFY_TOKEN', webhookVerifyToken],
+    ['WHATSAPP_APP_SECRET', appSecret],
+  ].filter(([, value]) => !value).map(([name]) => name)
   const configured = Boolean(
     phoneNumberId &&
     accessToken &&
@@ -167,6 +186,40 @@ export function createWhatsAppNotificationService({
     failureTemplateName &&
     typeof fetchImpl === 'function',
   )
+
+  async function getDiagnostics() {
+    const diagnostics = {
+      notificationConfigured: configured,
+      missingNotificationConfiguration,
+      webhookConfigured: missingWebhookConfiguration.length === 0,
+      missingWebhookConfiguration,
+      apiAccess: 'not_checked',
+      apiError: '',
+    }
+    if (!configured) return diagnostics
+
+    try {
+      const response = await fetchImpl(
+        `https://graph.facebook.com/${apiVersion}/${phoneNumberId}?fields=id,display_phone_number,verified_name`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(10_000),
+        },
+      )
+      const body = await response.json().catch(() => ({}))
+      diagnostics.apiAccess = response.ok && body.id === phoneNumberId
+        ? 'accepted'
+        : 'rejected'
+      if (diagnostics.apiAccess === 'rejected') {
+        const code = body.error?.code
+        diagnostics.apiError = `Meta Graph API returned HTTP ${response.status}${Number.isInteger(code) ? ` (code ${code})` : ''}.`
+      }
+    } catch {
+      diagnostics.apiAccess = 'unavailable'
+      diagnostics.apiError = 'Meta Graph API could not be reached.'
+    }
+    return diagnostics
+  }
 
   async function getBooking(requestId) {
     return bookingEnquiryModel.findOne({ requestId }).lean()
@@ -286,11 +339,18 @@ export function createWhatsAppNotificationService({
       if (['delivered', 'read'].includes(previousNotification.status)) {
         return { booking, duplicate: true, alreadyDelivered: true }
       }
+      if (previousNotification.status === 'sent' || previousNotification.inProgress) {
+        return { booking, duplicate: true }
+      }
+      if (
+        force &&
+        previousNotification.status === 'failed' &&
+        previousNotification.failureReason?.includes('response was uncertain')
+      ) {
+        return { booking, duplicate: true, uncertain: true }
+      }
       if (!force) {
-        if (
-          ['sent', 'skipped'].includes(previousNotification.status) ||
-          previousNotification.inProgress
-        ) {
+        if (previousNotification.status === 'skipped') {
           return { booking, duplicate: true }
         }
         if (!retry || !previousNotification.retryable || new Date(previousNotification.nextRetryAt) > now()) {
@@ -303,10 +363,10 @@ export function createWhatsAppNotificationService({
     const claimFilter = {
       requestId,
       whatsappConsent: true,
+      'whatsappNotification.inProgress': { $ne: true },
       ...(force
         ? {}
         : {
-            'whatsappNotification.inProgress': { $ne: true },
             ...(previousNotification.idempotencyKey === idempotencyKey
               ? {
                   'whatsappNotification.idempotencyKey': idempotencyKey,
@@ -330,6 +390,7 @@ export function createWhatsAppNotificationService({
           'whatsappNotification.failureReason': '',
           'whatsappNotification.retryable': false,
           'whatsappNotification.nextRetryAt': null,
+          'whatsappNotification.sentAt': null,
           'whatsappNotification.lastAttemptAt': at,
         },
         $inc: { 'whatsappNotification.attemptCount': 1 },
@@ -400,7 +461,12 @@ export function createWhatsAppNotificationService({
       const retryable = retryableHttpStatuses.has(response.status)
       const attempts = claimed.whatsappNotification?.attemptCount ?? 1
       const delayMinutes = Math.min(60, 2 ** Math.min(attempts, 5))
-      const reason = safeFailureReason(response.status, body)
+      const reason = safeFailureReason(response.status, body, [accessToken])
+      console.error('WhatsApp Cloud API rejected a template message.', {
+        status: response.status,
+        code: Number.isInteger(body.error?.code) ? body.error.code : '',
+        subcode: Number.isInteger(body.error?.error_subcode) ? body.error.error_subcode : '',
+      })
       const failed = await bookingEnquiryModel.findOneAndUpdate(
         { requestId, 'whatsappNotification.idempotencyKey': idempotencyKey },
         {
@@ -434,6 +500,7 @@ export function createWhatsAppNotificationService({
           'whatsappNotification.failureReason': '',
           'whatsappNotification.retryable': false,
           'whatsappNotification.nextRetryAt': null,
+          'whatsappNotification.sentAt': sentAt,
         },
         $push: {
           'whatsappNotification.history': historyEntry('sent', 'system', 'Accepted by WhatsApp Cloud API; delivery is not yet confirmed.', `${idempotencyKey}:sent`, sentAt),
@@ -506,6 +573,9 @@ export function createWhatsAppNotificationService({
     if (status === 'delivered' || status === 'read') {
       update.$set['whatsappNotification.deliveredAt'] = at
     }
+    if (status === 'sent') {
+      update.$set['whatsappNotification.sentAt'] = at
+    }
     if (status === 'failed') {
       update.$set['whatsappNotification.failureReason'] = safeNote
       update.$set['whatsappNotification.retryable'] = false
@@ -523,6 +593,7 @@ export function createWhatsAppNotificationService({
 
   return {
     configured,
+    getDiagnostics,
     notify,
     processRetries,
     recordWebhookStatus,

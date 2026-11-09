@@ -271,6 +271,71 @@ test('a signed captured-payment webhook finalizes once and accepts duplicate cal
   assert.equal(isValidRazorpayWebhookSignature(rawBody, webhookSignature, 'incorrect-secret'), false)
 })
 
+test('order.paid verifies captured payments and allocates one permanent reference', async () => {
+  const requestId = 'razorpay-order-paid-session'
+  const model = createBookingModel(requestId)
+  const client = createClient({
+    paymentsList: [{
+      id: 'pay_order_paid',
+      order_id: 'order_test_1',
+      amount: 29900,
+      currency: 'INR',
+      status: 'captured',
+    }],
+  })
+  let references = 0
+  const service = createRazorpayPaymentService({
+    client,
+    keyId: 'rzp_test_public',
+    keySecret: 'test-secret',
+    bookingEnquiryModel: model,
+    allocateReference: async () => {
+      references += 1
+      return '10812026504'
+    },
+  })
+  await service.createOrder(requestId)
+
+  const result = await service.handleWebhook('order.paid', undefined, {
+    id: 'order_test_1',
+  })
+
+  assert.equal(result.booking.paymentStatus, 'paid')
+  assert.equal(result.booking.reference, '10812026504')
+  assert.equal(references, 1)
+})
+
+test('payment.failed webhook leaves the order retryable for a later captured attempt', async () => {
+  const requestId = 'razorpay-failed-attempt-session'
+  const model = createBookingModel(requestId)
+  const client = createClient()
+  let references = 0
+  const service = createRazorpayPaymentService({
+    client,
+    keyId: 'rzp_test_public',
+    keySecret: 'test-secret',
+    bookingEnquiryModel: model,
+    allocateReference: async () => {
+      references += 1
+      return '10812026505'
+    },
+  })
+  await service.createOrder(requestId)
+
+  const result = await service.handleWebhook('payment.failed', {
+    id: 'pay_failed_attempt',
+    order_id: 'order_test_1',
+    amount: 29900,
+    currency: 'INR',
+    status: 'failed',
+  })
+
+  assert.equal(result.pending, true)
+  assert.equal(model.record.paymentStatus, 'unpaid')
+  assert.equal(model.record.reference ?? '', '')
+  assert.equal(references, 0)
+})
+
 test('does not mark a payment failed while Razorpay reports an unresolved attempt', async () => {
   const requestId = 'razorpay-unresolved-session'
   const model = createBookingModel(requestId)

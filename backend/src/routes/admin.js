@@ -680,6 +680,7 @@ export function createAdminRouter({
   bookingEnquiryRepository,
   diwaliOfferService,
   whatsappNotifications,
+  integrationDiagnostics = {},
 }) {
   const router = Router()
   const requireAdmin = createRequireAdmin({
@@ -713,6 +714,21 @@ export function createAdminRouter({
     }
   })
 
+  router.get('/integrations/diagnostics', async (_request, response, next) => {
+    try {
+      response.set('Cache-Control', 'no-store').json({
+        razorpay: integrationDiagnostics,
+        whatsapp: await whatsappNotifications?.getDiagnostics?.() ?? {
+          notificationConfigured: false,
+          apiAccess: 'not_checked',
+          apiError: 'WhatsApp notification service is unavailable.',
+        },
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
   router.get('/bookings', async (request, response, next) => {
     try {
       response.json(await listBookings(request))
@@ -733,6 +749,7 @@ export function createAdminRouter({
         status: enquiry.whatsappNotification?.status ?? 'not_available',
         attemptCount: enquiry.whatsappNotification?.attemptCount ?? 0,
         lastAttemptAt: enquiry.whatsappNotification?.lastAttemptAt ?? null,
+        sentAt: enquiry.whatsappNotification?.sentAt ?? null,
         deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
         providerMessageId: enquiry.whatsappNotification?.providerMessageId ?? '',
         history: enquiry.whatsappNotification?.history ?? [],
@@ -768,7 +785,9 @@ export function createAdminRouter({
       const result = await whatsappNotifications?.notify?.(enquiry.requestId, type, { force: true, retry: true })
       const updated = await bookingEnquiryRepository?.findByReference?.(request.params.reference) ?? enquiry
       response.json({
-        message: result?.alreadyDelivered
+        message: result?.uncertain
+          ? 'WhatsApp provider response was uncertain. Retry was withheld to prevent a duplicate message.'
+          : result?.alreadyDelivered
           ? 'WhatsApp notification was already delivered. No duplicate message was sent.'
           : result?.sent
             ? 'WhatsApp notification sent successfully.'

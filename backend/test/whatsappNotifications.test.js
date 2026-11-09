@@ -118,6 +118,7 @@ test('sends one approved confirmation template to the consented customer number'
   assert.match(requests[0].payload.template.components[0].parameters[8].text, /Diwali Offer Price: ₹249/)
   assert.equal(model.record.whatsappNotification.recipient, '+919876543210')
   assert.equal(model.record.whatsappNotification.status, 'sent')
+  assert.equal(model.record.whatsappNotification.sentAt.toISOString(), '2026-11-09T10:00:00.000Z')
   assert.equal(model.record.whatsappNotification.providerMessageId, 'wamid.confirm-1')
   assert.equal(sent.sent, true)
   assert.equal(duplicate.duplicate, true)
@@ -241,4 +242,82 @@ test('admin forced retry does not send duplicate messages when already delivered
   assert.equal(retryResult.duplicate, true)
   assert.equal(retryResult.alreadyDelivered, true)
   assert.equal(calls, 1, 'Did not call Meta API again because message was already delivered')
+})
+
+test('WhatsApp diagnostics verify configuration without returning credentials', async () => {
+  const service = createWhatsAppNotificationService({
+    phoneNumberId: 'meta-phone-id',
+    accessToken: 'never-return-this-token',
+    apiVersion: 'v22.0',
+    successTemplateName: 'vibe_booking_confirmation',
+    failureTemplateName: 'vibe_payment_assistance',
+    webhookVerifyToken: 'never-return-this-verify-token',
+    appSecret: 'never-return-this-app-secret',
+    fetchImpl: async (url, options) => {
+      assert.match(url, /meta-phone-id\?fields=/)
+      assert.equal(options.headers.Authorization, 'Bearer never-return-this-token')
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'meta-phone-id' }),
+      }
+    },
+  })
+
+  const result = await service.getDiagnostics()
+  assert.equal(result.notificationConfigured, true)
+  assert.deepEqual(result.missingNotificationConfiguration, [])
+  assert.equal(result.webhookConfigured, true)
+  assert.deepEqual(result.missingWebhookConfiguration, [])
+  assert.equal(result.apiAccess, 'accepted')
+  assert.equal(JSON.stringify(result).includes('never-return-this'), false)
+})
+
+test('WhatsApp diagnostics list missing environment variable names only', async () => {
+  const service = createWhatsAppNotificationService({
+    fetchImpl: async () => {
+      throw new Error('Must not query Meta when required configuration is missing.')
+    },
+  })
+
+  const result = await service.getDiagnostics()
+  assert.equal(result.notificationConfigured, false)
+  assert.deepEqual(result.missingNotificationConfiguration, [
+    'WHATSAPP_PHONE_NUMBER_ID',
+    'WHATSAPP_ACCESS_TOKEN',
+    'WHATSAPP_API_VERSION',
+    'WHATSAPP_SUCCESS_TEMPLATE_NAME',
+    'WHATSAPP_FAILURE_TEMPLATE_NAME',
+  ])
+  assert.deepEqual(result.missingWebhookConfiguration, [
+    'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+    'WHATSAPP_APP_SECRET',
+  ])
+  assert.equal(result.apiAccess, 'not_checked')
+})
+
+test('admin retries do not resend when the previous provider response was uncertain', async () => {
+  const model = createBookingModel(booking({
+    whatsappNotification: {
+      status: 'failed',
+      idempotencyKey: 'session-1:booking_confirmation:10812026501',
+      failureReason: 'WhatsApp provider response was uncertain; automatic retry was withheld to prevent duplicate messages.',
+      retryable: false,
+      inProgress: false,
+      history: [],
+    },
+  }))
+  let calls = 0
+  const service = createService(model, async () => {
+    calls += 1
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.duplicate' }] }) }
+  })
+
+  const result = await service.notify('session-1', 'booking_confirmation', {
+    force: true,
+    retry: true,
+  })
+
+  assert.equal(result.uncertain, true)
+  assert.equal(calls, 0)
 })

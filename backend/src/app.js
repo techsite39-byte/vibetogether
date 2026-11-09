@@ -33,6 +33,7 @@ export function createApp({
   bookingEnquiryRepository,
   razorpayPayments,
   razorpayConfigured = false,
+  razorpayKeyId = '',
   razorpayWebhookSecret = '',
   whatsappNotifications,
   whatsappWebhookConfig = {},
@@ -119,6 +120,11 @@ export function createApp({
     diwaliOfferService,
     diwaliOfferModel: DiwaliOffer,
     whatsappNotifications,
+    integrationDiagnostics: {
+      razorpayCheckoutConfigured: razorpayConfigured,
+      razorpayMode: razorpayKeyId.startsWith('rzp_test_') ? 'test' : razorpayKeyId ? 'live' : 'not_configured',
+      razorpayWebhookConfigured: Boolean(razorpayWebhookSecret),
+    },
   }))
   app.use('/api', createPublicEnquiriesRouter({ enquiryModel, subscriberModel }))
   app.use('/api/public-settings', createPublicSettingsRouter({

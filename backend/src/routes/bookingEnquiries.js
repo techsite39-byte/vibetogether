@@ -240,8 +240,8 @@ export function createBookingEnquiriesRouter({
         status: enquiry.whatsappNotification?.status ?? 'skipped',
         attemptCount: enquiry.whatsappNotification?.attemptCount ?? 0,
         lastAttemptAt: enquiry.whatsappNotification?.lastAttemptAt ?? null,
+        sentAt: enquiry.whatsappNotification?.sentAt ?? null,
         deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
-        failureReason: enquiry.whatsappNotification?.failureReason ?? '',
       },
     }
   }
@@ -249,8 +249,11 @@ export function createBookingEnquiriesRouter({
   async function notifyWithoutAffectingPayment(requestId, type) {
     try {
       await whatsappNotifications?.notify?.(requestId, type)
-    } catch {
-      console.error('WhatsApp notification processing failed.')
+    } catch (error) {
+      console.error('WhatsApp notification processing failed.', {
+        name: error?.name ?? 'UnknownError',
+        code: error?.code ?? '',
+      })
     }
   }
 
