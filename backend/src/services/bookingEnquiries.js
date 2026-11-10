@@ -19,9 +19,13 @@ function sameRequest(existing, enquiry) {
     (existing.email ?? '') === (enquiry.email ?? '') &&
     existing.eventId === enquiry.eventId &&
     (existing.categoryId ?? '') === (enquiry.categoryId ?? '') &&
-    (existing.ticketType ?? 'general-admission') === enquiry.ticketType &&
+    (existing.ticketType ?? 'general-admission') === (enquiry.ticketType ?? 'general-admission') &&
     (existing.ticketQuantity ?? 1) === enquiry.ticketQuantity &&
-    existing.gender === enquiry.gender
+    existing.gender === enquiry.gender &&
+    (existing.maleCount ?? (existing.gender === 'Male' ? (existing.ticketQuantity ?? 1) : 0)) === enquiry.maleCount &&
+    (existing.femaleCount ?? (existing.gender === 'Female' ? (existing.ticketQuantity ?? 1) : 0)) === enquiry.femaleCount &&
+    JSON.stringify(existing.maleMemberNames ?? Array(existing.maleCount ?? 0).fill('')) === JSON.stringify(enquiry.maleMemberNames ?? []) &&
+    JSON.stringify(existing.femaleMemberNames ?? Array(existing.femaleCount ?? 0).fill('')) === JSON.stringify(enquiry.femaleMemberNames ?? [])
   )
 }
 

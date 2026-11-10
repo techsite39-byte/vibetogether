@@ -27,7 +27,11 @@ async function startTestServer({
           existing.categoryId !== enquiry.categoryId ||
           existing.ticketType !== enquiry.ticketType ||
           existing.ticketQuantity !== enquiry.ticketQuantity ||
-          existing.gender !== enquiry.gender
+          existing.gender !== enquiry.gender ||
+          existing.maleCount !== enquiry.maleCount ||
+          existing.femaleCount !== enquiry.femaleCount ||
+          JSON.stringify(existing.maleMemberNames ?? []) !== JSON.stringify(enquiry.maleMemberNames ?? []) ||
+          JSON.stringify(existing.femaleMemberNames ?? []) !== JSON.stringify(enquiry.femaleMemberNames ?? [])
         ) {
           throw Object.assign(new Error('Request ID conflict.'), { status: 409 })
         }
@@ -195,6 +199,50 @@ test('lists existing events and saves one idempotent booking enquiry', async () 
   })
   assert.equal(conflictingResponse.status, 409)
   assert.equal(saved.size, 1)
+})
+
+test('stores mixed ticket counts and optional member names consistently', async () => {
+  const { baseUrl, saved } = await startTestServer()
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    categoryId: 'sing-along',
+    gender: 'Mixed',
+    ticketQuantity: 4,
+    maleCount: 2,
+    femaleCount: 2,
+    maleMemberNames: ['m1', 'm2'],
+    femaleMemberNames: ['f1', 'f2'],
+  }
+  const response = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  const payload = await response.json()
+
+  assert.equal(response.status, 201)
+  assert.equal(payload.booking.ticketQuantity, 4)
+  assert.equal(payload.booking.maleCount, 2)
+  assert.equal(payload.booking.femaleCount, 2)
+  assert.deepEqual(payload.booking.maleMemberNames, ['m1', 'm2'])
+  assert.deepEqual(payload.booking.femaleMemberNames, ['f1', 'f2'])
+  assert.deepEqual(saved.get(request.requestId).maleMemberNames, ['m1', 'm2'])
+
+  const duplicateResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  assert.equal(duplicateResponse.status, 200)
+
+  const invalidResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...request, requestId: crypto.randomUUID(), femaleCount: 0 }),
+  })
+  assert.equal(invalidResponse.status, 400)
 })
 
 test('does not send automatic WhatsApp messages before successful payment', async () => {

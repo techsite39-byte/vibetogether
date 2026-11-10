@@ -97,6 +97,27 @@ function normalizeText(value, field, maxLength) {
   return normalized
 }
 
+function normalizeMemberNames(value, count) {
+  if (value === undefined) {
+    return Array(count).fill('')
+  }
+  if (!Array.isArray(value) || value.length > count) {
+    return null
+  }
+
+  const names = value.map((name) => {
+    if (typeof name !== 'string') {
+      return null
+    }
+    const trimmed = name.normalize('NFKC').trim()
+    return trimmed ? normalizeText(trimmed, 'memberName', 80) : ''
+  })
+  if (names.some((name) => name === null)) {
+    return null
+  }
+  return [...names, ...Array(count - names.length).fill('')]
+}
+
 async function validateBookingEnquiry(body, eventRepository) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'Please provide valid booking details.' }
@@ -117,9 +138,43 @@ async function validateBookingEnquiry(body, eventRepository) {
     eventIdPattern.test(body.categoryId)
       ? body.categoryId
       : ''
-  const gender = body.gender
+  const hasGenderCounts = body.maleCount !== undefined || body.femaleCount !== undefined
+  if (hasGenderCounts && (
+    !Number.isInteger(body.maleCount) || body.maleCount < 0 || body.maleCount > 10 ||
+    !Number.isInteger(body.femaleCount) || body.femaleCount < 0 || body.femaleCount > 10
+  )) {
+    return { error: 'Enter valid Male and Female ticket counts.' }
+  }
+  const maleCount = hasGenderCounts
+    ? body.maleCount
+    : (body.gender === 'Male' ? (body.ticketQuantity ?? 1) : 0)
+  const femaleCount = hasGenderCounts
+    ? body.femaleCount
+    : (body.gender === 'Female' ? (body.ticketQuantity ?? 1) : 0)
+  const ticketQuantity = hasGenderCounts
+    ? maleCount + femaleCount
+    : (body.ticketQuantity ?? 1)
+  if (!hasGenderCounts && body.gender === 'Mixed') {
+    return { error: 'Select Male and Female counts for a mixed booking.' }
+  }
+  if (hasGenderCounts && body.ticketQuantity !== undefined && body.ticketQuantity !== ticketQuantity) {
+    return { error: 'Male and Female counts must equal the total ticket quantity.' }
+  }
+
+  const maleMemberNames = normalizeMemberNames(body.maleMemberNames, maleCount)
+  const femaleMemberNames = normalizeMemberNames(body.femaleMemberNames, femaleCount)
+  if (!maleMemberNames || !femaleMemberNames) {
+    return { error: 'Member names must be valid and match the selected ticket counts.' }
+  }
+
+  let gender = hasGenderCounts ? undefined : body.gender
+  if (!gender) {
+    if (maleCount > 0 && femaleCount === 0) gender = 'Male'
+    else if (femaleCount > 0 && maleCount === 0) gender = 'Female'
+    else if (maleCount > 0 && femaleCount > 0) gender = 'Mixed'
+  }
+
   const ticketType = body.ticketType ?? DEFAULT_TICKET_TYPE
-  const ticketQuantity = body.ticketQuantity ?? 1
   if (
     body.whatsappConsent !== undefined &&
     typeof body.whatsappConsent !== 'boolean'
@@ -144,8 +199,8 @@ async function validateBookingEnquiry(body, eventRepository) {
   if (!mobile || mobile.replace(/\D/g, '').length < 7 || mobile.replace(/\D/g, '').length > 15) {
     return { error: 'Enter a valid mobile number with 7 to 15 digits.' }
   }
-  if (gender !== 'Male' && gender !== 'Female') {
-    return { error: 'Select Male or Female.' }
+  if (gender !== 'Male' && gender !== 'Female' && gender !== 'Mixed') {
+    return { error: 'Select at least one Male or Female ticket.' }
   }
 
   let enquirySelection
@@ -190,6 +245,10 @@ async function validateBookingEnquiry(body, eventRepository) {
       email,
       ...enquirySelection,
       gender,
+      maleCount,
+      femaleCount,
+      maleMemberNames,
+      femaleMemberNames,
       ticketType,
       ticketQuantity,
       whatsappConsent: body.whatsappConsent === true,
@@ -233,6 +292,8 @@ export function createBookingEnquiriesRouter({
     const regularPrice = pricing?.regularPrice ?? enquiry.regularPrice ?? DIWALI_REGULAR_PRICE
     const ticketQuantity = pricing?.ticketQuantity ?? enquiry.ticketQuantity ?? 1
     const ticketType = pricing?.ticketType ?? enquiry.ticketType ?? DEFAULT_TICKET_TYPE
+    const maleCount = enquiry.maleCount ?? (enquiry.gender === 'Male' ? ticketQuantity : 0)
+    const femaleCount = enquiry.femaleCount ?? (enquiry.gender === 'Female' ? ticketQuantity : 0)
     return {
       reference: enquiry.reference ?? '',
       requestId: enquiry.requestId,
@@ -242,6 +303,10 @@ export function createBookingEnquiriesRouter({
       category: enquiry.category,
       event: enquiry.event,
       gender: enquiry.gender,
+      maleCount,
+      femaleCount,
+      maleMemberNames: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberNames?.[index] ?? ''),
+      femaleMemberNames: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberNames?.[index] ?? ''),
       ticketType,
       ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ??
         BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)?.name ?? 'General Admission',
@@ -425,8 +490,8 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (razorpayConfigured) {
-      response.status(404).json({ message: 'Demo payments are disabled while Razorpay Checkout is configured.' })
+    if (process.env.NODE_ENV === 'production' || razorpayConfigured) {
+      response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
       return
     }
 
@@ -615,8 +680,8 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (razorpayConfigured) {
-      response.status(404).json({ message: 'Demo payments are disabled while Razorpay Checkout is configured.' })
+    if (process.env.NODE_ENV === 'production' || razorpayConfigured) {
+      response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
       return
     }
     const outcome = request.body?.outcome

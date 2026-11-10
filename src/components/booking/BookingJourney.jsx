@@ -77,6 +77,9 @@ function getNormalizedMobile(value, countryCode) {
 export default function BookingJourney({ onClose }) {
   const navigate = useNavigate()
   const [restoredDraft] = useState(readBookingDraft)
+  const restoredTicketQuantity = Number.isInteger(restoredDraft?.form?.ticketQuantity)
+    ? Math.min(10, Math.max(1, restoredDraft.form.ticketQuantity))
+    : 1
   const [form, setForm] = useState(() => ({
     name: typeof restoredDraft?.form?.name === 'string' ? restoredDraft.form.name : '',
     email: typeof restoredDraft?.form?.email === 'string' ? restoredDraft.form.email : '',
@@ -84,9 +87,19 @@ export default function BookingJourney({ onClose }) {
     categoryId: typeof restoredDraft?.form?.categoryId === 'string' ? restoredDraft.form.categoryId : '',
     gender: typeof restoredDraft?.form?.gender === 'string' ? restoredDraft.form.gender : '',
     ticketType: fallbackTicketTypes[0].id,
-    ticketQuantity: Number.isInteger(restoredDraft?.form?.ticketQuantity)
-      ? Math.min(10, Math.max(1, restoredDraft.form.ticketQuantity))
-      : 1,
+    ticketQuantity: restoredTicketQuantity,
+    maleCount: Number.isInteger(restoredDraft?.form?.maleCount)
+      ? Math.min(restoredTicketQuantity, Math.max(0, restoredDraft.form.maleCount))
+      : restoredDraft?.form?.gender === 'Male' ? restoredTicketQuantity : 0,
+    femaleCount: Number.isInteger(restoredDraft?.form?.femaleCount)
+      ? Math.min(restoredTicketQuantity, Math.max(0, restoredDraft.form.femaleCount))
+      : restoredDraft?.form?.gender === 'Female' ? restoredTicketQuantity : 0,
+    maleMemberNames: Array.isArray(restoredDraft?.form?.maleMemberNames)
+      ? restoredDraft.form.maleMemberNames.filter((name) => typeof name === 'string').slice(0, 10)
+      : [],
+    femaleMemberNames: Array.isArray(restoredDraft?.form?.femaleMemberNames)
+      ? restoredDraft.form.femaleMemberNames.filter((name) => typeof name === 'string').slice(0, 10)
+      : [],
     whatsappConsent: restoredDraft?.form?.whatsappConsent === true,
   }))
   const [countryCode, setCountryCode] = useState(restoredDraft?.countryCode ?? '+91')
@@ -216,6 +229,50 @@ export default function BookingJourney({ onClose }) {
     }
   }
 
+  function updateTicketQuantity(nextQuantity) {
+    resetRequestAfterEdit()
+    setForm((current) => {
+      const ticketQuantity = Math.min(10, Math.max(1, nextQuantity))
+      const maleCount = Math.min(current.maleCount, ticketQuantity)
+      const femaleCount = Math.min(current.femaleCount, ticketQuantity - maleCount)
+      return {
+        ...current,
+        ticketQuantity,
+        maleCount,
+        femaleCount,
+        maleMemberNames: current.maleMemberNames.slice(0, maleCount),
+        femaleMemberNames: current.femaleMemberNames.slice(0, femaleCount),
+      }
+    })
+    setFieldError('')
+  }
+
+  function updateGenderCount(gender, nextCount) {
+    resetRequestAfterEdit()
+    setForm((current) => {
+      const countKey = gender === 'Male' ? 'maleCount' : 'femaleCount'
+      const namesKey = gender === 'Male' ? 'maleMemberNames' : 'femaleMemberNames'
+      const otherCount = gender === 'Male' ? current.femaleCount : current.maleCount
+      const count = Math.min(current.ticketQuantity - otherCount, Math.max(0, nextCount))
+      return {
+        ...current,
+        [countKey]: count,
+        [namesKey]: current[namesKey].slice(0, count),
+      }
+    })
+    setFieldError('')
+  }
+
+  function updateMemberName(gender, index, value) {
+    resetRequestAfterEdit()
+    const namesKey = gender === 'Male' ? 'maleMemberNames' : 'femaleMemberNames'
+    setForm((current) => {
+      const names = [...current[namesKey]]
+      names[index] = value
+      return { ...current, [namesKey]: names }
+    })
+  }
+
   function validateStep() {
     if (step === 0 && !isValidName(form.name)) {
       return 'Enter your full name to continue.'
@@ -229,8 +286,8 @@ export default function BookingJourney({ onClose }) {
     if (step === 2 && !bookingCategories.some(({ id }) => id === form.categoryId)) {
       return 'Choose one category to continue.'
     }
-    if (step === 3 && !['Male', 'Female'].includes(form.gender)) {
-      return 'Choose an option to continue.'
+    if (step === 3 && form.maleCount + form.femaleCount !== form.ticketQuantity) {
+      return `Assign all ${form.ticketQuantity} ticket${form.ticketQuantity === 1 ? '' : 's'} to Male or Female.`
     }
     return ''
   }
@@ -290,7 +347,13 @@ export default function BookingJourney({ onClose }) {
         email: form.email.trim(),
         mobile: getNormalizedMobile(form.mobile, countryCode),
         categoryId: form.categoryId,
-        gender: form.gender,
+        gender: form.maleCount > 0 && form.femaleCount > 0
+          ? 'Mixed'
+          : form.maleCount > 0 ? 'Male' : 'Female',
+        maleCount: form.maleCount,
+        femaleCount: form.femaleCount,
+        maleMemberNames: form.maleMemberNames,
+        femaleMemberNames: form.femaleMemberNames,
         ticketType: form.ticketType,
         ticketQuantity: form.ticketQuantity,
         whatsappConsent: form.whatsappConsent,
@@ -471,7 +534,7 @@ export default function BookingJourney({ onClose }) {
                 'What’s your name?',
                 'What’s your mobile number?',
                 'Pick a category',
-                'How do you identify?',
+                'Who’s joining you?',
               ][step]}
             </h1>
             {step > 0 && step < 4 && (
@@ -480,7 +543,7 @@ export default function BookingJourney({ onClose }) {
                   ? 'Enter your number so we can contact you about your enquiry.'
                   : step === 2
                     ? 'Choose one category. Our team can match you with a suitable event.'
-                    : 'Select one option to complete your enquiry.'}
+                    : 'Assign every ticket to Male or Female. Member names are optional.'}
               </p>
             )}
 
@@ -555,13 +618,14 @@ export default function BookingJourney({ onClose }) {
                       <legend className="booking-journey__visually-hidden">
                         Choose one category of interest
                       </legend>
-                      {bookingCategories.map(({ id, title, image }) => (
+                      {bookingCategories.map(({ id, title, image, imageAlt }) => (
                         <label
-                          className={`booking-journey__category booking-journey__category--featured${form.categoryId === id ? ' is-selected' : ''}`}
+                          className={`booking-category-card${form.categoryId === id ? ' is-selected' : ''}`}
                           key={id}
                         >
                           <input
                             checked={form.categoryId === id}
+                            className="booking-category-card__input"
                             data-journey-focus
                             name="categoryId"
                             onChange={() => {
@@ -572,16 +636,17 @@ export default function BookingJourney({ onClose }) {
                             type="radio"
                             value={id}
                           />
-                          <img
-                            alt=""
-                            aria-hidden="true"
-                            className="booking-journey__category-image"
-                            src={image}
-                          />
-                          <span aria-hidden="true" className="booking-journey__category-overlay" />
-                          <span className="booking-journey__category-title">{title}</span>
-                          <span aria-hidden="true" className="booking-journey__category-check">
-                            {form.categoryId === id && <Check size={16} />}
+                          <span className="booking-category-card__image-wrap">
+                            <img alt={imageAlt || `${title} event`} className="booking-category-card__image" src={image} />
+                            <span aria-hidden="true" className="booking-category-card__selected-badge">
+                              {form.categoryId === id && <Check size={16} />}
+                            </span>
+                          </span>
+                          <span className="booking-category-card__body">
+                            <span className="booking-category-card__label">SING ALONG</span>
+                            <span className="booking-category-card__name">{title}</span>
+                            <span className="booking-category-card__title">The room becomes the chorus</span>
+                            <span className="booking-category-card__description">An evening where every voice finds its place in the song.</span>
                           </span>
                         </label>
                       ))}
@@ -594,12 +659,7 @@ export default function BookingJourney({ onClose }) {
                             aria-label="Decrease number of tickets"
                             disabled={ticketQuantity <= 1}
                             onClick={() => {
-                              resetRequestAfterEdit()
-                              setForm((current) => ({
-                                ...current,
-                                ticketQuantity: Math.max(1, current.ticketQuantity - 1),
-                              }))
-                              setFieldError('')
+                              updateTicketQuantity(ticketQuantity - 1)
                             }}
                             type="button"
                           >
@@ -612,12 +672,7 @@ export default function BookingJourney({ onClose }) {
                             aria-label="Increase number of tickets"
                             disabled={ticketQuantity >= 10}
                             onClick={() => {
-                              resetRequestAfterEdit()
-                              setForm((current) => ({
-                                ...current,
-                                ticketQuantity: Math.min(10, current.ticketQuantity + 1),
-                              }))
-                              setFieldError('')
+                              updateTicketQuantity(ticketQuantity + 1)
                             }}
                             type="button"
                           >
@@ -631,25 +686,61 @@ export default function BookingJourney({ onClose }) {
                 )}
 
               {step === 3 && (
-                <fieldset className="booking-journey__gender">
-                  <legend className="booking-journey__visually-hidden">Gender</legend>
-                  {['Male', 'Female'].map((gender) => (
-                    <label
-                      className={`booking-journey__gender-option${form.gender === gender ? ' is-selected' : ''}`}
-                      key={gender}
-                    >
-                      <input
-                        checked={form.gender === gender}
-                        data-journey-focus={gender === 'Male' ? '' : undefined}
-                        name="gender"
-                        onChange={updateField}
-                        type="radio"
-                        value={gender}
-                      />
-                      <span>{gender}</span>
-                    </label>
+                <>
+                  <fieldset className="booking-gender-counts">
+                    <legend>Ticket mix</legend>
+                    {['Male', 'Female'].map((gender, index) => {
+                      const count = gender === 'Male' ? form.maleCount : form.femaleCount
+                      const atLimit = form.maleCount + form.femaleCount >= ticketQuantity
+                      return (
+                        <div className="booking-gender-count" key={gender}>
+                          <span className="booking-gender-count__label">{gender} tickets</span>
+                          <div className="booking-gender-count__stepper">
+                            <button
+                              aria-label={`Remove one ${gender.toLowerCase()} ticket`}
+                              disabled={count === 0}
+                              onClick={() => updateGenderCount(gender, count - 1)}
+                              type="button"
+                            >
+                              <Minus size={17} aria-hidden="true" />
+                            </button>
+                            <output aria-label={`${gender} ticket count`}>{count}</output>
+                            <button
+                              aria-label={`Add one ${gender.toLowerCase()} ticket`}
+                              data-journey-focus={index === 0 ? '' : undefined}
+                              disabled={atLimit}
+                              onClick={() => updateGenderCount(gender, count + 1)}
+                              type="button"
+                            >
+                              <Plus size={17} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </fieldset>
+                  {[
+                    ['Male', form.maleCount, form.maleMemberNames],
+                    ['Female', form.femaleCount, form.femaleMemberNames],
+                  ].map(([gender, count, names]) => count > 0 && (
+                    <fieldset className="booking-member-group" key={gender}>
+                      <legend>{gender.toUpperCase()} MEMBERS</legend>
+                      {Array.from({ length: count }, (_, index) => (
+                        <label className="booking-member-field" key={`${gender}-${index}`}>
+                          <span>{gender} Member {index + 1}</span>
+                          <input
+                            autoComplete="off"
+                            maxLength={80}
+                            onChange={(event) => updateMemberName(gender, index, event.target.value)}
+                            placeholder="Enter name (optional)"
+                            type="text"
+                            value={names[index] ?? ''}
+                          />
+                        </label>
+                      ))}
+                    </fieldset>
                   ))}
-                </fieldset>
+                </>
               )}
             </div>
 

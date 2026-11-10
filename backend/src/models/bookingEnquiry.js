@@ -161,6 +161,26 @@ const bookingEnquirySchema = new mongoose.Schema(
       max: 10,
       default: 1,
     },
+    maleCount: {
+      type: Number,
+      min: 0,
+      max: 10,
+      default: 0,
+    },
+    femaleCount: {
+      type: Number,
+      min: 0,
+      max: 10,
+      default: 0,
+    },
+    maleMemberNames: {
+      type: [{ type: String, trim: true, maxlength: 80 }],
+      default: [],
+    },
+    femaleMemberNames: {
+      type: [{ type: String, trim: true, maxlength: 80 }],
+      default: [],
+    },
     pricePerTicket: {
       type: Number,
       min: 0,
@@ -184,7 +204,7 @@ const bookingEnquirySchema = new mongoose.Schema(
     gender: {
       type: String,
       required: true,
-      enum: ['Male', 'Female'],
+      enum: ['Male', 'Female', 'Mixed'],
     },
     createdAt: {
       type: Date,

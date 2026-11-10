@@ -70,7 +70,12 @@ test('initial booking save is temporary, unpaid, expiring, and reference-free', 
     categoryId: 'fun-games',
     event: '',
     eventId: '',
-    gender: 'Female',
+    gender: 'Mixed',
+    ticketQuantity: 3,
+    maleCount: 2,
+    femaleCount: 1,
+    maleMemberNames: ['Arun Example', ''],
+    femaleMemberNames: ['Mira Example'],
     whatsappConsent: true,
     status: 'pending',
     createdAt: new Date(),
@@ -81,8 +86,23 @@ test('initial booking save is temporary, unpaid, expiring, and reference-free', 
   assert.equal(result.enquiry.reference, undefined)
   assert.equal(result.enquiry.paymentStatus, 'unpaid')
   assert.equal(result.enquiry.email, 'jordan@example.com')
+  assert.deepEqual(result.enquiry.maleMemberNames, ['Arun Example', ''])
+  assert.deepEqual(result.enquiry.femaleMemberNames, ['Mira Example'])
   assert.ok(result.enquiry.expiresAt.getTime() >= before + 7 * 24 * 60 * 60 * 1000 - 1000)
   assert.equal(result.enquiry.whatsappNotification.status, 'skipped')
+
+  const duplicate = await saveBookingEnquiry({
+    ...result.enquiry,
+    expiresAt: undefined,
+  }, { bookingEnquiryModel: model })
+  assert.equal(duplicate.duplicate, true)
+  await assert.rejects(
+    saveBookingEnquiry({
+      ...result.enquiry,
+      maleMemberNames: ['Changed Name', ''],
+    }, { bookingEnquiryModel: model }),
+    (error) => error.status === 409,
+  )
 })
 
 test('demo payment finalization allocates once under duplicate callbacks and clears expiry', async () => {

@@ -101,7 +101,7 @@ export default function HomeVideosSection() {
   return (
     <section
       className={`home-videos${isVisible ? ' is-visible' : ''}`}
-      id="discover-categories"
+      id="home-videos"
       aria-labelledby="home-videos-title"
       ref={sectionRef}
     >

@@ -2,18 +2,18 @@
    Home Experiences Arc Section - Full Showcase Section
    No outer box / frame - Seamlessly integrated into dark luxury theme
    Tangentially rotated cards curve overhead; Center text & columns aligned under dome
-   Matches Reference Image 2 exact structure & animations
+   "not show box show this as section and if hover only auto scroll and align text proper and good align"
    ========================================================================== */
 
 .home-experiences-arc {
   position: relative;
   isolation: isolate;
   width: 100%;
-  padding-block: clamp(3rem, 5.5vw, 5.5rem);
+  padding-block: clamp(3rem, 5vw, 5rem);
   background:
-    radial-gradient(ellipse at 50% 22%, rgba(138, 43, 255, 0.14), transparent 58%),
-    radial-gradient(ellipse at 82% 60%, rgba(209, 42, 255, 0.07), transparent 48%),
-    radial-gradient(ellipse at 18% 68%, rgba(68, 51, 255, 0.07), transparent 48%),
+    radial-gradient(ellipse at 50% 18%, rgba(138, 43, 255, 0.15), transparent 55%),
+    radial-gradient(ellipse at 85% 65%, rgba(209, 42, 255, 0.08), transparent 45%),
+    radial-gradient(ellipse at 15% 72%, rgba(68, 51, 255, 0.08), transparent 45%),
     linear-gradient(180deg, #070510 0%, #090614 50%, #06050e 100%);
   color: #ffffff;
   overflow: hidden;
@@ -29,18 +29,18 @@
 
 .experiences-arc__glow-top {
   position: absolute;
-  top: -12%;
+  top: -10%;
   left: 50%;
   transform: translateX(-50%);
   width: min(92vw, 68rem);
-  height: 26rem;
+  height: 24rem;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(157, 43, 255, 0.16), transparent 72%);
+  background: radial-gradient(ellipse, rgba(157, 43, 255, 0.18), transparent 70%);
 }
 
 .experiences-arc__glow-left {
   position: absolute;
-  top: 36%;
+  top: 30%;
   left: -8%;
   width: 32rem;
   height: 32rem;
@@ -50,7 +50,7 @@
 
 .experiences-arc__glow-right {
   position: absolute;
-  top: 36%;
+  top: 30%;
   right: -8%;
   width: 32rem;
   height: 32rem;
@@ -59,14 +59,14 @@
 }
 
 /* ==========================================================================
-   Stage (Canvas for the overhead arc and centered content)
+   Stage (Overhead crown arc and centered dome content)
    ========================================================================== */
 .experiences-arc__stage {
   position: relative;
   width: 100%;
   max-width: 96rem;
   margin-inline: auto;
-  height: clamp(47rem, 56vw, 55rem);
+  height: clamp(28rem, 35vw, 33rem);
   cursor: grab;
   user-select: none;
   outline: none;
@@ -118,6 +118,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: linear-gradient(145deg, #1f1438 0%, #100a20 100%);
 }
 
 .arc-card__image {
@@ -159,7 +160,7 @@
   background: linear-gradient(
     180deg,
     transparent 30%,
-    rgba(10, 8, 18, 0.7) 65%,
+    rgba(10, 8, 18, 0.72) 65%,
     rgba(10, 8, 18, 0.95) 100%
   );
   color: #ffffff;
@@ -181,7 +182,7 @@
   align-self: flex-start;
   padding: 0.18rem 0.52rem;
   border-radius: 999px;
-  background: rgba(168, 43, 255, 0.38);
+  background: rgba(168, 43, 255, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(8px);
   font-size: 0.65rem;
@@ -231,11 +232,11 @@
 }
 
 /* ==========================================================================
-   Central Content (Cleanly Aligned Under the Arch Dome - Image 2 Exact)
+   Central Content (Cleanly Aligned Under the Arch Dome)
    ========================================================================== */
 .experiences-arc__center {
   position: absolute;
-  top: clamp(15.5rem, 19.5vw, 19rem);
+  top: clamp(10rem, 12.5vw, 12.5rem);
   left: 50%;
   transform: translateX(-50%);
   width: min(92%, 46rem);
@@ -261,7 +262,7 @@
   color: #df9dff;
   background: rgba(168, 43, 255, 0.16);
   border: 1px solid rgba(168, 43, 255, 0.38);
-  margin-bottom: clamp(0.7rem, 1.3vw, 1rem);
+  margin-bottom: clamp(0.55rem, 1vw, 0.85rem);
   line-height: 1;
 }
 
@@ -269,12 +270,12 @@
   color: #d12aff;
 }
 
-/* Title: High-contrast Editorial Serif (Matching Image 2) */
+/* Title: High-contrast Editorial Serif */
 .experiences-arc__title {
   font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
-  font-size: clamp(2rem, 3.6vw, 3.35rem);
+  font-size: clamp(1.85rem, 3.2vw, 3rem);
   font-weight: 600;
-  line-height: 1.12;
+  line-height: 1.14;
   letter-spacing: -0.024em;
   color: #ffffff;
   margin: 0;
@@ -285,26 +286,26 @@
 /* Subtitle */
 .experiences-arc__subtitle {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: clamp(0.88rem, 1.05vw, 1rem);
-  line-height: 1.56;
+  font-size: clamp(0.86rem, 0.98vw, 0.98rem);
+  line-height: 1.54;
   color: #cbbede;
   max-width: 33rem;
-  margin: clamp(0.65rem, 1.2vw, 0.95rem) auto 0;
+  margin: clamp(0.55rem, 1vw, 0.8rem) auto 0;
   text-wrap: pretty;
 }
 
-/* CTA Pill Button (Matching Image 2 "Start Generating Now ->") */
+/* CTA Pill Button */
 .experiences-arc__cta-wrap {
-  margin-top: clamp(1.2rem, 2vw, 1.7rem);
+  margin-top: clamp(1rem, 1.6vw, 1.4rem);
 }
 
 .experiences-arc__cta-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  padding: clamp(0.72rem, 1.15vw, 0.88rem) clamp(1.6rem, 2.4vw, 2.2rem);
+  padding: clamp(0.72rem, 1.1vw, 0.86rem) clamp(1.6rem, 2.2vw, 2.1rem);
   border-radius: 999px;
-  font-size: clamp(0.88rem, 1vw, 0.96rem);
+  font-size: clamp(0.88rem, 0.98vw, 0.95rem);
   font-weight: 600;
   background: linear-gradient(110deg, #a82bff 0%, #773bff 52%, #343bff 100%);
   color: #ffffff;
@@ -335,181 +336,224 @@
 }
 
 /* ==========================================================================
-   3 Features Columns Row (Realistic Results / Fast Generation / Diverse Styles format)
+   Navigation Arrows
    ========================================================================== */
+.experiences-arc__nav-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 14, 38, 0.75);
+  border: 1px solid rgba(168, 43, 255, 0.36);
+  backdrop-filter: blur(12px);
+  color: #ffffff;
+  cursor: pointer;
+  z-index: 20;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.experiences-arc__nav-arrow--prev {
+  left: clamp(0.75rem, 2.5vw, 2.5rem);
+}
+
+.experiences-arc__nav-arrow--next {
+  right: clamp(0.75rem, 2.5vw, 2.5rem);
+}
+
+.experiences-arc__nav-arrow:hover {
+  background: rgba(168, 43, 255, 0.35);
+  border-color: rgba(225, 145, 255, 0.85);
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 0 20px rgba(168, 43, 255, 0.55);
+}
+
+/* ==========================================================================
+   BOTTOM SECTION: 3 Features Columns Row & Interaction Hint
+   Cleanly separated below the stage - GUARANTEES ZERO CARD COLLISION!
+   "align text proper and good align"
+   ========================================================================== */
+.experiences-arc__bottom {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  max-width: 66rem;
+  margin: 1.5rem auto 0;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .experiences-arc__features {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: stretch;
-  gap: clamp(0.7rem, 1.8vw, 2rem);
-  margin-top: clamp(1.7rem, 2.6vw, 2.5rem);
+  gap: clamp(1rem, 2.2vw, 2.2rem);
   width: 100%;
-  max-width: 44rem;
+  padding: clamp(1.2rem, 1.8vw, 1.6rem) clamp(1.4rem, 2.4vw, 2.4rem);
+  background: rgba(20, 14, 38, 0.45);
+  border: 1px solid rgba(168, 43, 255, 0.2);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 12px 32px -8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .experiences-arc__feature {
   display: flex;
   flex-direction: column;
-  align-items: center;
   text-align: center;
+  padding-inline: 0.5rem;
 }
 
 .experiences-arc__feature-title {
-  font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
-  font-size: clamp(0.98rem, 1.2vw, 1.18rem);
-  font-weight: 600;
-  line-height: 1.25;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: clamp(1.02rem, 1.15vw, 1.16rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: #ffffff;
-  margin: 0;
+  margin: 0 0 0.45rem;
+  line-height: 1.25;
 }
 
 .experiences-arc__feature-desc {
-  font-family: 'Inter', sans-serif;
-  font-size: clamp(0.72rem, 0.85vw, 0.82rem);
-  line-height: 1.48;
-  color: #b5a6ca;
-  margin: 0.35rem 0 0;
-  max-width: 12.5rem;
+  font-size: clamp(0.82rem, 0.92vw, 0.88rem);
+  line-height: 1.5;
+  color: #b7a6cb;
+  margin: 0;
+  text-wrap: pretty;
 }
 
 .experiences-arc__divider {
   width: 1px;
-  height: 2.75rem;
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(168, 43, 255, 0.35) 50%,
+    rgba(168, 43, 255, 0.38) 25%,
+    rgba(168, 43, 255, 0.38) 75%,
     transparent 100%
   );
-  align-self: center;
+  align-self: stretch;
 }
 
-/* ==========================================================================
-   Navigation Arrow Buttons
-   ========================================================================== */
-.experiences-arc__nav-arrow {
-  position: absolute;
-  top: 48%;
-  transform: translateY(-50%);
-  width: clamp(2.5rem, 3.2vw, 3.1rem);
-  height: clamp(2.5rem, 3.2vw, 3.1rem);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: rgba(21, 16, 37, 0.88);
-  color: #f1e4ff;
-  border: 1px solid rgba(168, 43, 255, 0.45);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(12px);
-  z-index: 15;
-  cursor: pointer;
-  transition:
-    transform 180ms ease,
-    background-color 180ms ease,
-    color 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.experiences-arc__nav-arrow:hover {
-  transform: translateY(-50%) scale(1.1);
-  background: linear-gradient(135deg, #a82bff, #773bff);
-  color: #ffffff;
-  box-shadow: 0 0 22px rgba(168, 43, 255, 0.6);
-}
-
-.experiences-arc__nav-arrow:active {
-  transform: translateY(-50%) scale(0.95);
-}
-
-.experiences-arc__nav-arrow--prev {
-  left: clamp(0.5rem, 1.8vw, 2rem);
-}
-
-.experiences-arc__nav-arrow--next {
-  right: clamp(0.5rem, 1.8vw, 2rem);
-}
-
-/* Subtle interaction hint */
+/* Hint Pill */
 .experiences-arc__hint {
-  position: absolute;
-  bottom: 0.85rem;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.72rem;
+  margin-top: 1.4rem;
+  display: flex;
+  justify-content: center;
+}
+
+.experiences-arc__hint-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
   font-weight: 500;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.35);
-  pointer-events: none;
-  z-index: 15;
-  white-space: nowrap;
+  color: #8c7ba2;
+  background: rgba(14, 10, 26, 0.6);
+  border: 1px solid rgba(168, 43, 255, 0.18);
+  transition:
+    color 260ms ease,
+    border-color 260ms ease,
+    background-color 260ms ease;
+}
+
+.experiences-arc__hint-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6a5785;
+  transition: background-color 260ms ease;
+}
+
+.experiences-arc__hint-pill.is-active {
+  color: #df9dff;
+  border-color: rgba(209, 42, 255, 0.4);
+  background: rgba(26, 16, 48, 0.75);
+}
+
+.experiences-arc__hint-pill.is-active .experiences-arc__hint-dot {
+  background: #39e58c;
+  box-shadow: 0 0 8px rgba(57, 229, 140, 0.8);
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
 }
 
 /* ==========================================================================
    Responsive Adaptations
    ========================================================================== */
-@media (max-width: 68rem) {
-  .experiences-arc__stage {
-    height: clamp(43rem, 62vw, 50rem);
-  }
-
-  .experiences-arc__center {
-    top: clamp(14.5rem, 23vw, 18rem);
-    width: min(94%, 38rem);
-  }
-
+@media (max-width: 900px) {
   .experiences-arc__features {
-    gap: 1rem;
-    margin-top: 1.5rem;
+    grid-template-columns: 1fr;
+    gap: 1.2rem;
+    padding: 1.2rem 1.4rem;
+  }
+
+  .experiences-arc__divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(168, 43, 255, 0.35) 25%,
+      rgba(168, 43, 255, 0.35) 75%,
+      transparent 100%
+    );
+  }
+
+  .experiences-arc__feature {
+    text-align: center;
   }
 }
 
-@media (max-width: 47.99rem) {
+@media (max-width: 640px) {
   .experiences-arc__stage {
-    height: clamp(45rem, 90vw, 52rem);
+    height: clamp(24rem, 90vw, 27rem);
   }
 
   .experiences-arc__center {
-    top: clamp(13rem, 29vw, 16.5rem);
+    top: clamp(8.5rem, 30vw, 10rem);
     width: 95%;
   }
 
   .experiences-arc__title {
-    font-size: clamp(1.5rem, 5.5vw, 2rem);
+    font-size: 1.65rem;
   }
 
   .experiences-arc__subtitle {
-    font-size: 0.84rem;
-    line-height: 1.48;
-  }
-
-  .experiences-arc__features {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.75rem;
-    margin-top: 1.35rem;
-  }
-
-  .experiences-arc__divider {
-    display: none;
-  }
-
-  .experiences-arc__feature-desc {
-    max-width: 18rem;
+    font-size: 0.82rem;
+    max-width: 22rem;
   }
 
   .experiences-arc__nav-arrow {
     display: none;
   }
-}
 
-/* Reduced Motion */
-@media (prefers-reduced-motion: reduce) {
-  .arc-card,
-  .arc-card__image,
-  .arc-card__overlay,
-  .experiences-arc__cta-btn,
-  .experiences-arc__cta-arrow,
-  .experiences-arc__nav-arrow {
-    transition: none !important;
+  .experiences-arc__bottom {
+    margin-top: 1rem;
+    padding-inline: 1rem;
   }
 }

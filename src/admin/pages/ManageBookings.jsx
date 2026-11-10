@@ -138,6 +138,20 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Organizer</dt><dd>{currentBooking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</dd></div>
           <div><dt>Ticket type</dt><dd>{currentBooking.ticketTypeName || currentBooking.ticketType || '—'}</dd></div>
           <div><dt>Number of tickets</dt><dd>{currentBooking.ticketQuantity ?? currentBooking.ticketCount ?? 1}</dd></div>
+          <div><dt>Male tickets</dt><dd>{currentBooking.maleCount ?? (currentBooking.gender === 'Male' ? currentBooking.ticketQuantity ?? 1 : 0)}</dd></div>
+          <div><dt>Female tickets</dt><dd>{currentBooking.femaleCount ?? (currentBooking.gender === 'Female' ? currentBooking.ticketQuantity ?? 1 : 0)}</dd></div>
+          <div>
+            <dt>Male members</dt>
+            <dd>{Array.from({ length: currentBooking.maleCount ?? (currentBooking.gender === 'Male' ? currentBooking.ticketQuantity ?? 1 : 0) }, (_, index) => (
+              <span key={`male-${index}`} style={{ display: 'block' }}>Male Member {index + 1}: {currentBooking.maleMemberNames?.[index]?.trim() || 'Not provided'}</span>
+            ))}</dd>
+          </div>
+          <div>
+            <dt>Female members</dt>
+            <dd>{Array.from({ length: currentBooking.femaleCount ?? (currentBooking.gender === 'Female' ? currentBooking.ticketQuantity ?? 1 : 0) }, (_, index) => (
+              <span key={`female-${index}`} style={{ display: 'block' }}>Female Member {index + 1}: {currentBooking.femaleMemberNames?.[index]?.trim() || 'Not provided'}</span>
+            ))}</dd>
+          </div>
           <div><dt>Price per ticket</dt><dd>{currentBooking.pricePerTicket == null ? '—' : formatAmount(currentBooking.pricePerTicket, currentBooking.currency)}</dd></div>
           <div><dt>Subtotal</dt><dd>{currentBooking.subtotal == null ? '—' : formatAmount(currentBooking.subtotal, currentBooking.currency)}</dd></div>
           <div><dt>Discount</dt><dd>{formatAmount(currentBooking.discount ?? 0, currentBooking.currency)}</dd></div>

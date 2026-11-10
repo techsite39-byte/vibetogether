@@ -11,6 +11,8 @@ test('valid category booking passes model validation with optional WhatsApp cons
     categoryId: 'sing-along',
     category: 'Sing Along',
     gender: 'Male',
+    maleCount: 1,
+    maleMemberNames: ['Member Example'],
     status: 'pending',
     paymentStatus: 'unpaid',
     source: 'Website booking journey',
@@ -25,5 +27,6 @@ test('valid category booking passes model validation with optional WhatsApp cons
 
   assert.equal(enquiry.whatsappConsent, false)
   assert.equal(enquiry.paymentOrderAttemptNumber, 0)
+  assert.deepEqual(enquiry.maleMemberNames, ['Member Example'])
   assert.deepEqual(enquiry.validateSync(), undefined)
 })

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
 import './HomeCategoriesSection.css'
 
-// The signature experiences featuring the exact 4 categories from Image 1 + curated club adventures
+// The signature experiences featuring the exact 4 categories + curated club adventures
 const baseExperiences = [
   {
     id: 'sing-along',
@@ -13,6 +13,7 @@ const baseExperiences = [
     description: 'Big choruses, familiar songs, and voices raised together.',
     image:
       'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/h1.png',
     imageAlt: 'Microphone and singer under warm concert stage lights',
     link: '/sing-along',
   },
@@ -23,6 +24,7 @@ const baseExperiences = [
     description: 'Easy-going gatherings where new conversations begin.',
     image:
       'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/h2.png',
     imageAlt: 'Friends meeting and enjoying each other’s company outdoors',
     link: '/strangers-meet',
   },
@@ -33,6 +35,7 @@ const baseExperiences = [
     description: 'Take the long way round with a crew you just met.',
     image:
       'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/h3.png',
     imageAlt: 'Scenic mountain lake and cabin in the hills',
     link: '/strangers-trip',
   },
@@ -43,6 +46,7 @@ const baseExperiences = [
     description: 'A little friendly competition and a lot of shared laughs.',
     image:
       'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/h4.png',
     imageAlt: 'People having fun under a colorful rainbow canopy outdoors',
     link: '/fun-games',
   },
@@ -53,6 +57,7 @@ const baseExperiences = [
     description: 'Warm chords, soulful vocals, and candlelit sets.',
     image:
       'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/assets/music-speakers.png',
     imageAlt: 'Acoustic guitar and musician in warm lighting',
     link: '/events',
   },
@@ -63,6 +68,7 @@ const baseExperiences = [
     description: 'Good food, honest talks, and chairs pulled close.',
     image:
       'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/assets/folder/sub.png',
     imageAlt: 'Warmly lit dinner table ready for dinner and conversation',
     link: '/events',
   },
@@ -73,6 +79,7 @@ const baseExperiences = [
     description: 'Crackling embers, midnight skies, and stories shared.',
     image:
       'https://images.unsplash.com/photo-1517824806704-9040b037703b?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/assets/outdoor-dj-festival.png',
     imageAlt: 'Bonfire outdoors with friends gathered under night sky',
     link: '/events',
   },
@@ -83,6 +90,7 @@ const baseExperiences = [
     description: 'Chasing morning light with an adventurous crew.',
     image:
       'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/assets/folder/image.png',
     imageAlt: 'Dramatic alpine mountain peaks under morning sun',
     link: '/events',
   },
@@ -93,6 +101,7 @@ const baseExperiences = [
     description: 'Feel the bass, ride the rhythm, and lose track of time.',
     image:
       'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/assets/dj-party.png',
     imageAlt: 'Joyful festival crowd with warm golden lighting',
     link: '/events',
   },
@@ -103,6 +112,7 @@ const baseExperiences = [
     description: 'Roll the dice, plan your move, and share the win.',
     image:
       'https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?auto=format&fit=crop&w=800&q=82',
+    fallbackImage: '/assets/festival-crowd.png',
     imageAlt: 'Tabletop board game with dice and tokens',
     link: '/events',
   },
@@ -112,8 +122,7 @@ export default function HomeCategoriesSection() {
   const { openBooking } = useBookingEnquiry()
   const stageRef = useRef(null)
 
-  // Duplicate the 10 experiences to form a continuous 20-card ring (360° / 20 = 18° spacing)
-  // This ensures a 100% gapless, seamless infinite rotating arch just like Image 2
+  // Continuous 20-card ring (360° / 20 = 18° spacing) for a seamless infinite rotating arch
   const ringCards = useMemo(() => {
     return [...baseExperiences, ...baseExperiences].map((item, idx) => ({
       ...item,
@@ -138,7 +147,7 @@ export default function HomeCategoriesSection() {
   const [activeCardId, setActiveCardId] = useState(null)
   const [dimensions, setDimensions] = useState({
     width: 1200,
-    height: 780,
+    height: 520,
   })
 
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(
@@ -163,7 +172,7 @@ export default function HomeCategoriesSection() {
       const rect = stage.getBoundingClientRect()
       setDimensions({
         width: Math.max(320, rect.width || 1200),
-        height: Math.max(560, rect.height || 780),
+        height: Math.max(420, rect.height || 520),
       })
     }
 
@@ -191,7 +200,7 @@ export default function HomeCategoriesSection() {
         } else {
           velocityRef.current = 0
 
-          // ONLY auto-scroll when hovered!
+          // STRICT: ONLY auto-scroll when hovered!
           const targetSpeed =
             isHoveredRef.current && !prefersReducedMotion ? 0.038 : 0
 
@@ -211,7 +220,7 @@ export default function HomeCategoriesSection() {
     return () => cancelAnimationFrame(loop.id)
   }, [prefersReducedMotion])
 
-  // Responsive Arc Geometry
+  // Responsive Arc Geometry: Overhead fan crown arch
   const { width } = dimensions
   const isMobile = width < 720
   const isTablet = width >= 720 && width < 1120
@@ -222,29 +231,29 @@ export default function HomeCategoriesSection() {
     const stepAngle = 360 / ringCards.length // 18 degrees per card
 
     if (isMobile) {
-      rx = width * 0.46
-      ry = width * 0.28
-      cy = width * 0.58
-      cardW = Math.max(86, width * 0.22)
-      cardH = cardW * 1.16
+      rx = width * 0.44
+      ry = 150
+      cy = 210
+      cardW = Math.max(88, Math.min(108, width * 0.24))
+      cardH = cardW * 1.18
       borderRadius = 18
       maxAngle = 72
     } else if (isTablet) {
-      rx = width * 0.46
-      ry = 280
-      cy = 440
-      cardW = 126
-      cardH = 150
+      rx = width * 0.44
+      ry = 210
+      cy = 280
+      cardW = 124
+      cardH = 148
       borderRadius = 22
       maxAngle = 70
     } else {
-      // Desktop: Wide panoramic crown arch above the text
-      rx = Math.min(680, width * 0.46)
-      ry = 340
-      cy = 470
-      cardW = 150
-      cardH = 176
-      borderRadius = 26
+      // Desktop: Wide panoramic crown arch gracefully spanning above the center content
+      rx = Math.min(640, width * 0.42)
+      ry = 220
+      cy = 295
+      cardW = 144
+      cardH = 172
+      borderRadius = 24
       maxAngle = 72
     }
 
@@ -352,6 +361,7 @@ export default function HomeCategoriesSection() {
         <div className="experiences-arc__glow-right" />
       </div>
 
+      {/* STAGE: Contains the rotating overhead arc cards & centered dome CTA */}
       <div
         className="experiences-arc__stage"
         ref={stageRef}
@@ -430,8 +440,14 @@ export default function HomeCategoriesSection() {
                     className="arc-card__image"
                     src={card.image}
                     alt={card.imageAlt || card.title}
-                    loading="lazy"
+                    loading="eager"
                     draggable={false}
+                    onError={(e) => {
+                      if (card.fallbackImage && e.currentTarget.src !== card.fallbackImage) {
+                        e.currentTarget.onerror = null
+                        e.currentTarget.src = card.fallbackImage
+                      }
+                    }}
                   />
                   <div className="arc-card__glare" />
 
@@ -454,7 +470,7 @@ export default function HomeCategoriesSection() {
           })}
         </div>
 
-        {/* Central Content: Properly Aligned Under the Arch Dome (Image 2 exact structure) */}
+        {/* Central Content: Properly Aligned Under the Arch Dome */}
         <div className="experiences-arc__center">
           <div className="experiences-arc__eyebrow">
             <Sparkles size={13} className="experiences-arc__eyebrow-icon" />
@@ -485,34 +501,6 @@ export default function HomeCategoriesSection() {
               />
             </button>
           </div>
-
-          {/* 3 Columns Row: Matching Image 2 (Realistic Results | Fast Generation | Diverse Styles) */}
-          <div className="experiences-arc__features">
-            <div className="experiences-arc__feature">
-              <h3 className="experiences-arc__feature-title">Real Connections</h3>
-              <p className="experiences-arc__feature-desc">
-                Easy-going gatherings where strangers become friends and stories begin.
-              </p>
-            </div>
-
-            <div className="experiences-arc__divider" aria-hidden="true" />
-
-            <div className="experiences-arc__feature">
-              <h3 className="experiences-arc__feature-title">Curated Vibes</h3>
-              <p className="experiences-arc__feature-desc">
-                From acoustic sing-alongs to mountain trips, handpicked for you.
-              </p>
-            </div>
-
-            <div className="experiences-arc__divider" aria-hidden="true" />
-
-            <div className="experiences-arc__feature">
-              <h3 className="experiences-arc__feature-title">Diverse Experiences</h3>
-              <p className="experiences-arc__feature-desc">
-                A little friendly competition, great music, and shared laughs.
-              </p>
-            </div>
-          </div>
         </div>
 
         {/* Prev / Next Nav Arrows */}
@@ -534,13 +522,45 @@ export default function HomeCategoriesSection() {
         >
           <ArrowRight size={18} />
         </button>
+      </div>
 
-        {/* Subtle Hint indicating hover / drag interaction */}
+      {/* BOTTOM SECTION: 3 Features Row & Interaction Hint
+          Placed below the stage with guaranteed clearance so cards NEVER overlap text! */}
+      <div className="experiences-arc__bottom">
+        <div className="experiences-arc__features">
+          <div className="experiences-arc__feature">
+            <h3 className="experiences-arc__feature-title">Real Connections</h3>
+            <p className="experiences-arc__feature-desc">
+              Easy-going gatherings where strangers become friends and stories begin.
+            </p>
+          </div>
+
+          <div className="experiences-arc__divider" aria-hidden="true" />
+
+          <div className="experiences-arc__feature">
+            <h3 className="experiences-arc__feature-title">Curated Vibes</h3>
+            <p className="experiences-arc__feature-desc">
+              From acoustic sing-alongs to mountain trips, handpicked for you.
+            </p>
+          </div>
+
+          <div className="experiences-arc__divider" aria-hidden="true" />
+
+          <div className="experiences-arc__feature">
+            <h3 className="experiences-arc__feature-title">Diverse Experiences</h3>
+            <p className="experiences-arc__feature-desc">
+              A little friendly competition, great music, and shared laughs.
+            </p>
+          </div>
+        </div>
+
+        {/* Subtle Hint indicating hover auto-scroll & drag interaction */}
         <div className="experiences-arc__hint" aria-hidden="true">
-          <span>
+          <span className={`experiences-arc__hint-pill ${isHovered ? 'is-active' : ''}`}>
+            <span className="experiences-arc__hint-dot" />
             {isHovered
-              ? '● Auto-scrolling on hover'
-              : '‹ Hover to auto-scroll · Drag to explore ›'}
+              ? 'Auto-scrolling on hover'
+              : 'Hover to auto-scroll · Drag or swipe to rotate'}
           </span>
         </div>
       </div>
