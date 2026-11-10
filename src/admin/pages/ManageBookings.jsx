@@ -136,11 +136,15 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Mobile</dt><dd>{currentBooking.mobile || '—'}</dd></div>
           <div><dt>{currentBooking.category ? 'Category interest' : 'Event'}</dt><dd>{currentBooking.category ?? getBookingSubject(currentBooking, event)}</dd></div>
           <div><dt>Organizer</dt><dd>{currentBooking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</dd></div>
-          <div><dt>Tickets</dt><dd>{currentBooking.ticketCount}</dd></div>
+          <div><dt>Ticket type</dt><dd>{currentBooking.ticketTypeName || currentBooking.ticketType || '—'}</dd></div>
+          <div><dt>Number of tickets</dt><dd>{currentBooking.ticketQuantity ?? currentBooking.ticketCount ?? 1}</dd></div>
+          <div><dt>Price per ticket</dt><dd>{currentBooking.pricePerTicket == null ? '—' : formatAmount(currentBooking.pricePerTicket, currentBooking.currency)}</dd></div>
+          <div><dt>Subtotal</dt><dd>{currentBooking.subtotal == null ? '—' : formatAmount(currentBooking.subtotal, currentBooking.currency)}</dd></div>
+          <div><dt>Discount</dt><dd>{formatAmount(currentBooking.discount ?? 0, currentBooking.currency)}</dd></div>
           <div><dt>Booking date</dt><dd>{formatBookingDate(currentBooking.createdAt)}</dd></div>
-          <div><dt>Amount</dt><dd>{formatAmount(currentBooking.amount, currentBooking.currency)}</dd></div>
-          <div><dt>Regular price</dt><dd>{formatAmount(currentBooking.regularPrice ?? 299, currentBooking.currency)}</dd></div>
-          <div><dt>Diwali offer</dt><dd>{currentBooking.diwaliOfferApplied ? `Applied · saved ${formatAmount((currentBooking.regularPrice ?? 299) - currentBooking.amount, currentBooking.currency)}` : 'Not applied'}</dd></div>
+          <div><dt>Total amount charged</dt><dd>{formatAmount(currentBooking.amount, currentBooking.currency)}</dd></div>
+          <div><dt>Regular price per ticket</dt><dd>{formatAmount(currentBooking.regularPrice ?? 299, currentBooking.currency)}</dd></div>
+          <div><dt>Diwali offer</dt><dd>{currentBooking.diwaliOfferApplied ? `Applied · saved ${formatAmount(currentBooking.discount ?? (currentBooking.regularPrice ?? 299) - currentBooking.amount, currentBooking.currency)}` : 'Not applied'}</dd></div>
           <div><dt>Payment status</dt><dd><StatusBadge status={currentBooking.paymentStatus}>{formatPaymentStatus(currentBooking.paymentStatus)}</StatusBadge></dd></div>
           <div><dt>Payment provider</dt><dd>{currentBooking.paymentProvider || '—'}</dd></div>
           <div><dt>Razorpay order ID</dt><dd>{currentBooking.paymentOrderId || '—'}</dd></div>
@@ -159,6 +163,9 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Delivered at</dt><dd>{formatBookingDate(notification.deliveredAt)}</dd></div>
           <div><dt>Provider message ID</dt><dd>{notification.providerMessageId || '—'}</dd></div>
         </dl>
+        <AdminNotice tone="neutral">
+          Ticket selection and charged pricing are locked after payment. Any change requires a separate payment or refund workflow.
+        </AdminNotice>
         {notification.failureReason && <AdminNotice tone="error">{notification.failureReason}</AdminNotice>}
         {retryResult && <AdminNotice tone={retryResult.tone}>{retryResult.text}</AdminNotice>}
         <h3>WhatsApp notification history</h3>
@@ -237,7 +244,7 @@ export default function ManageBookings() {
 
   function exportCsv() {
     const rows = [
-      ['Reference', 'Customer', 'Email', 'Event', 'Organizer', 'Tickets', 'Booking date', 'Amount', 'Payment status', 'Booking status'],
+      ['Reference', 'Customer', 'Email', 'Event', 'Organizer', 'Ticket type', 'Ticket quantity', 'Price per ticket', 'Subtotal', 'Discount', 'Total amount', 'Booking date', 'Payment status', 'Booking status'],
       ...filtered.map((booking) => {
         const event = events.find((item) => item.id === booking.eventId)
         const organizer = organizers.find((item) => item.id === booking.organizerId)
@@ -247,9 +254,13 @@ export default function ManageBookings() {
           booking.customerEmail,
           getBookingSubject(booking, event),
           organizer?.name ?? '',
-          booking.ticketCount,
-          booking.createdAt,
+          booking.ticketTypeName ?? booking.ticketType ?? '',
+          booking.ticketQuantity ?? booking.ticketCount,
+          booking.pricePerTicket ?? '',
+          booking.subtotal ?? '',
+          booking.discount ?? 0,
           booking.amount,
+          booking.createdAt,
           booking.paymentStatus,
           booking.status,
         ]
@@ -303,7 +314,7 @@ export default function ManageBookings() {
           <label className="admin-select"><span>Payment</span><select onChange={(event) => setPaymentStatus(event.target.value)} value={paymentStatus}><option value="all">All payment states</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="demo_paid">Demo Paid</option><option value="processing">Verifying</option><option value="failed">Failed</option><option value="refunded">Refunded</option><option value="not_required">Not required</option></select></label>
         </div>
         <AdminTable label="Booking records">
-          <thead><tr><th scope="col">Reference / customer</th><th scope="col">Event / interest</th><th scope="col">Tickets</th><th scope="col">Booked</th><th scope="col">Amount</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">WhatsApp</th><th scope="col">Actions</th></tr></thead>
+          <thead><tr><th scope="col">Reference / customer</th><th scope="col">Event / interest</th><th scope="col">Ticket details</th><th scope="col">Booked</th><th scope="col">Total amount</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">WhatsApp</th><th scope="col">Actions</th></tr></thead>
           <tbody>
             {filtered.map((booking) => {
               const event = events.find((item) => item.id === booking.eventId)
@@ -313,11 +324,19 @@ export default function ManageBookings() {
                 <tr key={booking.reference}>
                   <td><strong>{booking.reference}</strong><span className="admin-table__secondary">{booking.customer}</span><span className="admin-table__secondary">{booking.mobile || booking.customerEmail}</span></td>
                   <td><strong>{getBookingSubject(booking, event)}</strong><span className="admin-table__secondary">{booking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</span></td>
-                  <td>{booking.ticketCount}</td>
+                  <td>
+                    <strong>{booking.ticketTypeName || booking.ticketType || '—'} · {booking.ticketQuantity ?? booking.ticketCount ?? 1}</strong>
+                    <span className="admin-table__secondary">
+                      {booking.pricePerTicket == null ? 'Price per ticket —' : `${formatAmount(booking.pricePerTicket, booking.currency)} per ticket`}
+                    </span>
+                    <span className="admin-table__secondary">
+                      Subtotal {booking.subtotal == null ? '—' : formatAmount(booking.subtotal, booking.currency)} · Discount {formatAmount(booking.discount ?? 0, booking.currency)}
+                    </span>
+                  </td>
                   <td>{formatBookingDate(booking.createdAt)}</td>
                   <td>
                     {formatAmount(booking.amount, booking.currency)}
-                    {booking.diwaliOfferApplied && <span className="admin-table__secondary"><s>{formatAmount(booking.regularPrice, booking.currency)}</s> Diwali offer</span>}
+                    {booking.diwaliOfferApplied && <span className="admin-table__secondary"><s>{formatAmount(booking.subtotal ?? booking.regularPrice, booking.currency)}</s> Diwali offer · saved {formatAmount(booking.discount ?? 0, booking.currency)}</span>}
                   </td>
                   <td><StatusBadge status={booking.paymentStatus}>{formatPaymentStatus(booking.paymentStatus)}</StatusBadge></td>
                   <td><StatusBadge status={booking.status}>{formatBookingStatus(booking.status)}</StatusBadge></td>

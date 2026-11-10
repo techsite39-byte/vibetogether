@@ -2,6 +2,21 @@ import { Router } from 'express'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import { categories as defaultCategories } from '../../../src/data/categories.js'
 import { events as defaultEvents } from '../../../src/data/events.js'
+import {
+  BOOKING_TICKET_TYPES,
+  DEFAULT_TICKET_TYPE,
+  DIWALI_OFFER_PRICE,
+  DIWALI_REGULAR_PRICE,
+  calculateTicketPricing,
+} from '../services/diwaliOffer.js'
+
+const defaultOfferPricing = {
+  regularPrice: DIWALI_REGULAR_PRICE,
+  offerPrice: DIWALI_OFFER_PRICE,
+  diwaliOfferApplied: false,
+  offerActivationAt: null,
+  offerExpiresAt: null,
+}
 
 const requestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -103,11 +118,21 @@ async function validateBookingEnquiry(body, eventRepository) {
       ? body.categoryId
       : ''
   const gender = body.gender
+  const ticketType = body.ticketType ?? DEFAULT_TICKET_TYPE
+  const ticketQuantity = body.ticketQuantity ?? 1
   if (
     body.whatsappConsent !== undefined &&
     typeof body.whatsappConsent !== 'boolean'
   ) {
     return { error: 'WhatsApp communication consent must be selected explicitly.' }
+  }
+  if (
+    !BOOKING_TICKET_TYPES.some(({ id }) => id === ticketType) ||
+    !Number.isInteger(ticketQuantity) ||
+    ticketQuantity < 1 ||
+    ticketQuantity > 10
+  ) {
+    return { error: 'Choose a valid ticket type and a quantity from 1 to 10.' }
   }
 
   if (!name) {
@@ -165,6 +190,8 @@ async function validateBookingEnquiry(body, eventRepository) {
       email,
       ...enquirySelection,
       gender,
+      ticketType,
+      ticketQuantity,
       whatsappConsent: body.whatsappConsent === true,
       whatsappConsentAt: body.whatsappConsent === true ? new Date() : null,
       createdAt: new Date(),
@@ -203,6 +230,9 @@ export function createBookingEnquiriesRouter({
       },
     }
   function serializeEnquiry(enquiry, pricing) {
+    const regularPrice = pricing?.regularPrice ?? enquiry.regularPrice ?? DIWALI_REGULAR_PRICE
+    const ticketQuantity = pricing?.ticketQuantity ?? enquiry.ticketQuantity ?? 1
+    const ticketType = pricing?.ticketType ?? enquiry.ticketType ?? DEFAULT_TICKET_TYPE
     return {
       reference: enquiry.reference ?? '',
       requestId: enquiry.requestId,
@@ -212,13 +242,21 @@ export function createBookingEnquiriesRouter({
       category: enquiry.category,
       event: enquiry.event,
       gender: enquiry.gender,
+      ticketType,
+      ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ??
+        BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)?.name ?? 'General Admission',
+      ticketQuantity,
+      pricePerTicket: pricing?.pricePerTicket ?? enquiry.pricePerTicket ?? regularPrice,
+      subtotal: pricing?.subtotal ?? enquiry.subtotal ?? regularPrice * ticketQuantity,
+      discount: pricing?.discount ?? enquiry.discount ?? 0,
+      finalAmount: pricing?.finalAmount ?? enquiry.finalAmount ?? enquiry.paymentAmount ?? regularPrice * ticketQuantity,
       createdAt: enquiry.createdAt,
       status: enquiry.status,
       paymentStatus: enquiry.paymentStatus ?? 'unpaid',
-      paymentAmount: pricing?.paymentAmount ?? enquiry.paymentAmount ?? 299,
-      paymentAmountPaise: pricing?.paymentAmountPaise ?? enquiry.paymentAmountPaise ?? 29_900,
-      regularPrice: pricing?.regularPrice ?? enquiry.regularPrice ?? 299,
-      offerPrice: pricing?.offerPrice ?? enquiry.offerPrice ?? 249,
+      paymentAmount: pricing?.finalAmount ?? pricing?.paymentAmount ?? enquiry.paymentAmount ?? DIWALI_REGULAR_PRICE,
+      paymentAmountPaise: pricing?.paymentAmountPaise ?? enquiry.paymentAmountPaise ?? DIWALI_REGULAR_PRICE * 100,
+      regularPrice,
+      offerPrice: pricing?.offerPrice ?? enquiry.offerPrice ?? DIWALI_OFFER_PRICE,
       diwaliOfferApplied: pricing?.diwaliOfferApplied ?? Boolean(enquiry.diwaliOfferApplied),
       offerActivationAt: pricing?.offerActivationAt ?? enquiry.offerActivationAt ?? null,
       offerExpiresAt: pricing?.offerExpiresAt ?? enquiry.offerExpiresAt ?? null,
@@ -267,7 +305,12 @@ export function createBookingEnquiriesRouter({
     ) {
       return null
     }
-    return diwaliOfferService?.getPricing?.() ?? null
+    const currentPricing = await diwaliOfferService?.getPricing?.()
+    return calculateTicketPricing(
+      currentPricing ?? defaultOfferPricing,
+      enquiry.ticketQuantity ?? 1,
+      enquiry.ticketType ?? DEFAULT_TICKET_TYPE,
+    )
   }
 
   async function getUpdatedEnquiry(requestId, fallback) {
@@ -289,7 +332,12 @@ export function createBookingEnquiriesRouter({
         return
       }
 
-      const pricing = await diwaliOfferService?.getPricing?.()
+      const basePricing = await diwaliOfferService?.getPricing?.()
+      const pricing = calculateTicketPricing(
+        basePricing ?? defaultOfferPricing,
+        validation.value.ticketQuantity,
+        validation.value.ticketType,
+      )
       const result = await repository.save({
         ...validation.value,
         ...(pricing ?? {}),
@@ -383,7 +431,13 @@ export function createBookingEnquiriesRouter({
     }
 
     try {
-      const result = await repository.markDemoPaid(requestId)
+      const enquiry = await repository.findByRequestId(requestId)
+      if (!enquiry) {
+        response.status(404).json({ message: 'Booking enquiry not found or no longer payable.' })
+        return
+      }
+      const pricing = await getCurrentPricing(enquiry)
+      const result = await repository.markDemoPaid(requestId, { pricing })
       if (!result) {
         response.status(404).json({ message: 'Booking enquiry not found or no longer payable.' })
         return

@@ -1,17 +1,30 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { nextBookingReference } from './bookingReferences.js'
+import {
+  DEFAULT_TICKET_TYPE,
+  DIWALI_OFFER_PRICE,
+  DIWALI_REGULAR_PRICE,
+  calculateTicketPricing,
+} from './diwaliOffer.js'
 
 const currency = 'INR'
 const attemptLockMs = 2 * 60 * 1000
 const defaultPricing = {
-  paymentAmount: 299,
-  paymentAmountPaise: 29_900,
-  regularPrice: 299,
-  offerPrice: 249,
+  paymentAmount: DIWALI_REGULAR_PRICE,
+  paymentAmountPaise: DIWALI_REGULAR_PRICE * 100,
+  regularPrice: DIWALI_REGULAR_PRICE,
+  offerPrice: DIWALI_OFFER_PRICE,
   diwaliOfferApplied: false,
   offerActivationAt: null,
   offerExpiresAt: null,
+  ticketType: DEFAULT_TICKET_TYPE,
+  ticketTypeName: 'General Admission',
+  ticketQuantity: 1,
+  pricePerTicket: DIWALI_REGULAR_PRICE,
+  subtotal: DIWALI_REGULAR_PRICE,
+  discount: 0,
+  finalAmount: DIWALI_REGULAR_PRICE,
 }
 
 function serviceError(status, message) {
@@ -57,6 +70,13 @@ function serializeOrder(order, keyId, pricing) {
       diwaliOfferApplied: pricing.diwaliOfferApplied,
       offerActivationAt: pricing.offerActivationAt,
       offerExpiresAt: pricing.offerExpiresAt,
+      ticketType: pricing.ticketType,
+      ticketTypeName: pricing.ticketTypeName,
+      ticketQuantity: pricing.ticketQuantity,
+      pricePerTicket: pricing.pricePerTicket,
+      subtotal: pricing.subtotal,
+      discount: pricing.discount,
+      finalAmount: pricing.finalAmount,
     } : undefined,
   }
 }
@@ -73,10 +93,15 @@ export function createRazorpayPaymentService({
     return bookingEnquiryModel.findOne({ requestId }).lean()
   }
 
-  async function getPricing() {
-    return diwaliOfferService?.getPricing
-      ? diwaliOfferService.getPricing()
+  async function getPricing(enquiry) {
+    const basePricing = diwaliOfferService?.getPricing
+      ? await diwaliOfferService.getPricing()
       : { ...defaultPricing }
+    return calculateTicketPricing(
+      basePricing,
+      enquiry?.ticketQuantity ?? 1,
+      enquiry?.ticketType ?? DEFAULT_TICKET_TYPE,
+    )
   }
 
   function getOrderPricing(enquiry, orderId) {
@@ -90,6 +115,13 @@ export function createRazorpayPaymentService({
         diwaliOfferApplied: stored.diwaliOfferApplied,
         offerActivationAt: stored.offerActivationAt,
         offerExpiresAt: stored.offerExpiresAt,
+        ticketType: stored.ticketType ?? enquiry.ticketType ?? DEFAULT_TICKET_TYPE,
+        ticketTypeName: stored.ticketTypeName ?? enquiry.ticketTypeName ?? 'General Admission',
+        ticketQuantity: stored.ticketQuantity ?? enquiry.ticketQuantity ?? 1,
+        pricePerTicket: stored.pricePerTicket ?? enquiry.pricePerTicket ?? stored.regularPrice,
+        subtotal: stored.subtotal ?? enquiry.subtotal ?? stored.regularPrice,
+        discount: stored.discount ?? enquiry.discount ?? 0,
+        finalAmount: stored.finalAmount ?? stored.amount,
       }
     }
     if (enquiry.paymentOrderId === orderId) {
@@ -101,6 +133,13 @@ export function createRazorpayPaymentService({
         diwaliOfferApplied: Boolean(enquiry.diwaliOfferApplied),
         offerActivationAt: enquiry.offerActivationAt ?? null,
         offerExpiresAt: enquiry.offerExpiresAt ?? null,
+        ticketType: enquiry.ticketType ?? DEFAULT_TICKET_TYPE,
+        ticketTypeName: enquiry.ticketTypeName ?? 'General Admission',
+        ticketQuantity: enquiry.ticketQuantity ?? 1,
+        pricePerTicket: enquiry.pricePerTicket ?? enquiry.regularPrice ?? DIWALI_REGULAR_PRICE,
+        subtotal: enquiry.subtotal ?? enquiry.regularPrice ?? DIWALI_REGULAR_PRICE,
+        discount: enquiry.discount ?? 0,
+        finalAmount: enquiry.finalAmount ?? enquiry.paymentAmount ?? DIWALI_REGULAR_PRICE,
       }
     }
     return null
@@ -182,6 +221,13 @@ export function createRazorpayPaymentService({
             diwaliOfferApplied: pricing.diwaliOfferApplied,
             offerActivationAt: pricing.offerActivationAt,
             offerExpiresAt: pricing.offerExpiresAt,
+            ticketType: pricing.ticketType ?? claimed.ticketType ?? DEFAULT_TICKET_TYPE,
+            ticketTypeName: pricing.ticketTypeName ?? claimed.ticketTypeName ?? 'General Admission',
+            ticketQuantity: pricing.ticketQuantity ?? claimed.ticketQuantity ?? 1,
+            pricePerTicket: pricing.pricePerTicket ?? claimed.pricePerTicket ?? pricing.regularPrice,
+            subtotal: pricing.subtotal ?? claimed.subtotal ?? pricing.regularPrice,
+            discount: pricing.discount ?? claimed.discount ?? 0,
+            finalAmount: payment.amount / 100,
             paymentProvider: 'razorpay',
             paymentReference: payment.id,
             paymentFailureReason: '',
@@ -274,7 +320,7 @@ export function createRazorpayPaymentService({
     }
     if (existing.expiresAt && existing.expiresAt <= now) return null
 
-    const currentPricing = await getPricing()
+    const currentPricing = await getPricing(existing)
     const pricing = existing.paymentStatus === 'processing' && existing.paymentAttemptPricing
       ? existing.paymentAttemptPricing
       : currentPricing
@@ -405,6 +451,13 @@ export function createRazorpayPaymentService({
             diwaliOfferApplied: pricing.diwaliOfferApplied,
             offerActivationAt: pricing.offerActivationAt,
             offerExpiresAt: pricing.offerExpiresAt,
+            ticketType: pricing.ticketType,
+            ticketTypeName: pricing.ticketTypeName,
+            ticketQuantity: pricing.ticketQuantity,
+            pricePerTicket: pricing.pricePerTicket,
+            subtotal: pricing.subtotal,
+            discount: pricing.discount,
+            finalAmount: pricing.finalAmount,
             paymentProvider: 'razorpay',
             paymentOrderId: order.id,
             paymentOrderCreatedAt: new Date(),
@@ -420,6 +473,13 @@ export function createRazorpayPaymentService({
               diwaliOfferApplied: pricing.diwaliOfferApplied,
               offerActivationAt: pricing.offerActivationAt,
               offerExpiresAt: pricing.offerExpiresAt,
+              ticketType: pricing.ticketType,
+              ticketTypeName: pricing.ticketTypeName,
+              ticketQuantity: pricing.ticketQuantity,
+              pricePerTicket: pricing.pricePerTicket,
+              subtotal: pricing.subtotal,
+              discount: pricing.discount,
+              finalAmount: pricing.finalAmount,
               status: 'created',
               createdAt: new Date(),
             },

@@ -16,6 +16,8 @@ import './BookingJourney.css'
 
 const steps = ['Name', 'Mobile', 'Category', 'Gender']
 const bookingCategories = categories.filter(({ id }) => id === 'sing-along')
+const draftStorageKey = 'vibe-together-booking-draft'
+const fallbackTicketTypes = [{ id: 'general-admission', name: 'General Admission' }]
 const countryCodes = [
   { country: 'India', code: '+91' },
   { country: 'United States', code: '+1' },
@@ -23,6 +25,23 @@ const countryCodes = [
   { country: 'Australia', code: '+61' },
   { country: 'United Arab Emirates', code: '+971' },
 ]
+
+function readBookingDraft() {
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(draftStorageKey) ?? 'null')
+    if (
+      !draft ||
+      typeof draft.requestId !== 'string' ||
+      !draft.form ||
+      typeof draft.form !== 'object'
+    ) {
+      return null
+    }
+    return draft
+  } catch {
+    return null
+  }
+}
 
 function isValidName(value) {
   const name = value.normalize('NFKC').trim()
@@ -55,16 +74,27 @@ function getNormalizedMobile(value, countryCode) {
 
 export default function BookingJourney({ onClose }) {
   const navigate = useNavigate()
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    mobile: '',
-    categoryId: '',
-    gender: '',
-    whatsappConsent: false,
-  })
-  const [countryCode, setCountryCode] = useState('+91')
-  const [step, setStep] = useState(0)
+  const [restoredDraft] = useState(readBookingDraft)
+  const [form, setForm] = useState(() => ({
+    name: typeof restoredDraft?.form?.name === 'string' ? restoredDraft.form.name : '',
+    email: typeof restoredDraft?.form?.email === 'string' ? restoredDraft.form.email : '',
+    mobile: typeof restoredDraft?.form?.mobile === 'string' ? restoredDraft.form.mobile : '',
+    categoryId: typeof restoredDraft?.form?.categoryId === 'string' ? restoredDraft.form.categoryId : '',
+    gender: typeof restoredDraft?.form?.gender === 'string' ? restoredDraft.form.gender : '',
+    ticketType: typeof restoredDraft?.form?.ticketType === 'string'
+      ? restoredDraft.form.ticketType
+      : fallbackTicketTypes[0].id,
+    ticketQuantity: Number.isInteger(restoredDraft?.form?.ticketQuantity)
+      ? Math.min(10, Math.max(1, restoredDraft.form.ticketQuantity))
+      : 1,
+    whatsappConsent: restoredDraft?.form?.whatsappConsent === true,
+  }))
+  const [countryCode, setCountryCode] = useState(restoredDraft?.countryCode ?? '+91')
+  const [step, setStep] = useState(() => (
+    Number.isInteger(restoredDraft?.step)
+      ? Math.min(3, Math.max(0, restoredDraft.step))
+      : 0
+  ))
   const [transitionStage, setTransitionStage] = useState('enter')
   const [direction, setDirection] = useState(1)
   const [fieldError, setFieldError] = useState('')
@@ -73,9 +103,10 @@ export default function BookingJourney({ onClose }) {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [diwaliOffer, setDiwaliOffer] = useState(null)
   const [offerClock, setOfferClock] = useState(Date.now())
+  const [offerClockOffset, setOfferClockOffset] = useState(0)
   const [offerError, setOfferError] = useState('')
   const journeyRef = useRef(null)
-  const requestId = useRef(crypto.randomUUID())
+  const requestId = useRef(restoredDraft?.requestId ?? crypto.randomUUID())
   const submitting = useRef(false)
   const transitioning = useRef(false)
   const transitionTimer = useRef(null)
@@ -130,7 +161,14 @@ export default function BookingJourney({ onClose }) {
   useEffect(() => {
     const controller = new AbortController()
     getDiwaliOffer(controller.signal)
-      .then(setDiwaliOffer)
+      .then((offer) => {
+        const serverTime = new Date(offer.serverTime).getTime()
+        if (!Number.isFinite(serverTime)) {
+          throw new Error('Current ticket pricing could not be verified.')
+        }
+        setDiwaliOffer(offer)
+        setOfferClockOffset(serverTime - Date.now())
+      })
       .catch((error) => {
         if (error.name !== 'AbortError') setOfferError(error.message)
       })
@@ -141,6 +179,25 @@ export default function BookingJourney({ onClose }) {
     const timer = window.setInterval(() => setOfferClock(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    sessionStorage.setItem(draftStorageKey, JSON.stringify({
+      requestId: requestId.current,
+      form,
+      countryCode,
+      step,
+    }))
+  }, [countryCode, form, step])
+
+  const ticketTypes = Array.isArray(diwaliOffer?.ticketTypes) && diwaliOffer.ticketTypes.length
+    ? diwaliOffer.ticketTypes
+    : fallbackTicketTypes
+
+  useEffect(() => {
+    if (!ticketTypes.some(({ id }) => id === form.ticketType)) {
+      setForm((current) => ({ ...current, ticketType: ticketTypes[0].id }))
+    }
+  }, [form.ticketType, ticketTypes])
 
   useEffect(() => {
     if (transitionStage !== 'enter') {
@@ -244,8 +301,11 @@ export default function BookingJourney({ onClose }) {
         mobile: getNormalizedMobile(form.mobile, countryCode),
         categoryId: form.categoryId,
         gender: form.gender,
+        ticketType: form.ticketType,
+        ticketQuantity: form.ticketQuantity,
         whatsappConsent: form.whatsappConsent,
       })
+      sessionStorage.removeItem(draftStorageKey)
       onClose()
       navigate(`/booking/payment/${requestId.current}`)
     } catch (error) {
@@ -263,17 +323,68 @@ export default function BookingJourney({ onClose }) {
   const selectedCategory = bookingCategories.find(
     ({ id }) => id === form.categoryId,
   )
+  const selectedTicketType = ticketTypes.find(({ id }) => id === form.ticketType)
+  const serverClock = offerClock + offerClockOffset
+  const regularPrice = diwaliOffer?.regularPrice
+  const offerPrice = diwaliOffer?.offerPrice
+  const pricingAvailable =
+    Number.isSafeInteger(regularPrice) &&
+    regularPrice > 0 &&
+    Number.isSafeInteger(offerPrice) &&
+    offerPrice > 0
+  const activationAt = new Date(diwaliOffer?.activationAt).getTime()
+  const expiresAt = new Date(diwaliOffer?.expiresAt).getTime()
   const offerActive =
+    pricingAvailable &&
     Boolean(diwaliOffer?.enabled) &&
-    offerClock >= new Date(diwaliOffer.activationAt).getTime() &&
-    offerClock < new Date(diwaliOffer.expiresAt).getTime()
-  const offerRemaining = getOfferRemainingMs(diwaliOffer?.expiresAt, offerClock)
+    serverClock >= activationAt &&
+    serverClock < expiresAt
+  const offerRemaining = getOfferRemainingMs(diwaliOffer?.expiresAt, serverClock)
   const countdown = [
     Math.floor(offerRemaining / 86_400_000),
     Math.floor((offerRemaining % 86_400_000) / 3_600_000),
     Math.floor((offerRemaining % 3_600_000) / 60_000),
     Math.floor((offerRemaining % 60_000) / 1000),
   ].map((value) => String(value).padStart(2, '0')).join(':')
+  const ticketQuantity = form.ticketQuantity
+  const subtotal = pricingAvailable ? regularPrice * ticketQuantity : 0
+  const discount = offerActive
+    ? (regularPrice - offerPrice) * ticketQuantity
+    : 0
+  const finalAmount = subtotal - discount
+  const ticketPriceSummary = (
+    <section className="booking-journey__ticket-summary" aria-live="polite">
+      <div className="booking-journey__ticket-summary-heading">
+        <span>PRICE SUMMARY</span>
+        <Sparkles size={16} aria-hidden="true" />
+      </div>
+      {pricingAvailable ? (
+        <>
+          <dl>
+            <div><dt>Ticket type</dt><dd>{selectedTicketType?.name ?? 'General Admission'}</dd></div>
+            <div><dt>Number of tickets</dt><dd>{ticketQuantity}</dd></div>
+            <div>
+              <dt>Regular price per ticket</dt>
+              <dd>
+                {offerActive && <s>₹{regularPrice}</s>}
+                <strong>₹{offerActive ? offerPrice : regularPrice}</strong>
+              </dd>
+            </div>
+            <div><dt>Subtotal</dt><dd>₹{subtotal}</dd></div>
+            <div><dt>Diwali discount</dt><dd>−₹{discount}</dd></div>
+            <div className="booking-journey__ticket-summary-total">
+              <dt>Final payable amount</dt><dd>₹{finalAmount}</dd>
+            </div>
+          </dl>
+          {offerActive && <p>Save ₹{discount} with the Diwali offer</p>}
+        </>
+      ) : (
+        <p className="booking-journey__offer-error" role="status">
+          {offerError || 'Loading current ticket pricing…'}
+        </p>
+      )}
+    </section>
+  )
 
   return (
     <section
@@ -339,9 +450,6 @@ export default function BookingJourney({ onClose }) {
                 <span> · IST · {formatOfferExpiry(diwaliOffer.expiresAt)}</span>
               </p>
             </aside>
-          )}
-          {step >= 2 && !offerActive && offerError && (
-            <p className="booking-journey__offer-error" role="status">{offerError}</p>
           )}
           <nav aria-label="Booking progress" className="booking-journey__progress">
             {steps.map((label, index) => (
@@ -454,42 +562,83 @@ export default function BookingJourney({ onClose }) {
                 )}
 
                 {step === 2 && (
-                <fieldset className="booking-journey__category-list">
-                  <legend className="booking-journey__visually-hidden">
-                    Choose one category of interest
-                  </legend>
-                  {bookingCategories.map(({ id, title, image }) => (
-                    <label
-                      className={`booking-journey__category booking-journey__category--featured${form.categoryId === id ? ' is-selected' : ''}`}
-                      key={id}
-                    >
-                      <input
-                        checked={form.categoryId === id}
-                        data-journey-focus
-                        name="categoryId"
-                        onChange={() => {
-                          resetRequestAfterEdit()
-                          setForm((current) => ({ ...current, categoryId: id }))
-                          setFieldError('')
-                        }}
-                        type="radio"
-                        value={id}
-                      />
-                      <img
-                        alt=""
-                        aria-hidden="true"
-                        className="booking-journey__category-image"
-                        src={image}
-                      />
-                      <span aria-hidden="true" className="booking-journey__category-overlay" />
-                      <span className="booking-journey__category-title">{title}</span>
-                      <span aria-hidden="true" className="booking-journey__category-check">
-                        {form.categoryId === id && <Check size={16} />}
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
-              )}
+                  <>
+                    <fieldset className="booking-journey__category-list">
+                      <legend className="booking-journey__visually-hidden">
+                        Choose one category of interest
+                      </legend>
+                      {bookingCategories.map(({ id, title, image }) => (
+                        <label
+                          className={`booking-journey__category booking-journey__category--featured${form.categoryId === id ? ' is-selected' : ''}`}
+                          key={id}
+                        >
+                          <input
+                            checked={form.categoryId === id}
+                            data-journey-focus
+                            name="categoryId"
+                            onChange={() => {
+                              resetRequestAfterEdit()
+                              setForm((current) => ({ ...current, categoryId: id }))
+                              setFieldError('')
+                            }}
+                            type="radio"
+                            value={id}
+                          />
+                          <img
+                            alt=""
+                            aria-hidden="true"
+                            className="booking-journey__category-image"
+                            src={image}
+                          />
+                          <span aria-hidden="true" className="booking-journey__category-overlay" />
+                          <span className="booking-journey__category-title">{title}</span>
+                          <span aria-hidden="true" className="booking-journey__category-check">
+                            {form.categoryId === id && <Check size={16} />}
+                          </span>
+                        </label>
+                      ))}
+                    </fieldset>
+                    <div className="booking-journey__ticket-controls">
+                      <label>
+                        <span>Number of Tickets</span>
+                        <select
+                          data-journey-focus
+                          name="ticketQuantity"
+                          onChange={(event) => {
+                            resetRequestAfterEdit()
+                            setForm((current) => ({
+                              ...current,
+                              ticketQuantity: Number(event.target.value),
+                            }))
+                            setFieldError('')
+                          }}
+                          value={ticketQuantity}
+                        >
+                          {Array.from({ length: 10 }, (_, index) => index + 1).map((quantity) => (
+                            <option key={quantity} value={quantity}>{quantity}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Ticket Type</span>
+                        <select
+                          name="ticketType"
+                          onChange={(event) => {
+                            resetRequestAfterEdit()
+                            setForm((current) => ({ ...current, ticketType: event.target.value }))
+                            setFieldError('')
+                          }}
+                          value={form.ticketType}
+                        >
+                          {ticketTypes.map(({ id, name }) => (
+                            <option key={id} value={id}>{name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    {ticketPriceSummary}
+                  </>
+                )}
 
               {step === 3 && (
                 <fieldset className="booking-journey__gender">
@@ -521,10 +670,10 @@ export default function BookingJourney({ onClose }) {
             )}
             {step === 3 && (
               <p className="booking-journey__price-summary">
-                Booking amount:
-                {offerActive && <s>₹{diwaliOffer.regularPrice}</s>}
-                <strong>₹{offerActive ? diwaliOffer.offerPrice : diwaliOffer?.regularPrice ?? 299}</strong>
-                {offerActive && <span>Save ₹{diwaliOffer.savings} with the Diwali offer</span>}
+                Booking amount for {ticketQuantity} {ticketQuantity === 1 ? 'ticket' : 'tickets'}:
+                {offerActive && <s>₹{subtotal}</s>}
+                <strong>₹{finalAmount}</strong>
+                {offerActive && <span>Save ₹{discount} with the Diwali offer</span>}
               </p>
             )}
             {step === 3 && (
@@ -573,7 +722,7 @@ export default function BookingJourney({ onClose }) {
                 disabled={
                   isSubmitting ||
                   isTransitioning ||
-                  (step === 2 && !form.categoryId)
+                  (step === 2 && (!form.categoryId || !pricingAvailable))
                 }
                 type="submit"
               >

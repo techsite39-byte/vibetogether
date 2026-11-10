@@ -25,6 +25,8 @@ async function startTestServer({
           existing.email !== (enquiry.email ?? '') ||
           existing.eventId !== enquiry.eventId ||
           existing.categoryId !== enquiry.categoryId ||
+          existing.ticketType !== enquiry.ticketType ||
+          existing.ticketQuantity !== enquiry.ticketQuantity ||
           existing.gender !== enquiry.gender
         ) {
           throw Object.assign(new Error('Request ID conflict.'), { status: 409 })
@@ -36,7 +38,8 @@ async function startTestServer({
         ...enquiry,
         email: enquiry.email ?? '',
         paymentStatus: 'unpaid',
-        paymentAmount: 299,
+        paymentAmount: enquiry.paymentAmount ?? 299,
+        paymentAmountPaise: enquiry.paymentAmountPaise ?? 29_900,
         paymentProvider: null,
         paymentReference: '',
         paidAt: null,
@@ -67,7 +70,7 @@ async function startTestServer({
       enquiry.whatsappOptedOutAt = new Date()
       return enquiry
     },
-    async markDemoPaid(requestId) {
+    async markDemoPaid(requestId, { pricing } = {}) {
       const enquiry = saved.get(requestId)
       if (!enquiry) return null
       if (enquiry.paymentStatus === 'demo_paid' && enquiry.reference) {
@@ -83,7 +86,15 @@ async function startTestServer({
       Object.assign(enquiry, {
         reference: String(nextReference++),
         paymentStatus: 'demo_paid',
-        paymentAmount: 299,
+        paymentAmount: pricing?.finalAmount ?? enquiry.paymentAmount ?? 299,
+        paymentAmountPaise: pricing?.paymentAmountPaise ?? enquiry.paymentAmountPaise ?? 29_900,
+        finalAmount: pricing?.finalAmount ?? enquiry.finalAmount ?? enquiry.paymentAmount ?? 299,
+        pricePerTicket: pricing?.pricePerTicket ?? enquiry.pricePerTicket ?? 299,
+        subtotal: pricing?.subtotal ?? enquiry.subtotal ?? 299,
+        discount: pricing?.discount ?? enquiry.discount ?? 0,
+        ticketType: pricing?.ticketType ?? enquiry.ticketType ?? 'general-admission',
+        ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ?? 'General Admission',
+        ticketQuantity: pricing?.ticketQuantity ?? enquiry.ticketQuantity ?? 1,
         paymentProvider: 'razorpay_demo',
         paymentReference: `demo_${requestId}`,
         paidAt: new Date(),
@@ -200,6 +211,83 @@ test('does not send automatic WhatsApp messages before successful payment', asyn
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
+  })
+
+  test('calculates ticket pricing on the server and ignores client-supplied amounts', async () => {
+    const { baseUrl, saved } = await startTestServer({
+      diwaliOfferService: {
+        async getPricing() {
+          return {
+            paymentAmount: 249,
+            paymentAmountPaise: 24_900,
+            regularPrice: 299,
+            offerPrice: 249,
+            diwaliOfferApplied: true,
+            offerActivationAt: new Date('2026-11-09T00:00:00.000Z'),
+            offerExpiresAt: new Date('2026-11-12T00:00:00.000Z'),
+          }
+        },
+      },
+    })
+    const request = {
+      requestId: crypto.randomUUID(),
+      name: 'Jordan Example',
+      mobile: '+91 98765 43210',
+      categoryId: 'fun-games',
+      gender: 'Female',
+      ticketType: 'general-admission',
+      ticketQuantity: 3,
+      pricePerTicket: 1,
+      subtotal: 1,
+      discount: 0,
+      finalAmount: 1,
+      paymentAmount: 1,
+      paymentAmountPaise: 100,
+    }
+    const response = await fetch(`${baseUrl}/api/booking-enquiries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    const payload = await response.json()
+
+    assert.equal(response.status, 201)
+    assert.equal(payload.booking.ticketType, 'general-admission')
+    assert.equal(payload.booking.ticketTypeName, 'General Admission')
+    assert.equal(payload.booking.ticketQuantity, 3)
+    assert.equal(payload.booking.pricePerTicket, 299)
+    assert.equal(payload.booking.subtotal, 897)
+    assert.equal(payload.booking.discount, 150)
+    assert.equal(payload.booking.finalAmount, 747)
+    assert.equal(payload.booking.paymentAmount, 747)
+    assert.equal(payload.booking.paymentAmountPaise, 74_700)
+    assert.equal(saved.get(request.requestId).paymentAmount, 747)
+  })
+
+  test('rejects invalid ticket quantities and unavailable ticket types', async () => {
+    const { baseUrl } = await startTestServer()
+    const request = {
+      requestId: crypto.randomUUID(),
+      name: 'Jordan Example',
+      mobile: '+91 98765 43210',
+      categoryId: 'fun-games',
+      gender: 'Female',
+      ticketType: 'general-admission',
+      ticketQuantity: 11,
+    }
+    const invalidQuantityResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    assert.equal(invalidQuantityResponse.status, 400)
+
+    const invalidTypeResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...request, requestId: crypto.randomUUID(), ticketQuantity: 1, ticketType: 'vip' }),
+    })
+    assert.equal(invalidTypeResponse.status, 400)
   })
   const firstPayload = await firstResponse.json()
   assert.equal(firstResponse.status, 201)

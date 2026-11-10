@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   DIWALI_OFFER_DURATION_MS,
+  calculateTicketPricing,
   createDiwaliOfferService,
 } from '../src/services/diwaliOffer.js'
 
@@ -66,6 +67,36 @@ test('admin offer updates preserve the configured prices and exact 72-hour windo
   const service = createDiwaliOfferService({
     model,
     now: () => new Date('2026-11-10T10:00:00.000Z'),
+  })
+
+  test('calculates multi-ticket totals and discounts from server pricing', () => {
+    const activeOffer = calculateTicketPricing({
+      regularPrice: 299,
+      offerPrice: 249,
+      diwaliOfferApplied: true,
+    }, 3, 'general-admission')
+
+    assert.equal(activeOffer.pricePerTicket, 299)
+    assert.equal(activeOffer.subtotal, 897)
+    assert.equal(activeOffer.discount, 150)
+    assert.equal(activeOffer.finalAmount, 747)
+    assert.equal(activeOffer.paymentAmountPaise, 74_700)
+    assert.equal(activeOffer.ticketQuantity, 3)
+
+    const regularPrice = calculateTicketPricing({
+      regularPrice: 299,
+      offerPrice: 249,
+      diwaliOfferApplied: false,
+    }, 3, 'general-admission')
+    assert.equal(regularPrice.discount, 0)
+    assert.equal(regularPrice.finalAmount, 897)
+  })
+
+  test('rejects unknown ticket types and quantities outside 1 to 10', () => {
+    const pricing = { regularPrice: 299, offerPrice: 249, diwaliOfferApplied: true }
+    assert.throws(() => calculateTicketPricing(pricing, 0), /quantity from 1 to 10/)
+    assert.throws(() => calculateTicketPricing(pricing, 11), /quantity from 1 to 10/)
+    assert.throws(() => calculateTicketPricing(pricing, 1, 'vip'), /ticket type/)
   })
 
   const saved = await service.updateOffer({

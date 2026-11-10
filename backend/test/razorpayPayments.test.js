@@ -10,7 +10,7 @@ function makeQuery(value) {
   return { lean: async () => (value ? structuredClone(value) : null) }
 }
 
-function createBookingModel(requestId) {
+function createBookingModel(requestId, overrides = {}) {
   let record = {
     _id: 'temp-razorpay-1',
     requestId,
@@ -25,6 +25,7 @@ function createBookingModel(requestId) {
     paymentProvider: 'razorpay_demo',
     paymentReference: '',
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    ...overrides,
   }
 
   return {
@@ -71,6 +72,58 @@ function createBookingModel(requestId) {
     },
   }
 }
+
+test('creates a multi-ticket Razorpay order using the server-calculated offer total', async () => {
+  const requestId = 'razorpay-multiple-ticket-session'
+  const model = createBookingModel(requestId, {
+    ticketType: 'general-admission',
+    ticketTypeName: 'General Admission',
+    ticketQuantity: 3,
+  })
+  const client = createClient({ paymentAmount: 74_700 })
+  const service = createRazorpayPaymentService({
+    client,
+    keyId: 'rzp_test_public',
+    keySecret: 'test-secret',
+    bookingEnquiryModel: model,
+    allocateReference: async () => '10812026501',
+    diwaliOfferService: {
+      async getPricing() {
+        return {
+          paymentAmount: 249,
+          paymentAmountPaise: 24_900,
+          regularPrice: 299,
+          offerPrice: 249,
+          diwaliOfferApplied: true,
+        }
+      },
+    },
+  })
+
+  const order = await service.createOrder(requestId)
+
+  assert.equal(order.amount, 74_700)
+  assert.equal(order.pricing.ticketQuantity, 3)
+  assert.equal(order.pricing.pricePerTicket, 299)
+  assert.equal(order.pricing.subtotal, 897)
+  assert.equal(order.pricing.discount, 150)
+  assert.equal(order.pricing.finalAmount, 747)
+  assert.equal(model.record.paymentAmount, 747)
+  assert.equal(model.record.paymentOrders[0].amountPaise, 74_700)
+
+  const result = await service.verifyPayment(requestId, {
+    razorpay_order_id: order.order_id,
+    razorpay_payment_id: 'pay_test_multi',
+    razorpay_signature: signature(order.order_id, 'pay_test_multi', 'test-secret'),
+  })
+  assert.equal(result.booking.reference, '10812026501')
+  assert.equal(result.booking.paymentStatus, 'paid')
+  assert.equal(result.booking.ticketQuantity, 3)
+  assert.equal(result.booking.pricePerTicket, 299)
+  assert.equal(result.booking.subtotal, 897)
+  assert.equal(result.booking.discount, 150)
+  assert.equal(result.booking.finalAmount, 747)
+})
 
 function signature(orderId, paymentId, secret) {
   return createHmac('sha256', secret)

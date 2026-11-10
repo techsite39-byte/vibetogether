@@ -19,6 +19,8 @@ function sameRequest(existing, enquiry) {
     (existing.email ?? '') === (enquiry.email ?? '') &&
     existing.eventId === enquiry.eventId &&
     (existing.categoryId ?? '') === (enquiry.categoryId ?? '') &&
+    (existing.ticketType ?? 'general-admission') === enquiry.ticketType &&
+    (existing.ticketQuantity ?? 1) === enquiry.ticketQuantity &&
     existing.gender === enquiry.gender
   )
 }
@@ -134,6 +136,7 @@ export async function markBookingEnquiryDemoPaid(
   {
     bookingEnquiryModel = BookingEnquiry,
     allocateReference = nextBookingReference,
+    pricing,
   } = {},
 ) {
   const now = new Date()
@@ -189,8 +192,20 @@ export async function markBookingEnquiryDemoPaid(
         $set: {
           reference,
           paymentStatus: 'demo_paid',
-          paymentAmount: claimed.paymentAmount ?? defaultPricing.paymentAmount,
-          paymentAmountPaise: claimed.paymentAmountPaise ?? defaultPricing.paymentAmountPaise,
+          paymentAmount: pricing?.finalAmount ?? claimed.paymentAmount ?? defaultPricing.paymentAmount,
+          paymentAmountPaise: pricing?.paymentAmountPaise ?? claimed.paymentAmountPaise ?? defaultPricing.paymentAmountPaise,
+          finalAmount: pricing?.finalAmount ?? claimed.finalAmount ?? claimed.paymentAmount ?? defaultPricing.paymentAmount,
+          ticketType: pricing?.ticketType ?? claimed.ticketType ?? 'general-admission',
+          ticketTypeName: pricing?.ticketTypeName ?? claimed.ticketTypeName ?? 'General Admission',
+          ticketQuantity: pricing?.ticketQuantity ?? claimed.ticketQuantity ?? 1,
+          pricePerTicket: pricing?.pricePerTicket ?? claimed.pricePerTicket ?? defaultPricing.regularPrice,
+          subtotal: pricing?.subtotal ?? claimed.subtotal ?? defaultPricing.regularPrice,
+          discount: pricing?.discount ?? claimed.discount ?? 0,
+          regularPrice: pricing?.regularPrice ?? claimed.regularPrice ?? defaultPricing.regularPrice,
+          offerPrice: pricing?.offerPrice ?? claimed.offerPrice ?? defaultPricing.offerPrice,
+          diwaliOfferApplied: pricing?.diwaliOfferApplied ?? Boolean(claimed.diwaliOfferApplied),
+          offerActivationAt: pricing?.offerActivationAt ?? claimed.offerActivationAt ?? null,
+          offerExpiresAt: pricing?.offerExpiresAt ?? claimed.offerExpiresAt ?? null,
           paymentProvider: 'razorpay_demo',
           paymentReference: `demo_${randomUUID()}`,
           paymentFailureReason: '',

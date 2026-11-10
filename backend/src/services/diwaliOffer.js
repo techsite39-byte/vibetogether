@@ -4,6 +4,43 @@ export const DIWALI_OFFER_KEY = 'diwali-special'
 export const DIWALI_OFFER_DURATION_MS = 72 * 60 * 60 * 1000
 export const DIWALI_REGULAR_PRICE = 299
 export const DIWALI_OFFER_PRICE = 249
+export const DEFAULT_TICKET_TYPE = 'general-admission'
+export const BOOKING_TICKET_TYPES = Object.freeze([
+  Object.freeze({ id: DEFAULT_TICKET_TYPE, name: 'General Admission' }),
+])
+
+export function calculateTicketPricing(pricing, ticketQuantity = 1, ticketType = DEFAULT_TICKET_TYPE) {
+  const selectedType = BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)
+  if (
+    !selectedType ||
+    !Number.isInteger(ticketQuantity) ||
+    ticketQuantity < 1 ||
+    ticketQuantity > 10
+  ) {
+    throw offerError('Choose a valid ticket type and a quantity from 1 to 10.')
+  }
+
+  const regularPrice = pricing.regularPrice ?? DIWALI_REGULAR_PRICE
+  const offerPrice = pricing.offerPrice ?? DIWALI_OFFER_PRICE
+  const discount = pricing.diwaliOfferApplied
+    ? (regularPrice - offerPrice) * ticketQuantity
+    : 0
+  const subtotal = regularPrice * ticketQuantity
+  const finalAmount = subtotal - discount
+
+  return {
+    ...pricing,
+    ticketType: selectedType.id,
+    ticketTypeName: selectedType.name,
+    ticketQuantity,
+    pricePerTicket: regularPrice,
+    subtotal,
+    discount,
+    finalAmount,
+    paymentAmount: finalAmount,
+    paymentAmountPaise: finalAmount * 100,
+  }
+}
 
 function offerError(message) {
   return Object.assign(new Error(message), { status: 400 })
@@ -51,6 +88,7 @@ export function serializeDiwaliOffer(offer, now = new Date()) {
     regularPrice: offer.regularPrice,
     offerPrice: offer.offerPrice,
     savings: offer.regularPrice - offer.offerPrice,
+    ticketTypes: BOOKING_TICKET_TYPES,
     activationAt: new Date(offer.activationAt).toISOString(),
     expiresAt: new Date(offer.expiresAt).toISOString(),
     status,

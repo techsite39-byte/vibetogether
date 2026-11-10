@@ -214,13 +214,14 @@ export default function BookingPayment() {
         throw new Error('Razorpay Checkout could not be loaded. Check your connection and retry.')
       }
 
-      const isDiwali = Boolean(bookingState.booking?.diwaliOfferApplied)
+      const isDiwali = Boolean(order.pricing?.diwaliOfferApplied ?? bookingState.booking?.diwaliOfferApplied)
       const bookingCategory = bookingState.booking?.category || bookingState.booking?.event || 'Event Booking'
-      const amountRupees = bookingState.booking?.paymentAmount ?? (isDiwali ? 249 : 299)
-      const savings = isDiwali ? ((bookingState.booking?.regularPrice ?? 299) - amountRupees) : 0
+      const amountRupees = order.amount / 100
+      const savings = order.pricing?.discount ?? (isDiwali ? (bookingState.booking?.regularPrice ?? 299) - amountRupees : 0)
+      const ticketQuantity = order.pricing?.ticketQuantity ?? bookingState.booking?.ticketQuantity ?? 1
       const description = isDiwali
-        ? `${bookingCategory} • Diwali Offer ₹${amountRupees} (Saved ₹${savings})`
-        : `${bookingCategory} • ₹${amountRupees}`
+        ? `${bookingCategory} • ${ticketQuantity} ticket(s) • Diwali Offer ₹${amountRupees} (Saved ₹${savings})`
+        : `${bookingCategory} • ${ticketQuantity} ticket(s) • ₹${amountRupees}`
 
       const rawContact = bookingState.booking?.mobile ?? ''
       const sanitizedContact = rawContact.replace(/\D/g, '').slice(-10)
@@ -241,6 +242,8 @@ export default function BookingPayment() {
         notes: {
           booking_request_id: requestId,
           booking_category: bookingCategory,
+          ticket_type: bookingState.booking?.ticketTypeName ?? 'General Admission',
+          ticket_quantity: String(ticketQuantity),
           diwali_offer: isDiwali ? `Applied (Saved ₹${savings})` : 'No',
         },
         theme: {
@@ -517,9 +520,9 @@ export default function BookingPayment() {
                   <span>{isPaid ? 'AMOUNT PAID' : 'AMOUNT'}</span>
                   <strong>₹{booking.paymentAmount}</strong>
                   {booking.diwaliOfferApplied && (
-                    <small className="booking-payment__offer-tag">DIWALI OFFER · SAVED ₹{booking.regularPrice - booking.paymentAmount}</small>
+                    <small className="booking-payment__offer-tag">DIWALI OFFER · SAVED ₹{booking.discount ?? booking.regularPrice - booking.paymentAmount}</small>
                   )}
-                  {booking.diwaliOfferApplied && <s>₹{booking.regularPrice}</s>}
+                  {booking.diwaliOfferApplied && <s>₹{booking.subtotal ?? booking.regularPrice}</s>}
                 </div>
               </div>
               <dl className="booking-payment__details">
@@ -527,6 +530,11 @@ export default function BookingPayment() {
                 <div><dt>Mobile</dt><dd>{booking.mobile}</dd></div>
                 <div><dt>Email</dt><dd>{booking.email || 'Not provided'}</dd></div>
                 <div><dt>Category</dt><dd>{booking.category || booking.event || '—'}</dd></div>
+                <div><dt>Ticket type</dt><dd>{booking.ticketTypeName || 'General Admission'}</dd></div>
+                <div><dt>Number of tickets</dt><dd>{booking.ticketQuantity ?? 1}</dd></div>
+                <div><dt>Price per ticket</dt><dd>₹{booking.pricePerTicket ?? booking.regularPrice ?? 299}</dd></div>
+                <div><dt>Subtotal</dt><dd>₹{booking.subtotal ?? booking.paymentAmount}</dd></div>
+                <div><dt>Diwali discount</dt><dd>−₹{booking.discount ?? 0}</dd></div>
                 <div><dt>Gender</dt><dd>{booking.gender}</dd></div>
                 <div><dt>Booking date</dt><dd>{formatBookingDate(booking.createdAt)}</dd></div>
               </dl>

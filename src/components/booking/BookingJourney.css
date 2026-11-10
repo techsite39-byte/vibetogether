@@ -497,6 +497,140 @@
   background: linear-gradient(135deg, #773bff, #d12aff);
 }
 
+.booking-journey__ticket-controls {
+  display: grid;
+  width: min(100%, 38rem);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  justify-self: center;
+  text-align: left;
+}
+
+.booking-journey__ticket-controls label {
+  display: grid;
+  min-width: 0;
+  gap: 0.45rem;
+  color: #d8cbed;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.booking-journey__ticket-controls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgb(195 160 231 / 32%);
+  border-radius: 0.85rem;
+  outline: 0;
+  background: linear-gradient(145deg, rgb(24 15 42 / 96%), rgb(13 9 24 / 96%));
+  box-shadow: inset 0 1px rgb(255 255 255 / 5%);
+  color: #fff;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 0.92rem;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.booking-journey__ticket-controls select:hover {
+  border-color: rgb(193 103 255 / 72%);
+}
+
+.booking-journey__ticket-controls select:focus {
+  border-color: #b352ff;
+  background-color: rgb(18 12 33 / 95%);
+  box-shadow: 0 0 0 4px rgb(168 43 255 / 14%), 0 0 28px rgb(119 59 255 / 16%);
+}
+
+.booking-journey__ticket-summary {
+  width: min(100%, 38rem);
+  box-sizing: border-box;
+  justify-self: center;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgb(195 160 231 / 22%);
+  border-radius: 1rem;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgb(255 199 92 / 8%), transparent 48%),
+    linear-gradient(140deg, rgb(30 19 49 / 92%), rgb(13 10 23 / 96%));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 24%), inset 0 1px rgb(255 255 255 / 5%);
+  text-align: left;
+  animation: booking-ticket-summary-in 250ms ease both;
+}
+
+.booking-journey__ticket-summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #f0d7a0;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.booking-journey__ticket-summary-heading svg {
+  color: #d09aff;
+}
+
+.booking-journey__ticket-summary dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.75rem 0 0;
+}
+
+.booking-journey__ticket-summary dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #c9bdd6;
+  font-size: 0.8rem;
+}
+
+.booking-journey__ticket-summary dd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin: 0;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.booking-journey__ticket-summary dd s {
+  color: #a99db5;
+}
+
+.booking-journey__ticket-summary dd strong {
+  color: #ffe09f;
+  font-size: 0.92rem;
+}
+
+.booking-journey__ticket-summary-total {
+  margin-top: 0.35rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  color: #fff !important;
+  font-size: 0.9rem !important;
+  font-weight: 700;
+}
+
+.booking-journey__ticket-summary-total dd {
+  color: #ffe09f;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+}
+
+.booking-journey__ticket-summary > p {
+  margin: 0.55rem 0 0;
+  color: #e4c881;
+  font-size: 0.72rem;
+  text-align: right;
+}
+
 
 .booking-journey__gender {
   display: grid;
@@ -535,6 +669,11 @@
   background: linear-gradient(145deg, rgb(119 59 255 / 27%), rgb(209 42 255 / 12%));
   box-shadow: 0 0 28px rgb(168 43 255 / 18%), inset 0 0 18px rgb(168 43 255 / 8%);
   color: #fff;
+}
+
+@keyframes booking-ticket-summary-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .booking-journey__whatsapp-consent {
@@ -996,6 +1135,23 @@
   .booking-journey__diwali-offer {
     gap: 0.4rem 0.45rem;
     padding: 0.65rem 0.7rem;
+  }
+
+  .booking-journey__ticket-controls {
+    gap: 0.6rem;
+  }
+
+  .booking-journey__ticket-controls label {
+    font-size: 0.72rem;
+  }
+
+  .booking-journey__ticket-controls select {
+    min-height: 3rem;
+    padding: 0.65rem 0.7rem;
+  }
+
+  .booking-journey__ticket-summary {
+    padding: 0.85rem;
   }
 
   .booking-journey__diwali-copy > span {
