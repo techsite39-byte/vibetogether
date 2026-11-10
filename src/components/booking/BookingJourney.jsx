@@ -5,6 +5,8 @@ import {
   CircleAlert,
   Check,
   LoaderCircle,
+  Minus,
+  Plus,
   Sparkles,
   X,
 } from 'lucide-react'
@@ -81,9 +83,7 @@ export default function BookingJourney({ onClose }) {
     mobile: typeof restoredDraft?.form?.mobile === 'string' ? restoredDraft.form.mobile : '',
     categoryId: typeof restoredDraft?.form?.categoryId === 'string' ? restoredDraft.form.categoryId : '',
     gender: typeof restoredDraft?.form?.gender === 'string' ? restoredDraft.form.gender : '',
-    ticketType: typeof restoredDraft?.form?.ticketType === 'string'
-      ? restoredDraft.form.ticketType
-      : fallbackTicketTypes[0].id,
+    ticketType: fallbackTicketTypes[0].id,
     ticketQuantity: Number.isInteger(restoredDraft?.form?.ticketQuantity)
       ? Math.min(10, Math.max(1, restoredDraft.form.ticketQuantity))
       : 1,
@@ -188,16 +188,6 @@ export default function BookingJourney({ onClose }) {
       step,
     }))
   }, [countryCode, form, step])
-
-  const ticketTypes = Array.isArray(diwaliOffer?.ticketTypes) && diwaliOffer.ticketTypes.length
-    ? diwaliOffer.ticketTypes
-    : fallbackTicketTypes
-
-  useEffect(() => {
-    if (!ticketTypes.some(({ id }) => id === form.ticketType)) {
-      setForm((current) => ({ ...current, ticketType: ticketTypes[0].id }))
-    }
-  }, [form.ticketType, ticketTypes])
 
   useEffect(() => {
     if (transitionStage !== 'enter') {
@@ -323,7 +313,6 @@ export default function BookingJourney({ onClose }) {
   const selectedCategory = bookingCategories.find(
     ({ id }) => id === form.categoryId,
   )
-  const selectedTicketType = ticketTypes.find(({ id }) => id === form.ticketType)
   const serverClock = offerClock + offerClockOffset
   const regularPrice = diwaliOffer?.regularPrice
   const offerPrice = diwaliOffer?.offerPrice
@@ -361,7 +350,6 @@ export default function BookingJourney({ onClose }) {
       {pricingAvailable ? (
         <>
           <dl>
-            <div><dt>Ticket type</dt><dd>{selectedTicketType?.name ?? 'General Admission'}</dd></div>
             <div><dt>Number of tickets</dt><dd>{ticketQuantity}</dd></div>
             <div>
               <dt>Regular price per ticket</dt>
@@ -599,42 +587,44 @@ export default function BookingJourney({ onClose }) {
                       ))}
                     </fieldset>
                     <div className="booking-journey__ticket-controls">
-                      <label>
+                      <div className="booking-journey__ticket-quantity">
                         <span>Number of Tickets</span>
-                        <select
-                          data-journey-focus
-                          name="ticketQuantity"
-                          onChange={(event) => {
-                            resetRequestAfterEdit()
-                            setForm((current) => ({
-                              ...current,
-                              ticketQuantity: Number(event.target.value),
-                            }))
-                            setFieldError('')
-                          }}
-                          value={ticketQuantity}
-                        >
-                          {Array.from({ length: 10 }, (_, index) => index + 1).map((quantity) => (
-                            <option key={quantity} value={quantity}>{quantity}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        <span>Ticket Type</span>
-                        <select
-                          name="ticketType"
-                          onChange={(event) => {
-                            resetRequestAfterEdit()
-                            setForm((current) => ({ ...current, ticketType: event.target.value }))
-                            setFieldError('')
-                          }}
-                          value={form.ticketType}
-                        >
-                          {ticketTypes.map(({ id, name }) => (
-                            <option key={id} value={id}>{name}</option>
-                          ))}
-                        </select>
-                      </label>
+                        <div className="booking-journey__ticket-stepper">
+                          <button
+                            aria-label="Decrease number of tickets"
+                            disabled={ticketQuantity <= 1}
+                            onClick={() => {
+                              resetRequestAfterEdit()
+                              setForm((current) => ({
+                                ...current,
+                                ticketQuantity: Math.max(1, current.ticketQuantity - 1),
+                              }))
+                              setFieldError('')
+                            }}
+                            type="button"
+                          >
+                            <Minus size={18} aria-hidden="true" />
+                          </button>
+                          <output aria-label="Number of tickets" aria-live="polite">
+                            {ticketQuantity}
+                          </output>
+                          <button
+                            aria-label="Increase number of tickets"
+                            disabled={ticketQuantity >= 10}
+                            onClick={() => {
+                              resetRequestAfterEdit()
+                              setForm((current) => ({
+                                ...current,
+                                ticketQuantity: Math.min(10, current.ticketQuantity + 1),
+                              }))
+                              setFieldError('')
+                            }}
+                            type="button"
+                          >
+                            <Plus size={18} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     {ticketPriceSummary}
                   </>
