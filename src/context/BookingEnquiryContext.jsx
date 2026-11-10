@@ -40,7 +40,11 @@ export function BookingEnquiryProvider({ children }) {
     if (isBookingFlow(location.pathname)) {
       automaticPopupHandled.current = true
     }
-  }, [location.pathname])
+    if (location.pathname.startsWith('/booking/step-4/') && !activeBooking) {
+      bookingSession.current += 1
+      setActiveBooking({ category: '', key: bookingSession.current })
+    }
+  }, [activeBooking, location.pathname])
 
   return (
     <BookingEnquiryContext.Provider value={{ openBooking }}>

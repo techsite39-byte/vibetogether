@@ -789,6 +789,17 @@
   font: inherit;
 }
 
+.booking-member-field input[aria-invalid="true"] {
+  border-color: #ff5d7d;
+  box-shadow: 0 0 0 3px rgb(255 93 125 / 14%);
+}
+
+.booking-member-field__error {
+  color: #ff91a5;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
 .booking-member-field input:focus-visible,
 .booking-gender-count__stepper button:focus-visible {
   outline: 2px solid #d6b8ff;

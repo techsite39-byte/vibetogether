@@ -110,7 +110,7 @@ function normalizeMemberNames(value, count) {
       return null
     }
     const trimmed = name.normalize('NFKC').trim()
-    return trimmed ? normalizeText(trimmed, 'memberName', 80) : ''
+    return trimmed ? normalizeText(trimmed, 'memberName', 80) : null
   })
   if (names.some((name) => name === null)) {
     return null
@@ -163,8 +163,17 @@ async function validateBookingEnquiry(body, eventRepository) {
 
   const maleMemberNames = normalizeMemberNames(body.maleMemberNames, maleCount)
   const femaleMemberNames = normalizeMemberNames(body.femaleMemberNames, femaleCount)
-  if (!maleMemberNames || !femaleMemberNames) {
-    return { error: 'Member names must be valid and match the selected ticket counts.' }
+  if (
+    !maleMemberNames ||
+    !femaleMemberNames ||
+    maleMemberNames.some((name) => !name) ||
+    femaleMemberNames.some((name) => !name)
+  ) {
+    return { error: 'Every ticket must have a valid attendee name matching the selected ticket counts.' }
+  }
+
+  if (maleCount + femaleCount !== ticketQuantity) {
+    return { error: 'Male and Female attendee counts must equal the selected ticket quantity.' }
   }
 
   let gender = hasGenderCounts ? undefined : body.gender

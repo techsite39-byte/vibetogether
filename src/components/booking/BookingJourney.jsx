@@ -16,7 +16,7 @@ import { submitBookingEnquiry } from '../../services/bookingEnquiry.js'
 import { formatOfferExpiry, getDiwaliOffer, getOfferRemainingMs } from '../../services/diwaliOffer.js'
 import './BookingJourney.css'
 
-const steps = ['Name', 'Mobile', 'Category', 'Gender']
+const steps = ['Name', 'Mobile', 'Category', 'Gender & attendees', 'Payment']
 const bookingCategories = categories.filter(({ id }) => id === 'sing-along')
 const draftStorageKey = 'vibe-together-booking-draft'
 const fallbackTicketTypes = [{ id: 'general-admission', name: 'General Admission' }]
@@ -111,6 +111,7 @@ export default function BookingJourney({ onClose }) {
   const [transitionStage, setTransitionStage] = useState('enter')
   const [direction, setDirection] = useState(1)
   const [fieldError, setFieldError] = useState('')
+  const [memberErrors, setMemberErrors] = useState({})
   const [submissionError, setSubmissionError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
@@ -271,6 +272,22 @@ export default function BookingJourney({ onClose }) {
       names[index] = value
       return { ...current, [namesKey]: names }
     })
+    setMemberErrors((current) => {
+      const next = { ...current }
+      delete next[`${gender}-${index}`]
+      return next
+    })
+    setFieldError('')
+  }
+
+  function getMissingMemberNames() {
+    return [
+      ['Male', form.maleCount, form.maleMemberNames],
+      ['Female', form.femaleCount, form.femaleMemberNames],
+    ].flatMap(([gender, count, names]) => Array.from({ length: count }, (_, index) => ({
+      key: `${gender}-${index}`,
+      missing: !String(names[index] ?? '').trim(),
+    }))).filter(({ missing }) => missing)
   }
 
   function validateStep() {
@@ -288,6 +305,13 @@ export default function BookingJourney({ onClose }) {
     }
     if (step === 3 && form.maleCount + form.femaleCount !== form.ticketQuantity) {
       return `Assign all ${form.ticketQuantity} ticket${form.ticketQuantity === 1 ? '' : 's'} to Male or Female.`
+    }
+    if (step === 3) {
+      const missingMembers = getMissingMemberNames()
+      if (missingMembers.length > 0) {
+        setMemberErrors(Object.fromEntries(missingMembers.map(({ key }) => [key, 'Attendee name is required.'])))
+        return 'Enter a name for every attendee before continuing.'
+      }
     }
     return ''
   }
@@ -358,7 +382,6 @@ export default function BookingJourney({ onClose }) {
         ticketQuantity: form.ticketQuantity,
         whatsappConsent: form.whatsappConsent,
       })
-      sessionStorage.removeItem(draftStorageKey)
       onClose()
       navigate(`/booking/payment/${requestId.current}`)
     } catch (error) {
@@ -543,7 +566,7 @@ export default function BookingJourney({ onClose }) {
                   ? 'Enter your number so we can contact you about your enquiry.'
                   : step === 2
                     ? 'Choose one category. Our team can match you with a suitable event.'
-                    : 'Assign every ticket to Male or Female. Member names are optional.'}
+                    : 'Assign every ticket to Male or Female. Every attendee name is required.'}
               </p>
             )}
 
@@ -730,12 +753,19 @@ export default function BookingJourney({ onClose }) {
                           <span>{gender} Member {index + 1}</span>
                           <input
                             autoComplete="off"
+                            aria-invalid={Boolean(memberErrors[`${gender}-${index}`])}
                             maxLength={80}
                             onChange={(event) => updateMemberName(gender, index, event.target.value)}
-                            placeholder="Enter name (optional)"
+                            placeholder="Enter attendee name"
+                            required
                             type="text"
                             value={names[index] ?? ''}
                           />
+                          {memberErrors[`${gender}-${index}`] && (
+                            <small className="booking-member-field__error" role="alert">
+                              {memberErrors[`${gender}-${index}`]}
+                            </small>
+                          )}
                         </label>
                       ))}
                     </fieldset>

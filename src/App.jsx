@@ -63,6 +63,7 @@ function App() {
           />
           <Route path="my-bookings" element={<MyBookings />} />
           <Route path="booking" element={<Booking />} />
+          <Route path="booking/step-4/:requestId" element={<div aria-hidden="true" />} />
           <Route path="booking/:eventId" element={<Booking />} />
           <Route path="sing-along" element={<SingAlong />} />
           <Route path="strangers-meet" element={<StrangersMeet />} />

@@ -143,7 +143,8 @@ export default function BookingPayment() {
   const [selectedBank, setSelectedBank] = useState('')
   const [selectedWallet, setSelectedWallet] = useState('')
   const [razorpayOrder, setRazorpayOrder] = useState(null)
-  const [isInitializingCheckout, setIsInitializingCheckout] = useState(true)
+  const [isInitializingCheckout, setIsInitializingCheckout] = useState(false)
+  const [checkoutRequested, setCheckoutRequested] = useState(false)
   const [checkoutInitRetry, setCheckoutInitRetry] = useState(0)
   const isMobileCheckout = useSyncExternalStore(
     subscribeToMobileViewport,
@@ -327,6 +328,7 @@ export default function BookingPayment() {
   useEffect(() => {
     if (
       bookingReady !== 'ready' ||
+      !checkoutRequested ||
       !razorpayConfiguredForBooking ||
       bookingHasReference ||
       ['paid', 'demo_paid'].includes(bookingPaymentStatus) ||
@@ -423,6 +425,7 @@ export default function BookingPayment() {
     requestId,
     retryingPayment,
     checkoutInitRetry,
+    checkoutRequested,
   ])
 
   useEffect(() => {
@@ -593,6 +596,7 @@ export default function BookingPayment() {
     setRazorpayOrder(null)
     setQrData(null)
     setQrImage('')
+    setCheckoutRequested(true)
     navigate(`/booking/payment/${encodeURIComponent(requestId)}?retry=1`, { replace: true })
   }
 
@@ -1057,7 +1061,26 @@ export default function BookingPayment() {
                             <h3>Choose a payment method</h3>
                           </div>
 
-                          {isInitializingCheckout && (
+                          {!checkoutRequested && (
+                            <button
+                              className="booking-payment__pay-btn"
+                              onClick={() => {
+                                setCheckoutRequested(true)
+                                setIsInitializingCheckout(true)
+                                setPaymentError('')
+                              }}
+                              type="button"
+                            >
+                              <span className="booking-payment__pay-btn-glow" aria-hidden="true" />
+                              <span className="booking-payment__pay-btn-content">
+                                <LockKeyhole size={18} aria-hidden="true" />
+                                <span>PAY SECURELY Â· â‚¹{finalPayable}</span>
+                                <ArrowRight size={18} aria-hidden="true" />
+                              </span>
+                            </button>
+                          )}
+
+                          {checkoutRequested && isInitializingCheckout && (
                             <p className="booking-payment__method-status" role="status">
                               <LoaderCircle className="booking-payment__spinner" size={17} aria-hidden="true" />
                               Loading secure payment methods…
@@ -1069,6 +1092,7 @@ export default function BookingPayment() {
                               className="booking-payment__method-retry"
                               onClick={() => {
                                 setPaymentError('')
+                                setCheckoutRequested(true)
                                 setIsInitializingCheckout(true)
                                 setPaymentMethods(null)
                                 setRazorpayOrder(null)
@@ -1239,8 +1263,8 @@ export default function BookingPayment() {
                 </div>
 
                 <footer className="booking-payment__footer">
-                  <Link className="booking-payment__back-link" to="/booking">
-                    <ArrowLeft size={15} aria-hidden="true" /> Modify booking enquiry
+                  <Link className="booking-payment__back-link" to={`/booking/step-4/${encodeURIComponent(requestId)}`}>
+                    <ArrowLeft size={15} aria-hidden="true" /> Back to attendee details
                   </Link>
                 </footer>
               </div>
