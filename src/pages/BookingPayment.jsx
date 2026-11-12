@@ -1074,7 +1074,7 @@ export default function BookingPayment() {
                               <span className="booking-payment__pay-btn-glow" aria-hidden="true" />
                               <span className="booking-payment__pay-btn-content">
                                 <LockKeyhole size={18} aria-hidden="true" />
-                                <span>PAY SECURELY Â· â‚¹{finalPayable}</span>
+                                <span>PAY SECURELY · ₹{finalPayable}</span>
                                 <ArrowRight size={18} aria-hidden="true" />
                               </span>
                             </button>

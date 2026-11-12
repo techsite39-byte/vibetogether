@@ -4,10 +4,12 @@
 
 .booking-payment {
   position: relative;
-  display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 100dvh;
-  overflow-x: hidden;
-  place-items: center;
+  box-sizing: border-box;
+  overflow-x: clip;
   padding: clamp(2rem, 5vw, 4.5rem) 1rem clamp(3rem, 6vw, 5.5rem);
   background:
     radial-gradient(ellipse 90% 60% at 50% -10%, rgb(119 59 255 / 18%), transparent 65%),
@@ -25,7 +27,8 @@
   top: -10%;
   left: 50%;
   transform: translateX(-50%);
-  width: min(70rem, 100vw);
+  width: min(70rem, 100%);
+  max-width: 100%;
   height: 35rem;
   background: radial-gradient(ellipse at center, rgb(139 59 255 / 22%), rgb(209 42 255 / 8%), transparent 70%);
   filter: blur(60px);
@@ -37,7 +40,8 @@
   position: absolute;
   bottom: -5%;
   right: 10%;
-  width: min(45rem, 90vw);
+  width: min(45rem, 90%);
+  max-width: 90%;
   height: 30rem;
   background: radial-gradient(circle, rgb(168 43 255 / 12%), transparent 70%);
   filter: blur(50px);
@@ -47,8 +51,12 @@
 
 /* Container */
 .booking-payment__container {
-  width: min(100%, 56rem);
-  margin-inline: auto;
+  width: 100%;
+  max-width: 1100px;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
   border-radius: clamp(1.25rem, 3.5vw, 2rem);
   border: 1px solid rgb(180 110 255 / 24%);
   background:
@@ -63,11 +71,24 @@
   animation: booking-payment-appear 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.booking-payment__checkout-view,
+.booking-payment__success-view,
+.booking-payment__failure-view,
+.booking-payment__loading-state,
+.booking-payment__error-state {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 /* Top Navigation & Trust Bar */
 .booking-payment__topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
+  max-width: 100%;
   gap: 1rem;
   padding-bottom: clamp(1.2rem, 3vw, 1.8rem);
   margin-bottom: clamp(1.5rem, 3vw, 2rem);
@@ -77,6 +98,7 @@
 .booking-payment__brand {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   gap: 0.75rem;
   text-decoration: none;
   color: #fff;
@@ -98,6 +120,8 @@
 }
 
 .booking-payment__brand-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-display, var(--font-heading, sans-serif));
   font-size: 0.92rem;
   font-weight: 800;
@@ -189,33 +213,42 @@
 /* Two-column layout on desktop */
 .booking-payment__content-grid {
   display: grid;
-  grid-template-columns: 1.15fr 0.95fr;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: clamp(1.25rem, 3vw, 2rem);
   align-items: stretch;
-}
-
-/* Cards */
-.booking-payment__section-card {
-  display: flex;
-  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: clamp(1.25rem, 3.5vw, 1.85rem);
+  border: 1px solid rgb(191 113 255 / 24%);
   border-radius: 1.25rem;
-  border: 1px solid rgb(191 113 255 / 18%);
-  background: rgb(255 255 255 / 2.5%);
+  background:
+    linear-gradient(175deg, rgb(24 15 42 / 72%) 0%, rgb(12 8 23 / 82%) 100%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
 }
 
+/* Reservation and pricing panels share one checkout card. */
+.booking-payment__section-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0;
+}
+
 .booking-payment__section-card--pricing {
-  background:
-    radial-gradient(circle at top right, rgb(209 42 255 / 9%), transparent 60%),
-    rgb(20 12 36 / 60%);
-  border-color: rgb(191 113 255 / 26%);
+  padding-left: clamp(1.25rem, 3vw, 2rem);
+  border-left: 1px solid rgb(191 113 255 / 22%);
 }
 
 .booking-payment__section-header {
   display: flex;
   align-items: center;
   gap: 0.85rem;
+  min-width: 0;
   padding-bottom: 1.1rem;
   border-bottom: 1px solid rgb(255 255 255 / 8%);
   margin-bottom: 1.2rem;
@@ -251,6 +284,8 @@
 
 .booking-payment__section-header h2 {
   margin: 0.2rem 0 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: clamp(1.05rem, 2.5vw, 1.25rem);
   font-weight: 700;
   color: #fff;
@@ -267,6 +302,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  box-sizing: border-box;
   padding: 0.6rem 0.75rem;
   border-radius: 0.65rem;
   background: rgb(255 255 255 / 1.5%);
@@ -277,6 +316,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  flex: 1 1 8rem;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
   font-size: 0.82rem;
   color: #b5a5c5;
 }
@@ -287,6 +330,9 @@
 }
 
 .booking-payment__detail-val {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 9rem;
   font-size: 0.88rem;
   color: #f6edfd;
   text-align: right;
@@ -304,11 +350,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  flex-wrap: wrap;
   font-size: 0.88rem;
   color: #cfc1de;
 }
 
 .booking-payment__price-row strong {
+  flex: 0 0 auto;
   color: #f7f1fb;
   font-family: var(--font-mono, monospace);
 }
@@ -321,6 +371,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  min-width: 0;
+  flex: 1 1 8rem;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
   font-weight: 600;
   color: #f3bcff;
 }
@@ -330,6 +384,7 @@
 }
 
 .booking-payment__discount-val {
+  flex: 0 0 auto;
   font-family: var(--font-mono, monospace);
   font-weight: 700;
   color: #49ffa0;
@@ -357,6 +412,8 @@
   justify-content: space-between;
   align-items: flex-end;
   gap: 1rem;
+  min-width: 0;
+  flex-wrap: wrap;
   padding-top: 0.2rem;
 }
 
@@ -380,6 +437,10 @@
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .booking-payment__strikethrough {
@@ -412,6 +473,9 @@
   align-items: center;
   justify-content: center;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   min-height: 3.75rem;
   padding: 0.95rem 1.6rem;
   border-radius: 1rem;
@@ -461,8 +525,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.65rem;
+  gap: 0.4rem;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
+}
+
+.booking-payment__pay-btn-content > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: center;
+  overflow-wrap: normal;
+}
+
+.booking-payment__pay-btn-content > svg {
+  flex: 0 0 auto;
 }
 
 .booking-payment__pay-btn:hover:not(:disabled) {
@@ -533,6 +611,8 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-width: 0;
+  max-width: 100%;
   padding: 0.75rem 0.9rem;
   border-radius: 0.75rem;
   border: 1px solid rgb(255 77 106 / 35%);
@@ -621,7 +701,10 @@
 /* VIP Ticket Card */
 .booking-payment__ticket-card {
   position: relative;
-  width: min(100%, 38rem);
+  width: 100%;
+  max-width: 38rem;
+  min-width: 0;
+  box-sizing: border-box;
   margin-inline: auto;
   border-radius: 1.4rem;
   border: 1px solid rgb(191 113 255 / 32%);
@@ -650,6 +733,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  min-width: 0;
   flex-wrap: wrap;
 }
 
@@ -666,10 +750,14 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
+  flex-wrap: wrap;
   margin-top: 0.35rem;
 }
 
 .booking-payment__ticket-ref {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono, monospace);
   font-size: clamp(1.4rem, 4vw, 1.85rem);
   font-weight: 800;
@@ -736,7 +824,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  margin: 1.5rem -2.2rem;
+  width: 100%;
+  min-width: 0;
+  margin: 1.5rem 0;
 }
 
 .booking-payment__notch {
@@ -749,13 +839,11 @@
 }
 
 .booking-payment__notch--left {
-  margin-left: -0.7rem;
-  border-left: 0;
+  margin-left: 0;
 }
 
 .booking-payment__notch--right {
-  margin-right: -0.7rem;
-  border-right: 0;
+  margin-right: 0;
 }
 
 .booking-payment__notch-line {
@@ -768,14 +856,16 @@
 /* Ticket body grid */
 .booking-payment__ticket-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
   gap: 1.1rem;
+  min-width: 0;
 }
 
 .booking-payment__ticket-col {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
 }
 
 .booking-payment__meta-value {
@@ -798,6 +888,11 @@
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  box-sizing: border-box;
   margin-top: 1.5rem;
   padding: 0.65rem 1.25rem;
   border-radius: 999px;
@@ -822,6 +917,9 @@
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 0.85rem 1.8rem;
   border-radius: 0.85rem;
   font-weight: 700;
@@ -886,7 +984,10 @@
 }
 
 .booking-payment__preserved-card {
-  width: min(100%, 34rem);
+  width: 100%;
+  max-width: 34rem;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 1.35rem 1.6rem;
   border-radius: 1.1rem;
   border: 1px solid rgb(255 178 77 / 28%);
@@ -910,7 +1011,7 @@
 
 .booking-payment__preserved-details {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
 }
 
@@ -922,6 +1023,8 @@
 
 .booking-payment__preserved-details div strong {
   display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 0.88rem;
   color: #f7eefc;
   margin-top: 0.15rem;
@@ -934,7 +1037,10 @@
 }
 
 .booking-payment__retry-actions {
-  width: min(100%, 28rem);
+  width: 100%;
+  max-width: 28rem;
+  min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -1085,7 +1191,14 @@
    ========================================================================== */
 @media (max-width: 52rem) {
   .booking-payment__content-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .booking-payment__section-card--pricing {
+    padding-top: 1.5rem;
+    padding-left: 0;
+    border-top: 1px solid rgb(191 113 255 / 22%);
+    border-left: 0;
   }
 
   .booking-payment__container {
@@ -1093,7 +1206,7 @@
   }
 
   .booking-payment__ticket-divider {
-    margin-inline: -1.25rem;
+    margin-inline: 0;
   }
 }
 
@@ -1113,6 +1226,37 @@
     align-self: flex-start;
   }
 
+  .booking-payment__container {
+    padding: 1rem;
+  }
+
+  .booking-payment__detail-item {
+    align-items: flex-start;
+  }
+
+  .booking-payment__detail-label,
+  .booking-payment__detail-val {
+    flex-basis: 100%;
+  }
+
+  .booking-payment__detail-val {
+    text-align: left;
+  }
+
+  .booking-payment__price-row {
+    align-items: flex-start;
+  }
+
+  .booking-payment__price-row strong,
+  .booking-payment__discount-val {
+    margin-left: auto;
+  }
+
+  .booking-payment__total-price-wrap {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .booking-payment__preserved-details {
     grid-template-columns: 1fr;
     gap: 0.6rem;
@@ -1120,7 +1264,13 @@
 
   .booking-payment__pay-btn {
     min-height: 3.5rem;
+    padding-inline: 1rem;
     font-size: 0.96rem;
+  }
+
+  .booking-payment__processing-notice,
+  .booking-payment__action-btn {
+    width: 100%;
   }
 }
 
@@ -1137,6 +1287,10 @@
 
 .booking-payment__custom-checkout {
   display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   gap: 1rem;
   padding: 1rem;
   border: 1px solid rgb(191 113 255 / 22%);
@@ -1144,6 +1298,12 @@
   background:
     radial-gradient(circle at 100% 0, rgb(209 42 255 / 8%), transparent 48%),
     rgb(9 6 18 / 55%);
+}
+
+.booking-payment__custom-checkout .booking-payment__pay-btn {
+  padding-inline: 1rem;
+  font-size: clamp(0.82rem, 1vw, 0.94rem);
+  letter-spacing: 0.02em;
 }
 
 .booking-payment__custom-heading h3 {
@@ -1157,11 +1317,13 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
   gap: 0.45rem;
+  min-width: 0;
 }
 
 .booking-payment__method-tab {
   display: flex;
   min-width: 0;
+  max-width: 100%;
   min-height: 3.1rem;
   align-items: center;
   justify-content: center;
@@ -1176,6 +1338,11 @@
   font-size: 0.77rem;
   font-weight: 650;
   transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.booking-payment__method-tab span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .booking-payment__method-tab:hover {
@@ -1203,6 +1370,8 @@
 .booking-payment__card-fields {
   display: grid;
   gap: 0.85rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .booking-payment__card-fields {
@@ -1221,7 +1390,9 @@
 .booking-payment__custom-field input,
 .booking-payment__custom-field select {
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   min-height: 2.95rem;
   padding: 0.7rem 0.8rem;
   border: 1px solid rgb(198 164 225 / 26%);
@@ -1252,12 +1423,17 @@
   grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(4.5rem, 0.8fr);
   gap: 0.65rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .booking-payment__method-explainer {
   display: flex;
   align-items: flex-start;
   gap: 0.7rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0.85rem;
   border: 1px solid rgb(191 113 255 / 16%);
   border-radius: 0.75rem;
@@ -1271,6 +1447,8 @@
 }
 
 .booking-payment__method-explainer p {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.5;
@@ -1280,6 +1458,8 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-width: 0;
+  flex-wrap: wrap;
   margin: 0;
   color: #d8cbed;
   font-size: 0.84rem;
@@ -1302,6 +1482,9 @@
   display: grid;
   justify-items: center;
   gap: 0.65rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 1rem;
   border: 1px solid rgb(191 113 255 / 28%);
   border-radius: 0.8rem;
