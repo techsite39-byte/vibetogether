@@ -201,6 +201,82 @@ test('lists existing events and saves one idempotent booking enquiry', async () 
   assert.equal(saved.size, 1)
 })
 
+test('reloads persisted booking and attendee details without requiring offer pricing', async () => {
+  let pricingReads = 0
+  const { baseUrl, saved } = await startTestServer({
+    diwaliOfferService: {
+      async getPricing() {
+        pricingReads += 1
+        if (pricingReads > 1) {
+          throw new Error('Offer pricing service is unavailable.')
+        }
+        return {
+          regularPrice: 299,
+          offerPrice: 249,
+          diwaliOfferApplied: true,
+        }
+      },
+    },
+  })
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    eventId: events[0].id,
+    gender: 'Mixed',
+    ticketQuantity: 2,
+    maleCount: 1,
+    femaleCount: 1,
+    maleMemberNames: ['Jordan Example'],
+    femaleMemberNames: ['Mira Example'],
+  }
+  const createResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  assert.equal(createResponse.status, 201)
+  const created = await createResponse.json()
+  assert.equal(created.booking.paymentAmount, 498)
+
+  const refreshResponses = await Promise.all([
+    fetch(`${baseUrl}/api/booking-enquiries/${request.requestId}`),
+    fetch(`${baseUrl}/api/booking-enquiries/${request.requestId}`),
+  ])
+  const refreshedBookings = await Promise.all(
+    refreshResponses.map(async (response) => {
+      assert.equal(response.status, 200)
+      return (await response.json()).booking
+    }),
+  )
+
+  for (const booking of refreshedBookings) {
+    assert.equal(booking.requestId, request.requestId)
+    assert.equal(booking.name, request.name)
+    assert.equal(booking.event, events[0].title)
+    assert.equal(booking.ticketTypeName, 'General Admission')
+    assert.equal(booking.ticketQuantity, 2)
+    assert.equal(booking.paymentAmount, 498)
+    assert.deepEqual(booking.maleMemberNames, ['Jordan Example'])
+    assert.deepEqual(booking.femaleMemberNames, ['Mira Example'])
+    assert.equal(booking.paymentStatus, 'unpaid')
+  }
+  assert.equal(pricingReads, 1)
+  assert.equal(saved.size, 1)
+})
+
+test('distinguishes invalid and missing booking IDs', async () => {
+  const { baseUrl } = await startTestServer()
+  const invalidResponse = await fetch(`${baseUrl}/api/booking-enquiries/not-a-uuid`)
+  assert.equal(invalidResponse.status, 400)
+
+  const missingId = crypto.randomUUID()
+  const missingResponse = await fetch(`${baseUrl}/api/booking-enquiries/${missingId}`)
+  const payload = await missingResponse.json()
+  assert.equal(missingResponse.status, 404)
+  assert.equal(payload.message, 'Booking enquiry not found.')
+})
+
 test('stores mixed ticket counts and optional member names consistently', async () => {
   const { baseUrl, saved } = await startTestServer()
   const request = {

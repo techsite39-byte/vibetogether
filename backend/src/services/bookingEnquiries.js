@@ -262,3 +262,184 @@ export async function markBookingEnquiryDemoFailed(
     { new: true, runValidators: true },
   ).lean()
 }
+
+function latestUpiPayment(enquiry) {
+  return enquiry?.upiPayments?.at(-1) ?? null
+}
+
+function throwUpiConflict(message = 'This UPI payment cannot be submitted in its current state.') {
+  throw Object.assign(new Error(message), { status: 409 })
+}
+
+export async function submitBookingEnquiryUpiPayment(
+  requestId,
+  { utr, upiId, pricing },
+  {
+    bookingEnquiryModel = BookingEnquiry,
+    now = new Date(),
+  } = {},
+) {
+  const normalizedUtr = typeof utr === 'string' ? utr.trim().replace(/\s+/g, '').toUpperCase() : ''
+  if (!/^[A-Z0-9]{8,32}$/.test(normalizedUtr)) {
+    throw Object.assign(new Error('Enter a valid UPI transaction reference number.'), { status: 400 })
+  }
+  const existing = await bookingEnquiryModel.findOne({ requestId }).lean()
+  const previousPayment = latestUpiPayment(existing)
+  if (previousPayment?.utr === normalizedUtr) {
+    return { enquiry: existing, duplicate: true }
+  }
+  if (
+    !existing ||
+    existing.status === 'cancelled' ||
+    existing.reference ||
+    existing.paymentStatus === 'paid' ||
+    previousPayment?.status === 'Submitted for Verification' ||
+    previousPayment?.status === 'Verified' ||
+    existing.paymentOrderId ||
+    existing.paymentProvider === 'razorpay'
+  ) {
+    throwUpiConflict()
+  }
+
+  const amount = Number(pricing?.finalAmount)
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(Number(pricing?.paymentAmountPaise))) {
+    throw Object.assign(new Error('The booking amount could not be verified.'), { status: 409 })
+  }
+
+  const payment = {
+    bookingId: requestId,
+    customerId: existing.customerId ?? '',
+    eventId: existing.eventId ?? '',
+    amount,
+    upiId,
+    utr: normalizedUtr,
+    paymentMethod: 'UPI',
+    status: 'Submitted for Verification',
+    submittedAt: now,
+  }
+  try {
+    const updated = await bookingEnquiryModel.findOneAndUpdate(
+      {
+        requestId,
+        status: { $ne: 'cancelled' },
+        paymentStatus: { $in: ['unpaid', 'failed'] },
+        $and: [
+          { $or: [{ reference: { $exists: false } }, { reference: '' }] },
+          { $or: [{ paymentOrderId: { $exists: false } }, { paymentOrderId: '' }] },
+          { 'upiPayments.status': { $ne: 'Submitted for Verification' } },
+        ],
+        expiresAt: { $gt: now },
+      },
+      {
+        $push: { upiPayments: payment },
+        $set: {
+          paymentAmount: amount,
+          paymentAmountPaise: Math.round(Number(pricing.paymentAmountPaise)),
+          finalAmount: amount,
+          ticketType: pricing.ticketType,
+          ticketTypeName: pricing.ticketTypeName,
+          ticketQuantity: pricing.ticketQuantity,
+          pricePerTicket: pricing.pricePerTicket,
+          subtotal: pricing.subtotal,
+          discount: pricing.discount,
+          regularPrice: pricing.regularPrice,
+          offerPrice: pricing.offerPrice,
+          diwaliOfferApplied: Boolean(pricing.diwaliOfferApplied),
+          offerActivationAt: pricing.offerActivationAt ?? null,
+          offerExpiresAt: pricing.offerExpiresAt ?? null,
+          paymentStatus: 'processing',
+          paymentProvider: 'upi',
+          paymentFailureReason: '',
+          expiresAt: null,
+        },
+      },
+      { new: true, runValidators: true },
+    ).lean()
+    if (updated) {
+      return { enquiry: updated, duplicate: false }
+    }
+  } catch (error) {
+    if (error.code === 11000) {
+      throwUpiConflict('This UPI transaction reference has already been submitted.')
+    }
+    throw error
+  }
+
+  const latest = await bookingEnquiryModel.findOne({ requestId }).lean()
+  if (latest && latestUpiPayment(latest)?.utr === normalizedUtr) {
+    return { enquiry: latest, duplicate: true }
+  }
+  throwUpiConflict()
+}
+
+export async function verifyBookingEnquiryUpiPayment(
+  requestId,
+  { decision, rejectionReason = '', adminId = '' },
+  {
+    bookingEnquiryModel = BookingEnquiry,
+    allocateReference = nextBookingReference,
+    now = new Date(),
+  } = {},
+) {
+  if (!['approve', 'reject'].includes(decision)) {
+    throw Object.assign(new Error('Choose approve or reject for this UPI payment.'), { status: 400 })
+  }
+  if (decision === 'reject' && !rejectionReason.trim()) {
+    throw Object.assign(new Error('Provide a reason when rejecting a UPI payment.'), { status: 400 })
+  }
+
+  const existing = await bookingEnquiryModel.findOne({ requestId }).lean()
+  const payment = latestUpiPayment(existing)
+  if (
+    payment?.status === 'Verified' &&
+    existing.reference &&
+    decision === 'approve'
+  ) {
+    return { enquiry: existing, duplicate: true }
+  }
+  if (!existing || payment?.status !== 'Submitted for Verification') {
+    throwUpiConflict('This UPI payment is no longer awaiting verification.')
+  }
+
+  const reference = decision === 'approve' ? await allocateReference() : ''
+  const paymentPath = `upiPayments.${existing.upiPayments.length - 1}`
+  const updates = {
+    [`${paymentPath}.status`]: decision === 'approve' ? 'Verified' : 'Rejected',
+    [`${paymentPath}.adminVerifiedAt`]: now,
+    [`${paymentPath}.adminId`]: adminId,
+    [`${paymentPath}.rejectionReason`]: decision === 'reject' ? rejectionReason.trim() : '',
+    paymentStatus: decision === 'approve' ? 'paid' : 'failed',
+    paymentProvider: 'upi',
+    paymentFailureReason: decision === 'reject' ? 'failed' : '',
+  }
+  if (decision === 'approve') {
+    Object.assign(updates, {
+      reference,
+      status: 'confirmed',
+      paymentReference: payment.utr,
+      paidAt: now,
+      paymentVerifiedAt: now,
+      expiresAt: null,
+    })
+  }
+
+  const result = await bookingEnquiryModel.findOneAndUpdate(
+    {
+      requestId,
+      status: { $ne: 'cancelled' },
+      [`${paymentPath}.utr`]: payment.utr,
+      [`${paymentPath}.status`]: 'Submitted for Verification',
+    },
+    { $set: updates },
+    { new: true, runValidators: true },
+  ).lean()
+  if (result) {
+    return { enquiry: result, duplicate: false }
+  }
+
+  const current = await bookingEnquiryModel.findOne({ requestId }).lean()
+  if (decision === 'approve' && current?.reference && latestUpiPayment(current)?.status === 'Verified') {
+    return { enquiry: current, duplicate: true }
+  }
+  throwUpiConflict('The UPI payment changed while it was being reviewed. Refresh and retry.')
+}

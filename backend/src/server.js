@@ -7,8 +7,10 @@ import {
   findBookingEnquiryByReference,
   markBookingEnquiryDemoPaid,
   markBookingEnquiryDemoFailed,
+  submitBookingEnquiryUpiPayment,
   optOutBookingWhatsApp,
   saveBookingEnquiry,
+  verifyBookingEnquiryUpiPayment,
 } from './services/bookingEnquiries.js'
 import {
   ensureEventCatalog,
@@ -81,11 +83,16 @@ const app = createApp({
     optOutWhatsApp: optOutBookingWhatsApp,
     markDemoPaid: markBookingEnquiryDemoPaid,
     markDemoFailed: markBookingEnquiryDemoFailed,
+    submitUpiPayment: submitBookingEnquiryUpiPayment,
+    verifyUpiPayment: verifyBookingEnquiryUpiPayment,
   },
   razorpayPayments,
   razorpayConfigured: config.razorpayConfigured,
   razorpayKeyId: config.razorpayKeyId,
   razorpayWebhookSecret: config.razorpayWebhookSecret,
+  paymentProvider: config.paymentProvider,
+  upiId: config.upiId,
+  upiPayeeName: config.upiPayeeName,
   whatsappNotifications,
   whatsappWebhookConfig: {
     verifyToken: config.whatsappWebhookVerifyToken,

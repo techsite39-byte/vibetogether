@@ -18,11 +18,19 @@ import './Booking.css'
 const CURRENT_TIMESTAMP = Date.now()
 
 function getEvent(booking) {
-  return (
-    events.find((event) => event.id === booking.eventId) ??
-    booking.event ??
-    null
-  )
+  const event = events.find((item) => item.id === booking.eventId)
+  if (event) return event
+  if (booking.event && typeof booking.event === 'object') return booking.event
+  if (booking.event || booking.category) {
+    return {
+      title: booking.event || booking.category,
+      category: booking.category || '',
+      date: '',
+      time: '',
+      location: '',
+    }
+  }
+  return null
 }
 
 function getEventTimestamp(booking) {
@@ -55,6 +63,17 @@ function BookingCard({ booking, canCancel, onCancel }) {
   }
 
   const isCancelled = booking.status === 'cancelled'
+  const upiStatus = booking.upiPayment?.status
+  const paymentLabel = upiStatus === 'Submitted for Verification'
+    ? 'Awaiting verification'
+    : upiStatus === 'Rejected'
+      ? 'Payment rejected'
+      : upiStatus === 'Verified' || ['paid', 'verified'].includes(booking.paymentStatus)
+        ? 'Paid'
+        : booking.paymentStatus === 'not_required'
+          ? 'Confirmed · free'
+          : 'Awaiting payment'
+  const paymentIsPending = ['Awaiting verification', 'Awaiting payment'].includes(paymentLabel)
 
   return (
     <article className="my-booking-card glass-card">
@@ -73,30 +92,28 @@ function BookingCard({ booking, canCancel, onCancel }) {
             className={`booking-ticket__status${
               isCancelled
                 ? ' booking-ticket__status--cancelled'
-                : ' booking-ticket__status--confirmed'
+                : paymentIsPending
+                  ? ' booking-ticket__status--pending'
+                  : ' booking-ticket__status--confirmed'
             }`}
           >
-            {isCancelled
-              ? 'Cancelled'
-              : booking.paymentStatus === 'verified'
-                ? 'Paid'
-                : 'Confirmed · free'}
+              {isCancelled ? 'Cancelled' : paymentLabel}
           </span>
         </div>
         <h3>{event.title}</h3>
         <div className="my-booking-card__details">
-          <span>
+          {event.date && <span>
             <CalendarDays size={16} aria-hidden="true" />
             {formatEventDate(event.date)}
-          </span>
-          <span>
+          </span>}
+          {event.time && <span>
             <Clock3 size={16} aria-hidden="true" />
             {event.time}
-          </span>
-          <span>
+          </span>}
+          {event.location && <span>
             <MapPin size={16} aria-hidden="true" />
             {event.location}
-          </span>
+          </span>}
           <span>
             <UsersRound size={16} aria-hidden="true" />
             {booking.ticketCount}{' '}
@@ -107,13 +124,23 @@ function BookingCard({ booking, canCancel, onCancel }) {
           Reference <strong>{booking.reference}</strong>
         </p>
         <div className="my-booking-card__actions">
-          <Button
-            to={`/booking/confirmation/${encodeURIComponent(booking.reference)}`}
-            variant="outline"
-          >
-            <Ticket size={16} aria-hidden="true" />
-            View ticket
-          </Button>
+          {booking.status === 'confirmed' ? (
+            <Button
+              to={`/booking/confirmation/${encodeURIComponent(booking.reference)}`}
+              variant="outline"
+            >
+              <Ticket size={16} aria-hidden="true" />
+              View ticket
+            </Button>
+          ) : booking.requestId ? (
+            <Button
+              to={`/booking/payment/${encodeURIComponent(booking.requestId)}`}
+              variant="outline"
+            >
+              <Ticket size={16} aria-hidden="true" />
+              View payment status
+            </Button>
+          ) : null}
           {canCancel && !isCancelled && booking.paymentStatus === 'not_required' && (
             <Button
               type="button"
@@ -173,6 +200,12 @@ export default function MyBookings() {
       getEventTimestamp(booking) < CURRENT_TIMESTAMP,
   )
   const cancelled = bookings.filter((booking) => booking.status === 'cancelled')
+  const awaitingPayment = bookings.filter(
+    (booking) =>
+      booking.status === 'pending' &&
+      booking.paymentStatus !== 'not_required' &&
+      booking.paymentStatus !== 'paid',
+  )
 
   async function cancelBooking(reference) {
     setActionError('')
@@ -264,6 +297,12 @@ export default function MyBookings() {
         {loading && <p role="status">Loading your saved bookings…</p>}
         {!loading && (
           <>
+        {awaitingPayment.length > 0 &&
+          renderGroup(
+            'Payments awaiting confirmation',
+            'Your booking will be confirmed only after the payment is verified.',
+            awaitingPayment,
+          )}
         {renderGroup(
           'Upcoming bookings',
           'The next experiences on your calendar.',

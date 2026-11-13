@@ -464,6 +464,7 @@ function cleanPlatformSettings(value) {
 function bookingFromEnquiry(enquiry) {
   return {
     id: enquiry.requestId,
+    requestId: enquiry.requestId,
     reference: enquiry.reference ?? '',
     customer: enquiry.name,
     customerEmail: enquiry.email ?? '',
@@ -480,6 +481,7 @@ function bookingFromEnquiry(enquiry) {
     femaleCount: enquiry.femaleCount ?? (enquiry.gender === 'Female' ? (enquiry.ticketQuantity ?? 1) : 0),
     maleMemberNames: enquiry.maleMemberNames ?? [],
     femaleMemberNames: enquiry.femaleMemberNames ?? [],
+    gender: enquiry.gender,
     pricePerTicket: enquiry.pricePerTicket ?? enquiry.regularPrice ?? 299,
     subtotal: enquiry.subtotal ?? enquiry.regularPrice ?? 299,
     discount: enquiry.discount ?? 0,
@@ -487,6 +489,8 @@ function bookingFromEnquiry(enquiry) {
     createdAt: enquiry.createdAt,
     amount: enquiry.paymentAmount ?? 299,
     paymentAmountPaise: enquiry.paymentAmountPaise ?? (enquiry.paymentAmount ?? 299) * 100,
+    customerId: enquiry.customerId ?? '',
+    upiPayments: enquiry.upiPayments ?? [],
     regularPrice: enquiry.regularPrice ?? 299,
     offerPrice: enquiry.offerPrice ?? 249,
     diwaliOfferApplied: Boolean(enquiry.diwaliOfferApplied),
@@ -514,16 +518,20 @@ function bookingFromEnquiry(enquiry) {
   }
 }
 
+export function mergeBookingRecords(bookings, enquiries) {
+  return [
+    ...bookings.map((item) => ({ ...jsonRecord(item), source: 'booking' })),
+    ...enquiries.map(bookingFromEnquiry),
+  ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+}
+
 async function listBookings(request) {
   const { page, pageSize } = parsePage(request)
   const [bookings, enquiries] = await Promise.all([
     Booking.find({}).sort({ createdAt: -1 }).lean(),
     BookingEnquiry.find({}).sort({ createdAt: -1 }).lean(),
   ])
-  let items = [
-    ...bookings.map(jsonRecord),
-    ...enquiries.filter((enquiry) => Boolean(enquiry.reference)).map(bookingFromEnquiry),
-  ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  let items = mergeBookingRecords(bookings, enquiries)
   const status = typeof request.query.status === 'string'
     ? request.query.status.trim()
     : ''
@@ -601,10 +609,7 @@ async function getWorkspace({ diwaliOfferService } = {}) {
     users: users.map(jsonRecord),
     organizers: organizers.map(jsonRecord),
     events: events.map(jsonRecord),
-    bookings: [
-      ...bookings.map((item) => ({ ...jsonRecord(item), source: 'booking' })),
-      ...bookingEnquiries.filter((enquiry) => Boolean(enquiry.reference)).map(bookingFromEnquiry),
-    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    bookings: mergeBookingRecords(bookings, bookingEnquiries),
     categories: categories.map(jsonRecord),
     testimonials: testimonials.map(jsonRecord),
     subscribers: subscribers.map(jsonRecord),
@@ -743,6 +748,52 @@ export function createAdminRouter({
   router.get('/bookings', async (request, response, next) => {
     try {
       response.json(await listBookings(request))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/upi-payments/:requestId/decision', async (request, response, next) => {
+    const { requestId } = request.params
+    const { decision, rejectionReason = '' } = request.body ?? {}
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId) ||
+      !['approve', 'reject'].includes(decision) ||
+      typeof rejectionReason !== 'string' ||
+      rejectionReason.length > 500
+    ) {
+      response.status(400).json({ message: 'Provide a valid UPI payment decision and rejection reason.' })
+      return
+    }
+
+    try {
+      const result = await bookingEnquiryRepository?.verifyUpiPayment?.(requestId, {
+        decision,
+        rejectionReason,
+        adminId: request.admin.id,
+      })
+      if (!result) {
+        response.status(404).json({ message: 'The UPI payment could not be found or reviewed.' })
+        return
+      }
+      if (!result.duplicate) {
+        await writeAudit(
+          request,
+          `UPI payment ${decision === 'approve' ? 'verified' : 'rejected'}`,
+          'upi-payment',
+          requestId,
+          decision === 'approve'
+            ? `UPI payment verified for booking ${result.enquiry.reference}.`
+            : `UPI payment rejected for booking request ${requestId}.`,
+        )
+      }
+      response.json({
+        message: decision === 'approve'
+          ? 'UPI payment verified and booking confirmed.'
+          : 'UPI payment rejected.',
+        duplicate: Boolean(result.duplicate),
+        item: bookingFromEnquiry(result.enquiry),
+      })
     } catch (error) {
       next(error)
     }

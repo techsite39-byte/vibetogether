@@ -275,6 +275,9 @@ export function createBookingEnquiriesRouter({
   repository,
   razorpayPayments,
   razorpayConfigured = false,
+  paymentProvider = 'razorpay',
+  upiId = 'vinothinimoorthi37-1@okhdfcbank',
+  upiPayeeName = 'Vinothini Moorthi',
   diwaliOfferService,
   whatsappNotifications,
 }) {
@@ -286,6 +289,9 @@ export function createBookingEnquiriesRouter({
     typeof repository.markDemoFailed !== 'function'
   ) {
     throw new Error('A booking enquiry repository is required.')
+  }
+  if (paymentProvider === 'upi' && typeof repository.submitUpiPayment !== 'function') {
+    throw new Error('The UPI payment repository operation is required when UPI is enabled.')
   }
 
   const router = Router()
@@ -335,6 +341,7 @@ export function createBookingEnquiriesRouter({
       offerActivationAt: pricing?.offerActivationAt ?? enquiry.offerActivationAt ?? null,
       offerExpiresAt: pricing?.offerExpiresAt ?? enquiry.offerExpiresAt ?? null,
       paymentProvider: enquiry.paymentProvider ?? '',
+      paymentProviderMode: paymentProvider,
       paymentReference: enquiry.paymentReference ?? '',
       paymentOrderId: enquiry.paymentOrderId ?? '',
       razorpayPaymentId: enquiry.razorpayPaymentId ?? '',
@@ -343,7 +350,21 @@ export function createBookingEnquiriesRouter({
       paymentFailureReason: enquiry.paymentFailureReason ?? '',
       paymentAttemptedAt: enquiry.paymentAttemptedAt ?? null,
       whatsappConsent: Boolean(enquiry.whatsappConsent),
-      razorpayConfigured,
+      razorpayConfigured: paymentProvider === 'razorpay' && razorpayConfigured,
+      upiId,
+      upiPayeeName,
+      upiPayment: enquiry.upiPayments?.at(-1)
+        ? {
+            amount: enquiry.upiPayments.at(-1).amount,
+            upiId: enquiry.upiPayments.at(-1).upiId,
+            utr: enquiry.upiPayments.at(-1).utr,
+            paymentMethod: enquiry.upiPayments.at(-1).paymentMethod,
+            status: enquiry.upiPayments.at(-1).status,
+            submittedAt: enquiry.upiPayments.at(-1).submittedAt,
+            adminVerifiedAt: enquiry.upiPayments.at(-1).adminVerifiedAt,
+            rejectionReason: enquiry.upiPayments.at(-1).rejectionReason,
+          }
+        : null,
       whatsappConsentAt: enquiry.whatsappConsentAt ?? null,
       whatsappOptedOutAt: enquiry.whatsappOptedOutAt ?? null,
       whatsappNotification: {
@@ -355,6 +376,33 @@ export function createBookingEnquiriesRouter({
         sentAt: enquiry.whatsappNotification?.sentAt ?? null,
         deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
       },
+    }
+  }
+
+  function getStoredPricing(enquiry) {
+    const ticketQuantity = enquiry.ticketQuantity ?? 1
+    const regularPrice = enquiry.regularPrice ?? DIWALI_REGULAR_PRICE
+    const finalAmount =
+      enquiry.paymentAmount ?? enquiry.finalAmount ?? regularPrice * ticketQuantity
+    return {
+      regularPrice,
+      offerPrice: enquiry.offerPrice ?? DIWALI_OFFER_PRICE,
+      diwaliOfferApplied: Boolean(enquiry.diwaliOfferApplied),
+      offerActivationAt: enquiry.offerActivationAt ?? null,
+      offerExpiresAt: enquiry.offerExpiresAt ?? null,
+      ticketType: enquiry.ticketType ?? DEFAULT_TICKET_TYPE,
+      ticketTypeName:
+        enquiry.ticketTypeName ??
+        BOOKING_TICKET_TYPES.find(({ id }) => id === enquiry.ticketType)?.name ??
+        'General Admission',
+      ticketQuantity,
+      pricePerTicket: enquiry.pricePerTicket ?? regularPrice,
+      subtotal: enquiry.subtotal ?? regularPrice * ticketQuantity,
+      discount: enquiry.discount ?? 0,
+      finalAmount,
+      paymentAmount: finalAmount,
+      paymentAmountPaise:
+        enquiry.paymentAmountPaise ?? Math.round(finalAmount * 100),
     }
   }
 
@@ -374,7 +422,8 @@ export function createBookingEnquiriesRouter({
       enquiry &&
       (
         (enquiry.paymentOrderId && enquiry.paymentStatus !== 'failed') ||
-        ['paid', 'demo_paid'].includes(enquiry.paymentStatus)
+        ['paid', 'demo_paid'].includes(enquiry.paymentStatus) ||
+        ['Submitted for Verification', 'Verified'].includes(enquiry.upiPayments?.at(-1)?.status)
       )
     ) {
       return null
@@ -421,7 +470,7 @@ export function createBookingEnquiriesRouter({
         duplicate: result.duplicate,
         booking: serializeEnquiry(
           result.enquiry,
-          await getCurrentPricing(result.enquiry) ?? pricing,
+          getStoredPricing(result.enquiry),
         ),
       })
     } catch (error) {
@@ -463,13 +512,67 @@ export function createBookingEnquiriesRouter({
         await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
         enquiry = await getUpdatedEnquiry(requestId, enquiry)
       }
-      const pricing = await getCurrentPricing(enquiry)
+      let pricing = getStoredPricing(enquiry)
+      if (enquiry.paymentStatus === 'failed' && enquiry.paymentProvider !== 'upi') {
+        try {
+          pricing = await getCurrentPricing(enquiry) ?? pricing
+        } catch (error) {
+          console.error('Booking retry pricing refresh failed.', {
+            name: error?.name ?? 'UnknownError',
+            code: error?.code ?? '',
+          })
+        }
+      }
       response.set('Cache-Control', 'no-store')
-      response.json({ booking: serializeEnquiry(enquiry, pricing) })
-    } catch {
-      console.error('Booking enquiry lookup failed.')
+      response.json({
+        booking: serializeEnquiry(enquiry, pricing),
+      })
+    } catch (error) {
+      console.error('Booking enquiry lookup failed.', {
+        name: error?.name ?? 'UnknownError',
+        code: error?.code ?? '',
+      })
       response.status(503).json({
         message: 'Booking details are temporarily unavailable. Please try again.',
+      })
+    }
+  })
+
+  router.post('/:requestId/upi-payment', rateLimit, async (request, response) => {
+    const { requestId } = request.params
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+    if (typeof repository.submitUpiPayment !== 'function') {
+      response.status(503).json({ message: 'UPI payment submission is not available on this booking server.' })
+      return
+    }
+    if (typeof request.body?.utr !== 'string') {
+      response.status(400).json({ message: 'Enter the UPI transaction reference number.' })
+      return
+    }
+
+    try {
+      const enquiry = await repository.findByRequestId(requestId)
+      if (!enquiry) {
+        response.status(404).json({ message: 'Booking enquiry not found.' })
+        return
+      }
+      const pricing = getStoredPricing(enquiry)
+      const result = await repository.submitUpiPayment(requestId, {
+        utr: request.body.utr,
+        upiId,
+        pricing,
+      })
+      response.status(200).json({
+        message: 'Payment details submitted for verification.',
+        duplicate: Boolean(result.duplicate),
+        booking: serializeEnquiry(result.enquiry),
+      })
+    } catch (error) {
+      response.status(error.status ?? 503).json({
+        message: error.message || 'UPI payment details could not be submitted. Please try again.',
       })
     }
   })
@@ -499,7 +602,7 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (process.env.NODE_ENV === 'production' || razorpayConfigured) {
+    if (process.env.NODE_ENV === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
       response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
       return
     }
@@ -536,7 +639,7 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (!razorpayConfigured || typeof razorpayPayments?.createOrder !== 'function') {
+    if (paymentProvider !== 'razorpay' || !razorpayConfigured || typeof razorpayPayments?.createOrder !== 'function') {
       response.status(503).json({ message: 'Razorpay Checkout is not configured on the booking server.' })
       return
     }
@@ -567,6 +670,10 @@ export function createBookingEnquiriesRouter({
     const { requestId } = request.params
     if (!requestIdPattern.test(requestId)) {
       response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+    if (paymentProvider !== 'razorpay') {
+      response.status(409).json({ message: 'Razorpay payments are not currently enabled.' })
       return
     }
     const fields = request.body
@@ -616,6 +723,10 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
+    if (paymentProvider !== 'razorpay') {
+      response.status(409).json({ message: 'Razorpay payments are not currently enabled.' })
+      return
+    }
     try {
       const result = await razorpayPayments?.checkStatus?.(requestId)
       if (!result) {
@@ -645,6 +756,10 @@ export function createBookingEnquiriesRouter({
     const { orderId, paymentId = '', outcome = 'failed' } = request.body ?? {}
     if (!requestIdPattern.test(requestId) || typeof orderId !== 'string' || !orderId) {
       response.status(400).json({ message: 'A valid booking and Razorpay order are required.' })
+      return
+    }
+    if (paymentProvider !== 'razorpay') {
+      response.status(409).json({ message: 'Razorpay payments are not currently enabled.' })
       return
     }
     if (paymentId && typeof paymentId !== 'string') {
@@ -689,7 +804,7 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (process.env.NODE_ENV === 'production' || razorpayConfigured) {
+    if (process.env.NODE_ENV === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
       response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
       return
     }

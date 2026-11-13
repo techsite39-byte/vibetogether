@@ -1,0 +1,230 @@
+.upi-payment {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.upi-payment__qr-panel {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  text-align: center;
+}
+
+.upi-payment__qr-card {
+  width: min(100%, 300px);
+  box-sizing: border-box;
+  padding: 0.65rem;
+  border: 1px solid rgb(180 110 255 / 28%);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 0 28px rgb(195 75 255 / 22%);
+}
+
+.upi-payment__qr-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.upi-payment__qr-unavailable,
+.upi-payment__rejected {
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.8rem;
+  border: 1px solid rgb(255 77 106 / 35%);
+  border-radius: 0.75rem;
+  color: #ffd5d5;
+  background: rgb(255 77 106 / 9%);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.upi-payment__payee {
+  margin: 0.2rem 0 0;
+  color: #c9bdd8;
+}
+
+.upi-payment__payee strong,
+.upi-payment__upi-id strong {
+  color: #fff;
+}
+
+.upi-payment__upi-id {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.55rem 0.8rem;
+  min-width: 0;
+  color: #eee3fb;
+  overflow-wrap: anywhere;
+}
+
+.upi-payment__upi-id button,
+.upi-payment__download,
+.upi-payment__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgb(206 143 255 / 48%);
+  border-radius: 0.7rem;
+  color: #fff;
+  background: rgb(157 68 230 / 22%);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.upi-payment__upi-id button:hover,
+.upi-payment__download:hover,
+.upi-payment__button:hover {
+  transform: translateY(-1px);
+  background: rgb(157 68 230 / 38%);
+}
+
+.upi-payment__upi-id button:focus-visible,
+.upi-payment__download:focus-visible,
+.upi-payment__button:focus-visible,
+.upi-payment__utr-form input:focus-visible {
+  outline: 3px solid #e7c7ff;
+  outline-offset: 3px;
+}
+
+.upi-payment__download {
+  min-height: 2rem;
+  padding: 0.3rem 0.6rem;
+  color: #e7c7ff;
+  background: transparent;
+}
+
+.upi-payment__scan-instruction {
+  margin: 0;
+  color: #d2c7df;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.upi-payment__launch {
+  width: min(100%, 420px);
+  min-height: 3.5rem;
+  margin-top: 0.2rem;
+  border-color: transparent;
+  background: linear-gradient(110deg, #812bca, #c33ee5);
+  box-shadow: 0 0 25px rgb(195 75 255 / 25%);
+  text-align: center;
+}
+
+.upi-payment__launch-note {
+  max-width: 34rem;
+  margin: 0;
+  color: #aa9bb9;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.upi-payment__paid-button {
+  width: 100%;
+}
+
+.upi-payment__utr-form {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.upi-payment__utr-form label {
+  color: #f0e5fb;
+  font-weight: 700;
+}
+
+.upi-payment__utr-form input {
+  width: 100%;
+  min-height: 3rem;
+  box-sizing: border-box;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgb(180 110 255 / 36%);
+  border-radius: 0.7rem;
+  color: #fff;
+  background: rgb(5 3 12 / 65%);
+  font: inherit;
+}
+
+.upi-payment__utr-form .upi-payment__button {
+  width: 100%;
+  border-color: transparent;
+  background: linear-gradient(110deg, #812bca, #c33ee5);
+}
+
+.upi-payment__notice,
+.upi-payment__error {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.7rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.upi-payment__notice {
+  color: #c8ffdf;
+  background: rgb(56 239 125 / 9%);
+}
+
+.upi-payment__error {
+  color: #ffd5d5;
+  background: rgb(255 72 92 / 9%);
+}
+
+.upi-payment__storage-warning {
+  margin: 0;
+  color: #ffefc9;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.upi-payment__submitted {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem;
+  border: 1px solid rgb(180 110 255 / 24%);
+  border-radius: 0.85rem;
+  background: rgb(255 255 255 / 3%);
+}
+
+.upi-payment__submitted h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.upi-payment__submitted p {
+  margin: 0;
+  color: #d2c7df;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.upi-payment__submitted p strong {
+  color: #fff;
+}
+
+.upi-payment__button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.upi-payment__button--secondary {
+  background: transparent;
+}

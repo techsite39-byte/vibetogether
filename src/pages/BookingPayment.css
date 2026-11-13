@@ -10,7 +10,7 @@
   min-height: 100dvh;
   box-sizing: border-box;
   overflow-x: clip;
-  padding: clamp(2rem, 5vw, 4.5rem) 1rem clamp(3rem, 6vw, 5.5rem);
+  padding: clamp(2rem, 5vw, 4.5rem) clamp(0.75rem, 3vw, 2rem) clamp(3rem, 6vw, 5.5rem);
   background:
     radial-gradient(ellipse 90% 60% at 50% -10%, rgb(119 59 255 / 18%), transparent 65%),
     radial-gradient(circle 600px at 85% 80%, rgb(209 42 255 / 10%), transparent 70%),
@@ -52,7 +52,7 @@
 /* Container */
 .booking-payment__container {
   width: 100%;
-  max-width: 1100px;
+  max-width: 1280px;
   min-width: 0;
   box-sizing: border-box;
   margin-left: auto;
@@ -157,7 +157,10 @@
 
 /* Hero Section */
 .booking-payment__hero {
+  max-width: 62rem;
+  margin-inline: auto;
   margin-bottom: clamp(1.75rem, 4vw, 2.5rem);
+  text-align: center;
 }
 
 .booking-payment__pill-tag {
@@ -175,6 +178,7 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   margin-bottom: 0.85rem;
+  margin-inline: auto;
 }
 
 .booking-payment__pill-tag--success {
@@ -204,7 +208,7 @@
 
 .booking-payment__subtitle {
   max-width: 58ch;
-  margin: 0.75rem 0 0;
+  margin: 0.75rem auto 0;
   color: #cbbad9;
   font-size: clamp(0.9rem, 2vw, 1rem);
   line-height: 1.6;
@@ -213,7 +217,7 @@
 /* Two-column layout on desktop */
 .booking-payment__content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: clamp(1.25rem, 3vw, 2rem);
   align-items: stretch;
   width: 100%;
@@ -249,6 +253,8 @@
   align-items: center;
   gap: 0.85rem;
   min-width: 0;
+  min-height: 4rem;
+  box-sizing: border-box;
   padding-bottom: 1.1rem;
   border-bottom: 1px solid rgb(255 255 255 / 8%);
   margin-bottom: 1.2rem;
@@ -1191,14 +1197,12 @@
    ========================================================================== */
 @media (max-width: 52rem) {
   .booking-payment__content-grid {
-    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1rem;
   }
 
   .booking-payment__section-card--pricing {
-    padding-top: 1.5rem;
-    padding-left: 0;
-    border-top: 1px solid rgb(191 113 255 / 22%);
-    border-left: 0;
+    padding-left: 0.75rem;
   }
 
   .booking-payment__container {
@@ -1210,6 +1214,19 @@
   }
 }
 
+@media (max-width: 47.99rem) {
+  .booking-payment__content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .booking-payment__section-card--pricing {
+    padding-top: 1.5rem;
+    padding-left: 0;
+    border-top: 1px solid rgb(191 113 255 / 22%);
+    border-left: 0;
+  }
+}
+
 @media (max-width: 34rem) {
   .booking-payment {
     padding-inline: 0.6rem;
@@ -1218,15 +1235,25 @@
 
   .booking-payment__topbar {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 0.75rem;
   }
 
   .booking-payment__security-pill {
-    align-self: flex-start;
+    align-self: center;
   }
 
   .booking-payment__container {
+    padding: 1rem;
+  }
+
+  .booking-payment h1 {
+    font-size: clamp(1.5rem, 7vw, 1.8rem);
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+
+  .booking-payment__content-grid {
     padding: 1rem;
   }
 
@@ -1288,7 +1315,8 @@
 .booking-payment__custom-checkout {
   display: grid;
   width: 100%;
-  max-width: 100%;
+  max-width: 34rem;
+  justify-self: center;
   min-width: 0;
   box-sizing: border-box;
   gap: 1rem;
@@ -1400,7 +1428,7 @@
   background: rgb(14 10 26 / 92%);
   color: #fff;
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 1rem;
 }
 
 .booking-payment__custom-field select {
@@ -1482,6 +1510,8 @@
   display: grid;
   justify-items: center;
   gap: 0.65rem;
+  width: min(100%, 21rem);
+  justify-self: center;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;

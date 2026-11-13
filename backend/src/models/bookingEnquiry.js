@@ -268,6 +268,40 @@ const bookingEnquirySchema = new mongoose.Schema(
       }],
       default: [],
     },
+    customerId: {
+      type: String,
+      trim: true,
+      maxlength: 80,
+      default: '',
+    },
+    upiPayments: {
+      type: [{
+        bookingId: { type: String, required: true, maxlength: 80 },
+        customerId: { type: String, trim: true, maxlength: 80, default: '' },
+        eventId: { type: String, trim: true, maxlength: 80, default: '' },
+        amount: { type: Number, required: true, min: 0.01 },
+        upiId: { type: String, required: true, trim: true, maxlength: 120 },
+        utr: { type: String, required: true, trim: true, uppercase: true, maxlength: 32 },
+        paymentMethod: { type: String, enum: ['UPI'], required: true, default: 'UPI' },
+        status: {
+          type: String,
+          enum: [
+            'Pending Payment',
+            'Submitted for Verification',
+            'Verified',
+            'Rejected',
+            'Refunded',
+          ],
+          required: true,
+          default: 'Submitted for Verification',
+        },
+        submittedAt: { type: Date, required: true },
+        adminVerifiedAt: { type: Date, default: null },
+        adminId: { type: String, trim: true, maxlength: 80, default: '' },
+        rejectionReason: { type: String, trim: true, maxlength: 500, default: '' },
+      }],
+      default: [],
+    },
     regularPrice: {
       type: Number,
       min: 0,
@@ -292,7 +326,7 @@ const bookingEnquirySchema = new mongoose.Schema(
     },
     paymentProvider: {
       type: String,
-      enum: ['razorpay_demo', 'razorpay'],
+      enum: ['razorpay_demo', 'razorpay', 'upi'],
       default: null,
     },
     paymentReference: {
@@ -359,6 +393,7 @@ bookingEnquirySchema.index({ requestId: 1 }, { unique: true, sparse: true })
 bookingEnquirySchema.index({ reference: 1 }, { unique: true, sparse: true })
 bookingEnquirySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 bookingEnquirySchema.index({ 'whatsappNotification.providerMessageId': 1 }, { sparse: true })
+bookingEnquirySchema.index({ 'upiPayments.utr': 1 }, { unique: true, sparse: true })
 
 export const BookingEnquiry =
   mongoose.models.BookingEnquiry ??

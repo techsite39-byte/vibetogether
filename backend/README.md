@@ -111,6 +111,28 @@ permanent reference. Never prefix or expose any Razorpay secret to Vite.
 Without the key ID and key secret, the page uses the explicit demo simulator;
 it does not charge money.
 
+Select the active payment method on the API with `PAYMENT_PROVIDER=upi` or
+`PAYMENT_PROVIDER=razorpay`. The API defaults to `razorpay` to preserve the
+existing checkout configuration; changing this server variable requires an
+API restart/redeploy, not a frontend rebuild. In UPI mode, `UPI_ID` and
+`UPI_PAYEE_NAME` are public receiving-account details (defaults are the UPI
+details supplied for this integration). The Render Blueprint selects `upi`
+temporarily; change it to `razorpay` after merchant verification. Keep all
+Razorpay keys server-only.
+UPI submissions are also accepted in Razorpay mode when the booking has no
+Razorpay order or provider attached. Bookings with an existing Razorpay
+payment remain locked to that provider to prevent duplicate payment attempts.
+The payment page uses the existing booking layout and shows UPI for eligible
+unpaid bookings.
+
+UPI payments reuse the saved booking enquiry. Customers submit only their UTR;
+the API calculates and records the amount from the saved server-side pricing.
+The booking remains pending and no permanent reference/ticket is issued until
+an authenticated admin verifies the actual credit in the receiving bank
+account. UTRs are unique across submissions. Admins can review and decide
+payments under **Admin → Booking management → UPI payments awaiting
+verification**; rejection requires a reason.
+
 Razorpay webhook endpoint:
 `https://vibetogether-ahgy.onrender.com/api/razorpay/webhook`
 
@@ -235,7 +257,13 @@ deployment instead of appearing healthy with unavailable data APIs.
   optional `email`, `mobile`, `categoryId` or `eventId`, `gender`, and a UUID
   `requestId`. Temporary sessions have no reference and expire after seven days.
 - `GET /api/booking-enquiries/:requestId` returns the saved enquiry summary for
-  the payment page. `POST /api/booking-enquiries/:requestId/razorpay-order`
+  the payment page. In UPI mode, `POST
+  /api/booking-enquiries/:requestId/upi-payment` accepts a transaction
+  reference only and records a pending verification against that same enquiry.
+  Authenticated `POST /api/admin/upi-payments/:requestId/decision` verifies or
+  rejects a UPI submission; approval is the only UPI path that confirms the
+  booking and allocates its ticket reference.
+  `POST /api/booking-enquiries/:requestId/razorpay-order`
   creates or reuses a server-priced order; `POST
   /api/booking-enquiries/:requestId/verify-payment` verifies checkout
   signatures and captured status before finalizing. When Razorpay is not

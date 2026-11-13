@@ -505,6 +505,12 @@
   color: var(--color-cyan);
 }
 
+.booking-ticket__status--pending {
+  border-color: rgb(255 195 88 / 42%);
+  background: rgb(255 195 88 / 8%);
+  color: #ffda9a;
+}
+
 .booking-ticket__status--cancelled {
   border-color: rgb(209 42 255 / 42%);
   background: rgb(209 42 255 / 8%);

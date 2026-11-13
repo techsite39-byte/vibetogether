@@ -196,3 +196,10 @@ export async function retryWhatsAppNotification(reference) {
     method: 'POST',
   })
 }
+
+export async function verifyUpiPayment(requestId, decision, rejectionReason = '') {
+  return adminRequest(`/admin/upi-payments/${encodeURIComponent(requestId)}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, rejectionReason }),
+  })
+}

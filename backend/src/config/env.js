@@ -127,6 +127,15 @@ const razorpayKeyId = process.env.RAZORPAY_KEY_ID?.trim() ?? ''
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET?.trim() ?? ''
 const razorpayWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim() ?? ''
 const razorpayConfigured = Boolean(razorpayKeyId && razorpayKeySecret)
+const paymentProvider = (process.env.PAYMENT_PROVIDER ?? 'razorpay').trim().toLowerCase()
+if (!['upi', 'razorpay'].includes(paymentProvider)) {
+  throw new Error('PAYMENT_PROVIDER must be either upi or razorpay.')
+}
+const upiId = process.env.UPI_ID?.trim() ?? 'vinothinimoorthi37-1@okhdfcbank'
+const upiPayeeName = process.env.UPI_PAYEE_NAME?.trim() ?? 'Vinothini Moorthi'
+if (!/^[\w.-]+@[\w.-]+$/.test(upiId) || !upiPayeeName || upiPayeeName.length > 120) {
+  throw new Error('UPI_ID and UPI_PAYEE_NAME must contain valid public payment details.')
+}
 const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ?? ''
 const whatsappAccessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim() ?? ''
 const whatsappApiVersion = process.env.WHATSAPP_API_VERSION?.trim() ?? ''
@@ -169,6 +178,9 @@ export const config = Object.freeze({
   razorpayKeyId,
   razorpayKeySecret,
   razorpayWebhookSecret,
+  paymentProvider,
+  upiId,
+  upiPayeeName,
   whatsappPhoneNumberId,
   whatsappAccessToken,
   whatsappApiVersion,

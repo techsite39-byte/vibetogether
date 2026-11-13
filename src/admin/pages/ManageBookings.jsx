@@ -10,7 +10,7 @@ import {
 } from '../components/AdminUI.jsx'
 import { useAdminData } from '../context/useAdminData.js'
 import { getWhatsAppNotificationPreview } from '../../utils/whatsappNotificationPreview.js'
-import { retryWhatsAppNotification } from '../services/adminApi.js'
+import { retryWhatsAppNotification, verifyUpiPayment } from '../services/adminApi.js'
 
 function formatAmount(amount, currency) {
   try {
@@ -127,10 +127,12 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
   }
 
   return (
-    <AdminDialog onClose={onClose} title={`Booking ${currentBooking.reference}`}>
+    <AdminDialog onClose={onClose} title={`Booking ${currentBooking.reference || currentBooking.requestId || currentBooking.id}`}>
       <div className="admin-profile">
         <p>Booking information saved by the platform.</p>
         <dl>
+          <div><dt>Booking reference</dt><dd>{currentBooking.reference || 'Awaiting payment'}</dd></div>
+          {!currentBooking.reference && <div><dt>Request ID</dt><dd>{currentBooking.requestId || currentBooking.id}</dd></div>}
           <div><dt>Customer</dt><dd>{currentBooking.customer}</dd></div>
           <div><dt>Email</dt><dd>{currentBooking.customerEmail || '—'}</dd></div>
           <div><dt>Mobile</dt><dd>{currentBooking.mobile || '—'}</dd></div>
@@ -161,6 +163,20 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Diwali offer</dt><dd>{currentBooking.diwaliOfferApplied ? `Applied · saved ${formatAmount(currentBooking.discount ?? (currentBooking.regularPrice ?? 299) - currentBooking.amount, currentBooking.currency)}` : 'Not applied'}</dd></div>
           <div><dt>Payment status</dt><dd><StatusBadge status={currentBooking.paymentStatus}>{formatPaymentStatus(currentBooking.paymentStatus)}</StatusBadge></dd></div>
           <div><dt>Payment provider</dt><dd>{currentBooking.paymentProvider || '—'}</dd></div>
+          {currentBooking.upiPayments?.map((payment, index) => (
+            <div key={`${payment.utr}-${index}`}>
+              <dt>UPI submission {index + 1}</dt>
+              <dd>
+                <span style={{ display: 'block' }}>UTR: {payment.utr}</span>
+                <span style={{ display: 'block' }}>Payee UPI ID: {payment.upiId}</span>
+                <span style={{ display: 'block' }}>Amount: {formatAmount(payment.amount, currentBooking.currency)}</span>
+                <span style={{ display: 'block' }}>Status: {payment.status}</span>
+                <span style={{ display: 'block' }}>Submitted: {formatBookingDate(payment.submittedAt)}</span>
+                <span style={{ display: 'block' }}>Verified/rejected: {formatBookingDate(payment.adminVerifiedAt)}</span>
+                {payment.rejectionReason && <span style={{ display: 'block' }}>Rejection reason: {payment.rejectionReason}</span>}
+              </dd>
+            </div>
+          ))}
           <div><dt>Razorpay order ID</dt><dd>{currentBooking.paymentOrderId || '—'}</dd></div>
           <div><dt>Razorpay payment ID</dt><dd>{currentBooking.razorpayPaymentId || '—'}</dd></div>
           <div><dt>Payment reference</dt><dd>{currentBooking.paymentReference || '—'}</dd></div>
@@ -223,7 +239,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
 }
 
 export default function ManageBookings() {
-  const { bookings, events, organizers, storageError, updateBooking } = useAdminData()
+  const { bookings, events, organizers, storageError, updateBooking, reload } = useAdminData()
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [paymentStatus, setPaymentStatus] = useState('all')
@@ -243,7 +259,7 @@ export default function ManageBookings() {
         const event = events.find((item) => item.id === booking.eventId)
         const organizer = organizers.find((item) => item.id === booking.organizerId)
         return [
-          booking.reference,
+          booking.reference || booking.requestId || booking.id,
           booking.customer,
           booking.customerEmail,
           booking.category,
@@ -255,6 +271,37 @@ export default function ManageBookings() {
       })
       .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt))
   }, [bookings, events, organizers, paymentStatus, query, status])
+  const pendingUpiPayments = useMemo(
+    () => bookings.flatMap((booking) =>
+      (booking.upiPayments ?? [])
+        .filter((payment) => payment.status === 'Submitted for Verification')
+        .map((payment) => ({ booking, payment })),
+    ),
+    [bookings],
+  )
+
+  async function decideUpiPayment(booking, decision) {
+    let rejectionReason = ''
+    if (decision === 'approve') {
+      if (!window.confirm('Confirm that you checked the receiving bank account and matched the actual credited amount and UTR before approving this payment.')) {
+        return
+      }
+    } else {
+      rejectionReason = window.prompt('Enter the reason for rejecting this UPI payment:')?.trim() ?? ''
+      if (!rejectionReason) {
+        setActionError('A rejection reason is required.')
+        return
+      }
+    }
+
+    setActionError('')
+    try {
+      await verifyUpiPayment(booking.requestId, decision, rejectionReason)
+      await reload()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'The UPI payment decision could not be saved.')
+    }
+  }
 
   function exportCsv() {
     const rows = [
@@ -294,12 +341,13 @@ export default function ManageBookings() {
   }
 
   async function cancel(booking) {
+    const bookingIdentifier = booking.reference || booking.requestId || booking.id
     const hasVerifiedPayment = ['verified', 'paid'].includes(booking.paymentStatus)
     const message = hasVerifiedPayment
-      ? `Cancel ${booking.reference}? The payment service must handle a verified payment refund.`
+      ? `Cancel ${bookingIdentifier}? The payment service must handle a verified payment refund.`
       : booking.paymentStatus === 'demo_paid'
-        ? `Cancel booking ${booking.reference}? This was a demo payment and no real money was collected.`
-        : `Cancel booking ${booking.reference}?`
+        ? `Cancel booking ${bookingIdentifier}? This was a demo payment and no real money was collected.`
+        : `Cancel booking ${bookingIdentifier}?`
     if (!window.confirm(message)) {
       return
     }
@@ -308,7 +356,7 @@ export default function ManageBookings() {
       setActionError('Bookings with verified real payments must be cancelled by the payment service.')
       return
     }
-    const saved = await updateBooking(booking.reference, { status: 'cancelled' })
+    const saved = await updateBooking(bookingIdentifier, { status: 'cancelled' })
     setActionError(saved ? '' : storageError)
   }
 
@@ -321,6 +369,32 @@ export default function ManageBookings() {
         actions={<button className="admin-button admin-button--primary" onClick={exportCsv} type="button"><Download size={16} aria-hidden="true" /> Export CSV</button>}
       />
       {actionError && <AdminNotice tone="error">{actionError}</AdminNotice>}
+      <AdminPanel title={`UPI payments awaiting verification · ${pendingUpiPayments.length}`}>
+        <AdminNotice tone="neutral">
+          Verify the actual credit and exact amount in the authorised receiving bank account before approving. A UTR or customer screenshot alone is not proof of payment.
+        </AdminNotice>
+        {pendingUpiPayments.length > 0 ? (
+          <AdminTable label="UPI payments awaiting verification">
+            <thead><tr><th scope="col">Booking / customer</th><th scope="col">Event / ticket</th><th scope="col">Amount</th><th scope="col">UTR</th><th scope="col">Submitted</th><th scope="col">Actions</th></tr></thead>
+            <tbody>
+              {pendingUpiPayments.map(({ booking, payment }) => (
+                <tr key={`${booking.requestId}-${payment.utr}`}>
+                  <td><strong>{booking.reference || booking.requestId}</strong><span className="admin-table__secondary">{booking.customer} · {booking.mobile || booking.customerEmail}</span></td>
+                  <td><strong>{getBookingSubject(booking, events.find((event) => event.id === booking.eventId))}</strong><span className="admin-table__secondary">{booking.ticketTypeName || booking.ticketType} · {booking.ticketQuantity ?? booking.ticketCount} ticket(s)</span></td>
+                  <td>{formatAmount(payment.amount, booking.currency)}</td>
+                  <td><strong>{payment.utr}</strong><span className="admin-table__secondary">{payment.upiId}</span></td>
+                  <td>{formatBookingDate(payment.submittedAt)}</td>
+                  <td><div className="admin-row-actions admin-row-actions--wrap">
+                    <button className="admin-button admin-button--small" onClick={() => setSelected(booking)} type="button">Booking details</button>
+                    <button className="admin-button admin-button--small admin-button--primary" onClick={() => void decideUpiPayment(booking, 'approve')} type="button">Verify &amp; approve</button>
+                    <button className="admin-button admin-button--small admin-button--danger" onClick={() => void decideUpiPayment(booking, 'reject')} type="button">Reject</button>
+                  </div></td>
+                </tr>
+              ))}
+            </tbody>
+          </AdminTable>
+        ) : <p className="admin-empty">No UPI payments are awaiting verification.</p>}
+      </AdminPanel>
       <AdminPanel title={`${filtered.length} booking records`}>
         <div className="admin-toolbar admin-toolbar--wrap">
           <label className="admin-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search bookings</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Reference, customer, event, category or organizer" value={query} /></label>
@@ -334,9 +408,10 @@ export default function ManageBookings() {
               const event = events.find((item) => item.id === booking.eventId)
               const organizer = organizers.find((item) => item.id === booking.organizerId)
               const mobileDigits = String(booking.mobile ?? '').replace(/\D/g, '')
+              const bookingKey = booking.reference || booking.requestId || booking.id
               return (
-                <tr key={booking.reference}>
-                  <td><strong>{booking.reference}</strong><span className="admin-table__secondary">{booking.customer}</span><span className="admin-table__secondary">{booking.mobile || booking.customerEmail}</span></td>
+                <tr key={bookingKey}>
+                  <td><strong>{booking.reference || 'Awaiting payment'}</strong>{!booking.reference && <span className="admin-table__secondary">Request {bookingKey}</span>}<span className="admin-table__secondary">{booking.customer}</span><span className="admin-table__secondary">{booking.mobile || booking.customerEmail}</span></td>
                   <td><strong>{getBookingSubject(booking, event)}</strong><span className="admin-table__secondary">{booking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</span></td>
                   <td>
                     <strong>{booking.ticketTypeName || booking.ticketType || '—'} · {booking.ticketQuantity ?? booking.ticketCount ?? 1}</strong>

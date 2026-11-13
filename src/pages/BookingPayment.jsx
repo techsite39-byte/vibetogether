@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
+import UpiPayment from './UpiPayment.jsx'
 import {
   checkRazorpayPaymentStatus,
   createRazorpayOrder,
@@ -77,7 +78,7 @@ function loadRazorpayCheckout() {
 }
 
 function isRecentProcessing(booking) {
-  if (booking?.paymentStatus !== 'processing') {
+  if (booking?.paymentStatus !== 'processing' || booking?.paymentProvider === 'upi') {
     return false
   }
   const attemptedAt = new Date(booking.paymentAttemptedAt ?? '').getTime()
@@ -612,8 +613,20 @@ export default function BookingPayment() {
     : { status: 'loading', booking: null, error: '' }
   const booking = currentBookingState.booking
   const isPaid = ['demo_paid', 'paid'].includes(booking?.paymentStatus) && Boolean(booking?.reference)
-  const isDemoPayment = !booking?.razorpayConfigured
-  const isPaymentFailed = booking?.paymentStatus === 'failed'
+  const hasRazorpayPayment = Boolean(booking?.paymentOrderId) || booking?.paymentProvider === 'razorpay'
+  const isUpiPayment = Boolean(booking) && !isPaid && !hasRazorpayPayment && (
+    booking.paymentProvider === 'upi' ||
+    booking.paymentProviderMode === 'upi' ||
+    (
+      ['unpaid', 'failed'].includes(booking.paymentStatus) &&
+      !booking.paymentProvider
+    )
+  )
+  const isDemoPayment = !booking?.razorpayConfigured && !isUpiPayment
+  const isPaymentFailed =
+    booking?.paymentStatus === 'failed' &&
+    booking?.paymentProvider !== 'upi' &&
+    !isUpiPayment
   const isFailureView = isPaymentFailed && !paymentUncertain && searchParams.get('retry') !== '1'
   const isVerifying = paymentUncertain || isRecentProcessing(booking)
   const bookingLabel = booking?.status === 'confirmed' ? 'Approved' : 'Pending Approval'
@@ -880,11 +893,15 @@ export default function BookingPayment() {
                 <div className="booking-payment__hero">
                   <span className="booking-payment__pill-tag">
                     <LockKeyhole size={12} aria-hidden="true" />
-                    {isDemoPayment ? 'PAYMENT UNAVAILABLE' : 'OFFICIAL PAYMENT GATEWAY'}
+                    {isUpiPayment
+                      ? 'DIRECT UPI PAYMENT'
+                      : isDemoPayment ? 'PAYMENT UNAVAILABLE' : 'OFFICIAL PAYMENT GATEWAY'}
                   </span>
                   <h1>Complete Your Booking</h1>
                   <p className="booking-payment__subtitle">
-                    {isDemoPayment
+                    {isUpiPayment
+                      ? 'Review your experience reservation and complete your payment securely.'
+                      : isDemoPayment
                       ? 'Secure Razorpay Checkout is not configured for this booking. Your details are saved, but payment cannot be taken yet.'
                       : 'Review your experience reservation and complete your payment securely with Razorpay.'}
                   </p>
@@ -1014,7 +1031,7 @@ export default function BookingPayment() {
                       </div>
                     </div>
 
-                    {paymentError && (
+                    {paymentError && !isUpiPayment && (
                       <div className="booking-payment__error-box" role="alert">
                         <AlertTriangle size={16} aria-hidden="true" />
                         <span>{paymentError}</span>
@@ -1027,7 +1044,9 @@ export default function BookingPayment() {
                     )}
 
                     <div className="booking-payment__action-area">
-                      {isVerifying ? (
+                      {isUpiPayment ? (
+                        <UpiPayment booking={booking} bookingRequestId={requestId} />
+                      ) : isVerifying ? (
                         <button
                           className="booking-payment__pay-btn"
                           disabled={isPaying}
