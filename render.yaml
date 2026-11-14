@@ -16,7 +16,7 @@ services:
       - key: MONGODB_DB_NAME
         value: main
       - key: CORS_ORIGIN
-        value: https://www.vibetogether.show
+        value: https://www.vibetogether.show,https://vibetogether.show,https://vibetogether-frontend.onrender.com,https://vibetogether.onrender.com,https://vibe-together.vercel.app
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_SESSION_SECRET

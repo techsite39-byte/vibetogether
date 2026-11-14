@@ -1,12 +1,112 @@
 import { API_BASE_URL } from '../../config/api.js'
 
-let csrfToken = ''
+const TOKEN_KEY = 'vt_admin_token'
+const CSRF_KEY = 'vt_admin_csrf'
+
+let memoryToken = ''
+let memoryCsrf = ''
+
+export function getStoredToken() {
+  if (memoryToken) return memoryToken
+  if (typeof window === 'undefined') return ''
+  try {
+    const token =
+      window.localStorage.getItem(TOKEN_KEY) ||
+      window.sessionStorage.getItem(TOKEN_KEY) ||
+      ''
+    if (token) memoryToken = token
+    return token
+  } catch {
+    return memoryToken
+  }
+}
+
+export function getStoredCsrf() {
+  if (memoryCsrf) return memoryCsrf
+  if (typeof window === 'undefined') return ''
+  try {
+    const csrf =
+      window.localStorage.getItem(CSRF_KEY) ||
+      window.sessionStorage.getItem(CSRF_KEY) ||
+      ''
+    if (csrf) memoryCsrf = csrf
+    return csrf
+  } catch {
+    return memoryCsrf
+  }
+}
+
+export function saveStoredSession({ token, csrfToken, rememberMe = true }) {
+  if (token) memoryToken = token
+  if (csrfToken) memoryCsrf = csrfToken
+  if (typeof window === 'undefined') return
+
+  try {
+    if (token) {
+      if (rememberMe) {
+        window.localStorage.setItem(TOKEN_KEY, token)
+        window.sessionStorage.removeItem(TOKEN_KEY)
+      } else {
+        window.sessionStorage.setItem(TOKEN_KEY, token)
+        window.localStorage.removeItem(TOKEN_KEY)
+      }
+    }
+    if (csrfToken) {
+      if (rememberMe) {
+        window.localStorage.setItem(CSRF_KEY, csrfToken)
+        window.sessionStorage.removeItem(CSRF_KEY)
+      } else {
+        window.sessionStorage.setItem(CSRF_KEY, csrfToken)
+        window.localStorage.removeItem(CSRF_KEY)
+      }
+    }
+  } catch {
+    // Storage access might be restricted in private browsing mode
+  }
+}
+
+export function clearStoredSession() {
+  memoryToken = ''
+  memoryCsrf = ''
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(TOKEN_KEY)
+    window.sessionStorage.removeItem(TOKEN_KEY)
+    window.localStorage.removeItem(CSRF_KEY)
+    window.sessionStorage.removeItem(CSRF_KEY)
+  } catch {
+    // ignore storage exceptions
+  }
+}
+
+// On client startup, inspect URL hash for tokens handed off by Google OAuth redirect
+if (typeof window !== 'undefined' && window.location.hash) {
+  try {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const hashToken = hashParams.get('admin_token')
+    const hashCsrf = hashParams.get('admin_csrf')
+    if (hashToken) {
+      saveStoredSession({ token: hashToken, csrfToken: hashCsrf, rememberMe: true })
+      const cleanUrl = window.location.pathname + window.location.search
+      window.history.replaceState(null, '', cleanUrl)
+    }
+  } catch {
+    // ignore
+  }
+}
 
 async function authFetch(path, options = {}) {
+  const headers = new Headers(options.headers)
+  const token = getStoredToken()
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
   let response
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
+      headers,
       credentials: 'include',
     })
   } catch {
@@ -32,16 +132,25 @@ async function readResponse(response) {
 }
 
 export async function adminRequest(path, options = {}) {
-  const method = options.method ?? 'GET'
+  const method = (options.method ?? 'GET').toUpperCase()
   const headers = new Headers(options.headers)
-  if (options.body !== undefined) {
+  if (options.body !== undefined && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) {
-    if (!csrfToken) {
-      throw new Error('Your admin session needs to be refreshed. Sign in again.')
-    }
-    headers.set('X-CSRF-Token', csrfToken)
+
+  const token = getStoredToken()
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  const csrf = getStoredCsrf()
+  if (csrf && !headers.has('X-CSRF-Token')) {
+    headers.set('X-CSRF-Token', csrf)
+  }
+
+  // If modifying data without bearer token or csrf token, warn the user
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !token && !csrf) {
+    throw new Error('Your admin session needs to be refreshed. Sign in again.')
   }
 
   let response
@@ -70,7 +179,12 @@ export async function getAdminConfiguration() {
  */
 export async function getAdminSession() {
   const session = await adminRequest('/admin/auth/me')
-  csrfToken = session.csrfToken
+  if (session) {
+    saveStoredSession({
+      token: session.token || getStoredToken(),
+      csrfToken: session.csrfToken || getStoredCsrf(),
+    })
+  }
   return session.admin
 }
 
@@ -105,7 +219,13 @@ export async function signInAdmin(identifierOrOptions, maybePassword, maybeRemem
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  csrfToken = result.csrfToken
+
+  saveStoredSession({
+    token: result.token,
+    csrfToken: result.csrfToken,
+    rememberMe: body.rememberMe,
+  })
+
   return result.admin
 }
 
@@ -118,7 +238,13 @@ export async function signInWithGoogle({ credential, code }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ credential, code }),
   })
-  csrfToken = result.csrfToken
+
+  saveStoredSession({
+    token: result.token,
+    csrfToken: result.csrfToken,
+    rememberMe: true,
+  })
+
   return result.admin
 }
 
@@ -128,6 +254,7 @@ export function getGoogleAuthRedirectUrl() {
     window.location.origin,
   )
   redirectUrl.searchParams.set('frontend_origin', window.location.origin)
+  redirectUrl.searchParams.set('auth_mode', 'token')
   return API_BASE_URL.startsWith('/')
     ? `${redirectUrl.pathname}${redirectUrl.search}`
     : redirectUrl.toString()
@@ -184,7 +311,7 @@ export async function signOutAdmin() {
   try {
     await adminRequest('/admin/auth/logout', { method: 'POST' })
   } finally {
-    csrfToken = ''
+    clearStoredSession()
   }
 }
 
@@ -192,7 +319,7 @@ export async function signOutAdmin() {
  * Retries a failed WhatsApp notification for a booking safely without sending duplicates.
  */
 export async function retryWhatsAppNotification(reference) {
-  return adminRequest(`/bookings/${encodeURIComponent(reference)}/whatsapp/retry`, {
+  return adminRequest(`/admin/bookings/${encodeURIComponent(reference)}/whatsapp/retry`, {
     method: 'POST',
   })
 }

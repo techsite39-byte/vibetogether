@@ -46,22 +46,43 @@ if (!mongoDatabaseName || mongoDatabaseName.length > 63) {
   throw new Error('MONGODB_DB_NAME must name the database to use.')
 }
 
+const DEFAULT_PRODUCTION_ORIGINS = [
+  'https://www.vibetogether.show',
+  'https://vibetogether.show',
+  'https://vibetogether-frontend.onrender.com',
+  'https://vibetogether.onrender.com',
+  'https://vibe-together.vercel.app',
+]
+
 const configuredCorsOrigins = (process.env.CORS_ORIGIN ??
   (nodeEnv === 'production'
-    ? ''
+    ? DEFAULT_PRODUCTION_ORIGINS.join(',')
     : 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:4000,http://127.0.0.1:4000'))
   .split(',')
-  .map((origin) => origin.trim())
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
   .filter(Boolean)
+
+if (configuredCorsOrigins.some((o) => o.includes('vibetogether.show'))) {
+  if (!configuredCorsOrigins.includes('https://www.vibetogether.show')) {
+    configuredCorsOrigins.push('https://www.vibetogether.show')
+  }
+  if (!configuredCorsOrigins.includes('https://vibetogether.show')) {
+    configuredCorsOrigins.push('https://vibetogether.show')
+  }
+}
+
 const devFrontendOrigins =
   nodeEnv === 'production'
     ? []
     : (process.env.DEV_FRONTEND_ORIGINS ?? '')
         .split(',')
-        .map((origin) => origin.trim())
+        .map((origin) => origin.trim().replace(/\/+$/, ''))
         .filter(Boolean)
 const corsOrigins = [...new Set([...configuredCorsOrigins, ...devFrontendOrigins])]
-const frontendOrigin = devFrontendOrigins[0] ?? configuredCorsOrigins[0] ?? ''
+const frontendOrigin =
+  devFrontendOrigins[0] ??
+  configuredCorsOrigins[0] ??
+  (nodeEnv === 'production' ? 'https://www.vibetogether.show' : 'http://localhost:5173')
 
 if (nodeEnv === 'production' && corsOrigins.length === 0) {
   throw new Error('CORS_ORIGIN must list trusted frontend origins in production.')
