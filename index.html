@@ -42,15 +42,20 @@
     <link rel="ard" href="/.well-known/ard.json" type="application/json" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="preload"
-      as="image"
-      href="/assets/optimized/hero/h1-1672-v1.webp"
-      imagesrcset="/assets/optimized/hero/h1-480-v1.webp 480w, /assets/optimized/hero/h1-960-v1.webp 960w, /assets/optimized/hero/h1-1672-v1.webp 1672w"
-      imagesizes="100vw"
-      fetchpriority="high"
-      type="image/webp"
-    />
+    <script>
+      if (window.location.pathname === '/') {
+        const heroPreload = document.createElement('link')
+        heroPreload.rel = 'preload'
+        heroPreload.as = 'image'
+        heroPreload.href = '/assets/optimized/hero/h1-1672-v1.webp'
+        heroPreload.imageSrcset =
+          '/assets/optimized/hero/h1-480-v1.webp 480w, /assets/optimized/hero/h1-960-v1.webp 960w, /assets/optimized/hero/h1-1672-v1.webp 1672w'
+        heroPreload.imageSizes = '100vw'
+        heroPreload.fetchPriority = 'high'
+        heroPreload.type = 'image/webp'
+        document.head.append(heroPreload)
+      }
+    </script>
     <link
       rel="preload"
       as="style"

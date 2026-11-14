@@ -42,58 +42,87 @@ function App() {
     <BrowserRouter>
       <BookingEnquiryProvider>
         <AppErrorBoundary>
-          <Suspense fallback={<Loader className="route-loader" label="Loading page..." />}>
-            <Routes>
-        <Route element={<MainLayout />}>
-          <Route index element={<Home />} />
-          <Route path="about" element={<About />} />
-          <Route path="events" element={<Events />} />
-          <Route path="events/:id" element={<EventDetails />} />
-          <Route
-            path="booking/confirmation"
-            element={<BookingConfirmation />}
-          />
-          <Route
-            path="booking/confirmation/:bookingReference"
-            element={<BookingConfirmation />}
-          />
-          <Route
-            path="booking/payment/:requestId"
-            element={<BookingPayment />}
-          />
-          <Route path="my-bookings" element={<MyBookings />} />
-          <Route path="booking" element={<Booking />} />
-          <Route path="booking/step-4/:requestId" element={<div aria-hidden="true" />} />
-          <Route path="booking/:eventId" element={<Booking />} />
-          <Route path="sing-along" element={<SingAlong />} />
-          <Route path="strangers-meet" element={<StrangersMeet />} />
-          <Route path="strangers-trip" element={<StrangersTrip />} />
-          <Route path="fun-games" element={<FunGames />} />
-          <Route path="services" element={<Services />} />
-          <Route path="gallery" element={<Gallery />} />
-          <Route path="testimonials" element={<Testimonials />} />
-          <Route path="contact" element={<Contact />} />
-          <Route path="*" element={<NotFound />} />
-        </Route>
-        <Route path="admin/login" element={<AdminLoginPage />} />
-        <Route path="admin" element={<AdminLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="users" element={<ManageUsers />} />
-          <Route path="organizers" element={<ManageOrganizers />} />
-          <Route path="events" element={<ManageEvents />} />
-          <Route path="bookings" element={<ManageBookings />} />
-          <Route path="testimonials" element={<ManageTestimonials />} />
-          <Route path="subscribers" element={<ManageSubscribers />} />
-          <Route path="enquiries" element={<ManageEnquiries />} />
-          <Route path="analytics" element={<Analytics />} />
-          <Route path="activity" element={<ActivityLog />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="gallery" element={<ManageGallery />} />
-          <Route path="*" element={<NotFound />} />
-        </Route>
-            </Routes>
-          </Suspense>
+          <Routes>
+            <Route element={<MainLayout />}>
+              <Route index element={<Home />} />
+              <Route path="about" element={<About />} />
+              <Route path="events" element={<Events />} />
+              <Route path="events/:id" element={<EventDetails />} />
+              <Route
+                path="booking/confirmation"
+                element={<BookingConfirmation />}
+              />
+              <Route
+                path="booking/confirmation/:bookingReference"
+                element={<BookingConfirmation />}
+              />
+              <Route
+                path="booking/payment/:requestId"
+                element={<BookingPayment />}
+              />
+              <Route path="my-bookings" element={<MyBookings />} />
+              <Route path="booking" element={<Booking />} />
+              <Route
+                path="booking/step-4/:requestId"
+                element={<div aria-hidden="true" />}
+              />
+              <Route path="booking/:eventId" element={<Booking />} />
+              <Route path="sing-along" element={<SingAlong />} />
+              <Route path="strangers-meet" element={<StrangersMeet />} />
+              <Route path="strangers-trip" element={<StrangersTrip />} />
+              <Route path="fun-games" element={<FunGames />} />
+              <Route path="services" element={<Services />} />
+              <Route path="gallery" element={<Gallery />} />
+              <Route path="testimonials" element={<Testimonials />} />
+              <Route path="contact" element={<Contact />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+            <Route
+              path="admin/login"
+              element={
+                <Suspense
+                  fallback={
+                    <Loader
+                      className="route-loader"
+                      label="Loading admin login..."
+                    />
+                  }
+                >
+                  <AdminLoginPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="admin"
+              element={
+                <Suspense
+                  fallback={
+                    <Loader
+                      className="route-loader"
+                      label="Loading admin workspace..."
+                    />
+                  }
+                >
+                  <AdminLayout />
+                </Suspense>
+              }
+            >
+              <Route index element={<Dashboard />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="users" element={<ManageUsers />} />
+              <Route path="organizers" element={<ManageOrganizers />} />
+              <Route path="events" element={<ManageEvents />} />
+              <Route path="bookings" element={<ManageBookings />} />
+              <Route path="testimonials" element={<ManageTestimonials />} />
+              <Route path="subscribers" element={<ManageSubscribers />} />
+              <Route path="enquiries" element={<ManageEnquiries />} />
+              <Route path="analytics" element={<Analytics />} />
+              <Route path="activity" element={<ActivityLog />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="gallery" element={<ManageGallery />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Routes>
         </AppErrorBoundary>
       </BookingEnquiryProvider>
     </BrowserRouter>

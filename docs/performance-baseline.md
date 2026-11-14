@@ -143,3 +143,38 @@ The latest build already splits route and below-the-fold homepage code. Its entr
 Validation completed: production build passed; focused tests passed (4/4); targeted lint passed; the homepage and lazy booking modal were checked in a browser. The full `npm test` run stalled after 15 reported tests for more than 30 minutes and was stopped, so the full suite has no verified result. The local backend is unavailable and its events/settings APIs returned 502; event-backed booking, payment completion, QR scanning, and all routes/buttons were not fully verified. No production deployment was made.
 
 The latest local preview results do not meet the requested performance or LCP targets. TBT remains high and long-task source attribution is unresolved; the trace establishes main-thread blocking but not the responsible code. Additional image savings remain. Lighthouse reported Best Practices 100 in the latest run; earlier local runs reported 96, another sign that results vary across runs. Do not treat these local results as production scores.
+
+## Site-wide route optimization follow-up
+
+Captured 14 November 2026 on the local Vite preview at `http://127.0.0.1:4173`, after the route-level changes below. This was an integrated-browser check, not a Lighthouse run or a controlled before/after performance audit.
+
+- The global hero-image preload is now injected only when the requested path is `/`. Browser DOM checks found zero hero-image preloads on `/about` and one responsive preload on `/`.
+- Public event results are cached in memory for 30 seconds after a successful, validated response. Each caller gets a fresh array and event objects; aborted requests and failures are not served from cache. A browser test with a mocked events endpoint navigated `/events` → `/sing-along` → `/events` and observed one GET total.
+- Suspense fallbacks now sit within the public and authenticated admin page shells, so route chunks can load without replacing the shared navigation/footer or admin shell. Lazy loading remains in place; no package dependencies were removed.
+- Direct navigation covered 34 public, booking/payment, not-found, login, and admin URLs. All returned the SPA shell with HTTP 200; unauthenticated admin URLs redirected to `/admin/login`. One mobile sweep (390 × 844) checked 20 representative public, booking, payment, and login routes and found no horizontal overflow.
+- A single local mobile route sweep measured direct-navigation completion from 377 ms to 1,773 ms (median 744 ms); the desktop sweep had a 756 ms median and 3,692 ms maximum. These include browser/cache and route-settling variation and are not FCP/LCP or comparable Lighthouse metrics.
+- The mobile menu opened, navigated to About, closed, and retained the layout without horizontal overflow. The local browser could not exercise real event-backed booking/payment flows; test IDs were placeholders and no payment was initiated.
+
+### Image inventory and delivery check
+
+The local `public/assets` tree contains 35 image files totaling 9.68 MiB, excluding the preserved QR capture directory. The source references the optimized counterparts below; original files remain in place. These optimizations existed before this follow-up and were measured here for verification, not newly generated:
+
+| Original image | Original dimensions / bytes | Existing optimized image | Optimized dimensions / bytes | Smaller |
+| --- | ---: | --- | ---: | ---: |
+| `assets/folder/sub.png` | 1122 × 1402 / 1,944,559 | `sub-480-v1.webp` | 480 × 600 / 43,826 | 97.7% |
+| `assets/folder/footer.png` | 2048 × 768 / 1,577,339 | `footer-1536-v1.webp` | 1536 × 576 / 47,920 | 97.0% |
+| `assets/folder/favicon.png` | 1254 × 1254 / 1,436,740 | `favicon-192-v1.png` | 192 × 192 / 52,683 | 96.3% |
+| `assets/music-speakers.png` | 900 × 805 / 716,544 | `music-speakers-720-v1.webp` | 720 × 644 / 102,220 | 85.7% |
+| `assets/dj-party.png` | 650 × 540 / 506,263 | `dj-party-650-v1.webp` | 650 × 540 / 71,470 | 85.9% |
+| `assets/festival-crowd.png` | 470 × 576 / 403,920 | `festival-crowd-480-v1.webp` | 470 × 576 / 48,560 | 88.0% |
+| `assets/outdoor-dj-festival.png` | 499 × 318 / 306,289 | `outdoor-dj-festival-480-v1.webp` | 480 × 306 / 33,828 | 89.0% |
+| `assets/folder/image.png` | 728 × 554 / 275,372 | `image-480-v1.webp` | 480 × 365 / 26,206 | 90.5% |
+| `assets/neon-masquerade-mask-1.png` | 503 × 276 / 263,533 | `neon-masquerade-mask-1-v1.webp` | 503 × 276 / 32,294 | 87.7% |
+| `assets/crowd-silhouettes.png` | 728 × 265 / 230,761 | `crowd-silhouettes-v1.webp` | 728 × 265 / 30,384 | 86.8% |
+| **Total for these pairs** | **7,661,320 bytes** | | **489,391 bytes** | **93.6%** |
+
+This on-disk comparison is not a measurement of per-route transfer savings: the original files remain available and are not referenced by the scanned source paths. Several images use single optimized sizes rather than `srcset`; the hero and remote Unsplash photos retain responsive sources. The QR capture files were excluded and left unchanged.
+
+No new image files were encoded or replaced in this follow-up. The previously documented WebP assets and lazy/responsive image behavior remain unchanged. During the local route sweep, API requests were aborted by full-page test navigations and protected admin requests returned 401; no repeatable backend/database bottleneck evidence was obtained, so no query changes were made.
+
+Validation: the production build passed; the focused event-cache tests passed (2/2); and lint exited successfully with six existing warnings in unrelated files. The full `npm test` run did not complete within 120 seconds and was stopped; its partial output showed 13 passing tests, so the complete suite remains unverified. No fresh Lighthouse audit or production deployment was performed; Lighthouse scores and new payload reductions are therefore not claimed for this follow-up.

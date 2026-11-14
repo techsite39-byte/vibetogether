@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   BarChart3,
@@ -25,6 +25,7 @@ import {
   signOutAdmin,
 } from '../services/adminApi.js'
 import { AdminNotice } from './AdminUI.jsx'
+import Loader from '../../components/common/Loader.jsx'
 import useScrollReveal from '../../hooks/useScrollReveal.js'
 import './Admin.css'
 
@@ -207,7 +208,16 @@ export default function AdminLayout() {
             <span>CONNECTED TO MONGODB</span>
           </div>
           {accessError && <AdminNotice tone="error">{accessError}</AdminNotice>}
-          <Outlet />
+          <Suspense
+            fallback={
+              <Loader
+                className="route-loader"
+                label="Loading admin page..."
+              />
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </AdminDataProvider>
