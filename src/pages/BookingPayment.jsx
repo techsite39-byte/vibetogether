@@ -370,7 +370,7 @@ export default function BookingPayment() {
 
       const checkout = new window.Razorpay({
         key: order.key_id,
-        image: `${window.location.origin}/assets/folder/favicon.png`,
+        image: `${window.location.origin}/assets/optimized/favicon-192-v1.png`,
         redirect: false,
       })
       customCheckout.current = checkout
@@ -680,7 +680,7 @@ export default function BookingPayment() {
             <header className="booking-payment__topbar">
               <Link className="booking-payment__brand" to="/" aria-label="Back to Vibe Together">
                 <img
-                  src="/assets/folder/favicon.png"
+                  src="/assets/optimized/favicon-256-v1.webp"
                   alt="Vibe Together logo"
                   className="booking-payment__brand-logo"
                 />

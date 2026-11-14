@@ -1,0 +1,20 @@
+# Vibe Together
+
+> Vibe Together brings people together through live music, social events, community meetups, games, and shared adventures.
+
+## Website
+
+- [Home](https://www.vibetogether.show/): Discover Vibe Together and browse featured experiences.
+- [About](https://www.vibetogether.show/about): Learn about the Vibe Together community.
+- [Events](https://www.vibetogether.show/events): Browse upcoming events.
+- [Gallery](https://www.vibetogether.show/gallery): View photos and videos from past experiences.
+- [Testimonials](https://www.vibetogether.show/testimonials): Read attendee testimonials.
+- [Contact](https://www.vibetogether.show/contact): Find contact and enquiry information.
+
+## Experiences
+
+- [Sing Along](https://www.vibetogether.show/sing-along)
+- [Meet New People](https://www.vibetogether.show/strangers-meet)
+- [Group Trips](https://www.vibetogether.show/strangers-trip)
+- [Games](https://www.vibetogether.show/fun-games)
+- [Services](https://www.vibetogether.show/services)

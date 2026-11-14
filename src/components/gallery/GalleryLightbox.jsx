@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { ArrowLeft, ArrowRight, Share2, X } from 'lucide-react'
+import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 
 export default function GalleryLightbox({
   images,
@@ -95,6 +96,8 @@ export default function GalleryLightbox({
         <figure className="gallery-lightbox__figure">
           <img
             src={memory.src}
+            srcSet={getResponsiveImageSrcSet(memory.src)}
+            sizes="80vw"
             alt={memory.alt}
             fetchPriority="high"
             decoding="async"

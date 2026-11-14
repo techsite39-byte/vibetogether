@@ -13,7 +13,12 @@ import {
   getBookingEnquiry,
   submitUpiPayment,
 } from '../services/bookingEnquiryPayment.js'
-import { createUpiPaymentIntent } from '../services/upiPaymentIntent.js'
+import {
+  createPhonePePaymentIntent,
+  createGooglePayPaymentIntent,
+  createPaytmPaymentIntent,
+  createUpiPaymentIntent,
+} from '../services/upiPaymentIntent.js'
 import { rememberBookingReference } from '../utils/bookingStorage.js'
 import './UpiPayment.css'
 
@@ -55,6 +60,8 @@ export default function UpiPayment({ booking: initialBooking, bookingRequestId }
   const [qrImageError, setQrImageError] = useState(false)
   const [showUtrForm, setShowUtrForm] = useState(false)
   const [hasLaunchedUpi, setHasLaunchedUpi] = useState(false)
+  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const isAndroid = /Android/i.test(userAgent)
 
   const refreshBooking = useCallback(async () => {
     setRefreshError('')
@@ -149,7 +156,37 @@ export default function UpiPayment({ booking: initialBooking, bookingRequestId }
 
   const isPaid = booking?.paymentStatus === 'paid' && Boolean(booking.reference)
   const isRejected = booking?.upiPayment?.status === 'Rejected'
-  const upiIntentUrl = booking ? createUpiPaymentIntent(booking) : ''
+  const hasValidAmount =
+    typeof booking?.paymentAmount === 'number' &&
+    Number.isFinite(booking.paymentAmount) &&
+    booking.paymentAmount > 0
+  const hasValidPayee =
+    typeof booking?.upiId === 'string' &&
+    Boolean(booking.upiId.trim()) &&
+    typeof booking?.upiPayeeName === 'string' &&
+    Boolean(booking.upiPayeeName.trim())
+  const upiIntentUrl =
+    booking && hasValidAmount && hasValidPayee
+      ? createUpiPaymentIntent(booking)
+      : ''
+  const fallbackUrl =
+    typeof window === 'undefined' ? null : new URL(window.location.href)
+  fallbackUrl?.searchParams.set('upiFallback', '1')
+  const phonePeIntentUrl =
+    isAndroid && upiIntentUrl && fallbackUrl
+      ? createPhonePePaymentIntent(booking, fallbackUrl.href)
+      : ''
+  const googlePayIntentUrl =
+    isAndroid && upiIntentUrl && fallbackUrl
+      ? createGooglePayPaymentIntent(booking, fallbackUrl.href)
+      : ''
+  const paytmIntentUrl =
+    isAndroid && upiIntentUrl && fallbackUrl
+      ? createPaytmPaymentIntent(booking, fallbackUrl.href)
+      : ''
+  const phonePeFallbackNotice =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('upiFallback') === '1'
 
   return (
     <section className="upi-payment" aria-label="UPI payment">
@@ -185,6 +222,17 @@ export default function UpiPayment({ booking: initialBooking, bookingRequestId }
             </div>
           )}
 
+          {phonePeFallbackNotice && (
+            <p className="upi-payment__notice" role="status">
+              The selected UPI app could not be opened. Choose another app or scan the QR code.
+            </p>
+          )}
+          {(!hasValidAmount || !hasValidPayee) && (
+            <p className="upi-payment__error" role="alert">
+              Verified payment details are unavailable. Refresh the booking before paying.
+            </p>
+          )}
+
           <div className="upi-payment__qr-panel">
             {qrImageError ? (
               <div className="upi-payment__qr-unavailable" role="alert">
@@ -217,18 +265,43 @@ export default function UpiPayment({ booking: initialBooking, bookingRequestId }
             <p className="upi-payment__scan-instruction">
               Scan using Google Pay, PhonePe or Paytm.
             </p>
-            <a
-              className="upi-payment__button upi-payment__launch"
-              href={upiIntentUrl}
-              onClick={() => setHasLaunchedUpi(true)}
-            >
-              <Smartphone size={17} aria-hidden="true" />
-              PAY NOW – {formatAmount(booking.paymentAmount)}
-              <ArrowRight size={17} aria-hidden="true" />
-            </a>
-            <p className="upi-payment__launch-note">
-              On desktop, scan the QR with another device. Payments are confirmed only after admin verification.
-            </p>
+            {isAndroid && phonePeIntentUrl && (
+              <>
+                <a
+                  className="upi-payment__button upi-payment__launch"
+                  href={phonePeIntentUrl}
+                  onClick={() => setHasLaunchedUpi(true)}
+                >
+                  <Smartphone size={17} aria-hidden="true" />
+                  PAY WITH PHONEPE <span> · {formatAmount(booking.paymentAmount)}</span>
+                  <ArrowRight size={17} aria-hidden="true" />
+                </a>
+                <div className="upi-payment__app-options" role="group" aria-label="Other UPI apps">
+                  <a
+                    className="upi-payment__button upi-payment__button--secondary"
+                    href={googlePayIntentUrl}
+                    onClick={() => setHasLaunchedUpi(true)}
+                  >
+                    Google Pay
+                  </a>
+                  <a
+                    className="upi-payment__button upi-payment__button--secondary"
+                    href={paytmIntentUrl}
+                    onClick={() => setHasLaunchedUpi(true)}
+                  >
+                    Paytm
+                  </a>
+                </div>
+                <p className="upi-payment__launch-note">
+                  Payments remain pending until verification. If an app is unavailable, try another listed app or scan the QR.
+                </p>
+              </>
+            )}
+            {!isAndroid && (
+              <p className="upi-payment__launch-note">
+                Scan the QR with a UPI app on another device. Payments remain pending until verification.
+              </p>
+            )}
           </div>
 
           {notice && <p className="upi-payment__notice" role="status">{notice}</p>}

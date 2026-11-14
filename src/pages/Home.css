@@ -18,6 +18,13 @@
   overflow: clip;
 }
 
+.home-page__deferred-anchor {
+  height: 1px;
+  margin-bottom: -1px;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 .home-hero {
   position: relative;
   display: grid;
@@ -105,9 +112,6 @@
   width: 100%;
   height: 100%;
   background-color: var(--color-background);
-  background-position: center 52%;
-  background-repeat: no-repeat;
-  background-size: cover;
   opacity: 0;
   transform: translate3d(0, var(--hero-scroll-y, 0px), 0)
     scale(var(--hero-scroll-scale, 1));
@@ -115,21 +119,28 @@
   will-change: transform;
 }
 
+.home-hero__image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 52%;
+}
+
 .home-hero__image.is-active {
   opacity: 1;
 }
 
-.home-hero__image--1 {
-  background-position: 54% center;
+.home-hero__image--1 img {
+  object-position: 54% center;
 }
 
-.home-hero__image--2,
-.home-hero__image--3 {
-  background-position: 61% center;
+.home-hero__image--2 img,
+.home-hero__image--3 img {
+  object-position: 61% center;
 }
 
-.home-hero__image--4 {
-  background-position: center 54%;
+.home-hero__image--4 img {
+  object-position: center 54%;
 }
 
 @supports (animation-timeline: scroll()) {
@@ -1168,7 +1179,7 @@
   background:
     linear-gradient(90deg, var(--color-background-secondary), rgb(5 5 9 / 35%) 56%, rgb(5 5 9 / 24%)),
     linear-gradient(0deg, var(--color-background-secondary), transparent 35%, var(--color-background-secondary)),
-    url('/assets/neon-masquerade-mask-1.png') center / cover no-repeat;
+    url('/assets/optimized/neon-masquerade-mask-1-v1.webp') center / cover no-repeat;
   opacity: 0.18;
   mask-image: linear-gradient(90deg, transparent, #000 42%, #000);
 }
@@ -2220,7 +2231,7 @@
   background:
     linear-gradient(100deg, rgb(5 5 9 / 94%), rgb(13 10 22 / 72%)),
     radial-gradient(ellipse at 80% 60%, rgb(119 59 255 / 42%), transparent 56%),
-    url('/assets/neon-masquerade-mask-2.png') center 48% / cover no-repeat;
+    url('/assets/optimized/neon-masquerade-mask-2-v1.webp') center 48% / cover no-repeat;
   text-align: center;
 }
 
@@ -3195,12 +3206,12 @@
     font-size: clamp(1.7rem, 4.4vw, 3rem);
   }
 
-  .home-hero__image--2 {
-    background-position: 64% center;
+  .home-hero__image--2 img {
+    object-position: 64% center;
   }
 
-  .home-hero__image--3 {
-    background-position: 58% center;
+  .home-hero__image--3 img {
+    object-position: 58% center;
   }
 
   .home-about__divider {

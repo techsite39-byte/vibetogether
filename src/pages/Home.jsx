@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowRight,
@@ -7,21 +7,51 @@ import {
   Sparkles,
   UsersRound,
 } from 'lucide-react'
-import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import Button from '../components/common/Button.jsx'
 import FloatingParticles from '../components/common/FloatingParticles.jsx'
 import SectionHeading from '../components/common/SectionHeading.jsx'
-import HomeCategoriesSection from '../components/home/HomeCategoriesSection.jsx'
-import HomeVideosSection from '../components/home/HomeVideosSection.jsx'
 import NewsletterSignup from '../components/common/NewsletterSignup.jsx'
 import { categories } from '../data/categories.js'
 import { testimonials } from '../data/testimonials.js'
 import { homeImages } from '../data/homepage.js'
+import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import { useBookingEnquiry } from '../context/useBookingEnquiry.js'
 import usePublicEvents from '../hooks/usePublicEvents.js'
 import './Home.css'
 
-const heroBackgroundSlides = ['/h1.png', '/h2.png', '/h3.png', '/h4.png']
+const DotLottieReact = lazy(() =>
+  import('@lottiefiles/dotlottie-react').then((module) => ({
+    default: module.DotLottieReact,
+  })),
+)
+const HomeCategoriesSection = lazy(
+  () => import('../components/home/HomeCategoriesSection.jsx'),
+)
+const HomeVideosSection = lazy(
+  () => import('../components/home/HomeVideosSection.jsx'),
+)
+const heroBackgroundSlides = [
+  {
+    src: '/assets/optimized/hero/h1-1672-v1.webp',
+    srcSet:
+      '/assets/optimized/hero/h1-480-v1.webp 480w, /assets/optimized/hero/h1-960-v1.webp 960w, /assets/optimized/hero/h1-1672-v1.webp 1672w',
+  },
+  {
+    src: '/assets/optimized/hero/h2-1672-v1.webp',
+    srcSet:
+      '/assets/optimized/hero/h2-480-v1.webp 480w, /assets/optimized/hero/h2-960-v1.webp 960w, /assets/optimized/hero/h2-1672-v1.webp 1672w',
+  },
+  {
+    src: '/assets/optimized/hero/h3-1672-v1.webp',
+    srcSet:
+      '/assets/optimized/hero/h3-480-v1.webp 480w, /assets/optimized/hero/h3-960-v1.webp 960w, /assets/optimized/hero/h3-1672-v1.webp 1672w',
+  },
+  {
+    src: '/assets/optimized/hero/h4-1672-v1.webp',
+    srcSet:
+      '/assets/optimized/hero/h4-480-v1.webp 480w, /assets/optimized/hero/h4-960-v1.webp 960w, /assets/optimized/hero/h4-1672-v1.webp 1672w',
+  },
+]
 const heroSlides = [
   {
     eyebrow: 'Live music, real connections',
@@ -77,9 +107,55 @@ const reasons = [
 const aboutCommunityCategory = categories.find(
   ({ id }) => id === 'strangers-meet',
 )
+
+function DeferredHomepageSection({ component: Section }) {
+  const anchorRef = useRef(null)
+  const [isVisible, setIsVisible] = useState(
+    () => !('IntersectionObserver' in window),
+  )
+
+  useEffect(() => {
+    const anchor = anchorRef.current
+    if (!anchor || isVisible) return undefined
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '700px 0px' },
+    )
+    observer.observe(anchor)
+
+    return () => observer.disconnect()
+  }, [isVisible])
+
+  return (
+    <>
+      {!isVisible && (
+        <div
+          aria-hidden="true"
+          className="home-page__deferred-anchor"
+          ref={anchorRef}
+        />
+      )}
+      {isVisible && (
+        <Suspense fallback={null}>
+          <Section />
+        </Suspense>
+      )}
+    </>
+  )
+}
+
 function Home() {
   const heroRef = useRef(null)
+  const reasonsRef = useRef(null)
   const heroAnimationFrame = useRef(0)
+  const heroPointerFrame = useRef(0)
+  const latestHeroPointer = useRef({ x: 0, y: 0 })
   const { openBooking } = useBookingEnquiry()
   const { events } = usePublicEvents()
   const aboutFeaturedEvents = events
@@ -88,11 +164,33 @@ function Home() {
     )
     .slice(0, 3)
   const [activeHeroSlide, setActiveHeroSlide] = useState(0)
+  const [loadedHeroSlides, setLoadedHeroSlides] = useState([0])
+  const [isReasonsVisible, setIsReasonsVisible] = useState(
+    () => !('IntersectionObserver' in window),
+  )
   const [isHeroTextVisible, setIsHeroTextVisible] = useState(true)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(
     () =>
       window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
+
+  useEffect(() => {
+    const section = reasonsRef.current
+    if (!section || isReasonsVisible) return undefined
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsReasonsVisible(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '250px 0px' },
+    )
+    observer.observe(section)
+
+    return () => observer.disconnect()
+  }, [isReasonsVisible])
 
   useEffect(() => {
     const hero = heroRef.current
@@ -191,13 +289,18 @@ function Home() {
 
     const nextSlide = (activeHeroSlide + 1) % heroBackgroundSlides.length
     const preloadImage = new window.Image()
+    let preloadTimeout = 0
     let fadeTimeout = 0
     let switchTimeout = 0
     let isMounted = true
 
     preloadImage.decoding = 'async'
+    preloadImage.fetchPriority = 'low'
     preloadImage.onload = () => {
       if (isMounted) {
+        setLoadedHeroSlides((slides) =>
+          slides.includes(nextSlide) ? slides : [...slides, nextSlide],
+        )
         fadeTimeout = window.setTimeout(
           () => setIsHeroTextVisible(false),
           2650,
@@ -210,13 +313,18 @@ function Home() {
     }
     preloadImage.onerror = () => {
       console.error(
-        `Unable to load homepage hero background: ${heroBackgroundSlides[nextSlide]}`,
+        `Unable to load homepage hero background: ${heroBackgroundSlides[nextSlide].src}`,
       )
     }
-    preloadImage.src = heroBackgroundSlides[nextSlide]
+    preloadTimeout = window.setTimeout(() => {
+      preloadImage.sizes = '100vw'
+      preloadImage.srcset = heroBackgroundSlides[nextSlide].srcSet
+      preloadImage.src = heroBackgroundSlides[nextSlide].src
+    }, 1200)
 
     return () => {
       isMounted = false
+      window.clearTimeout(preloadTimeout)
       window.clearTimeout(fadeTimeout)
       window.clearTimeout(switchTimeout)
       preloadImage.onload = null
@@ -232,26 +340,41 @@ function Home() {
       return
     }
 
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const x = (event.clientX - bounds.left) / bounds.width - 0.5
-    const y = (event.clientY - bounds.top) / bounds.height - 0.5
-    const hero = heroRef.current
+    latestHeroPointer.current = { x: event.clientX, y: event.clientY }
+    if (heroPointerFrame.current) return
 
-    hero?.style.setProperty('--hero-tilt-x', `${-y * 3}deg`)
-    hero?.style.setProperty('--hero-tilt-y', `${x * 3}deg`)
-    hero?.style.setProperty('--hero-pointer-x', `${x * 18}px`)
-    hero?.style.setProperty('--hero-pointer-y', `${y * 18}px`)
-    hero?.style.setProperty('--hero-pointer-x-reverse', `${x * -11.7}px`)
-    hero?.style.setProperty('--hero-pointer-y-reverse', `${y * -11.7}px`)
+    heroPointerFrame.current = window.requestAnimationFrame(() => {
+      heroPointerFrame.current = 0
+      const hero = heroRef.current
+      if (!hero) return
+
+      const bounds = hero.getBoundingClientRect()
+      if (!bounds.width || !bounds.height) return
+
+      const x = (latestHeroPointer.current.x - bounds.left) / bounds.width - 0.5
+      const y = (latestHeroPointer.current.y - bounds.top) / bounds.height - 0.5
+      hero.style.setProperty('--hero-tilt-x', `${-y * 3}deg`)
+      hero.style.setProperty('--hero-tilt-y', `${x * 3}deg`)
+      hero.style.setProperty('--hero-pointer-x', `${x * 18}px`)
+      hero.style.setProperty('--hero-pointer-y', `${y * 18}px`)
+      hero.style.setProperty('--hero-pointer-x-reverse', `${x * -11.7}px`)
+      hero.style.setProperty('--hero-pointer-y-reverse', `${y * -11.7}px`)
+    })
   }
 
   function resetHeroPointer() {
-    heroRef.current?.style.removeProperty('--hero-tilt-x')
-    heroRef.current?.style.removeProperty('--hero-tilt-y')
-    heroRef.current?.style.removeProperty('--hero-pointer-x')
-    heroRef.current?.style.removeProperty('--hero-pointer-y')
-    heroRef.current?.style.removeProperty('--hero-pointer-x-reverse')
-    heroRef.current?.style.removeProperty('--hero-pointer-y-reverse')
+    if (heroPointerFrame.current) {
+      window.cancelAnimationFrame(heroPointerFrame.current)
+      heroPointerFrame.current = 0
+    }
+
+    const hero = heroRef.current
+    hero?.style.removeProperty('--hero-tilt-x')
+    hero?.style.removeProperty('--hero-tilt-y')
+    hero?.style.removeProperty('--hero-pointer-x')
+    hero?.style.removeProperty('--hero-pointer-y')
+    hero?.style.removeProperty('--hero-pointer-x-reverse')
+    hero?.style.removeProperty('--hero-pointer-y-reverse')
   }
 
   return (
@@ -263,13 +386,26 @@ function Home() {
         onPointerMove={handleHeroPointerMove}
         ref={heroRef}
       >
-        {heroBackgroundSlides.map((src, index) => (
+        {heroBackgroundSlides.map((slide, index) => (
           <div
             aria-hidden="true"
             className={`home-hero__image home-hero__image--${index + 1}${index === activeHeroSlide ? ' is-active' : ''}`}
-            key={src}
-            style={{ backgroundImage: `url("${src}")` }}
-          />
+            key={slide.src}
+          >
+            {loadedHeroSlides.includes(index) && (
+              <img
+                src={slide.src}
+                srcSet={slide.srcSet}
+                sizes="100vw"
+                width="1672"
+                height="941"
+                alt=""
+                loading={index === 0 ? 'eager' : 'lazy'}
+                fetchPriority={index === 0 ? 'high' : 'auto'}
+                decoding="async"
+              />
+            )}
+          </div>
         ))}
         <div className="home-hero__backdrop" aria-hidden="true" />
         <div className="home-hero__ambient home-hero__ambient--one" aria-hidden="true" />
@@ -315,7 +451,7 @@ function Home() {
         </div>
       </section>
 
-      <HomeVideosSection />
+      <DeferredHomepageSection component={HomeVideosSection} />
 
       <section className="home-section home-about" aria-labelledby="about-title">
         <svg
@@ -463,12 +599,16 @@ function Home() {
               <img
                 className="home-about__image home-about__image--main"
                 src={homeImages.aboutMain}
+                srcSet={getResponsiveImageSrcSet(homeImages.aboutMain)}
+                sizes="(max-width: 48rem) 100vw, 50vw"
                 alt="Friends enjoying a gathering together"
                 loading="lazy"
               />
               <img
                 className="home-about__image home-about__image--detail"
                 src={homeImages.aboutDetail}
+                srcSet={getResponsiveImageSrcSet(homeImages.aboutDetail)}
+                sizes="(max-width: 48rem) 100vw, 33vw"
                 alt="A warmly lit evening event"
                 loading="lazy"
               />
@@ -476,11 +616,13 @@ function Home() {
               <span className="home-about__orbit home-about__orbit--two" aria-hidden="true" />
               <img
                 className="home-decoration home-decoration--speakers"
-                src="/assets/music-speakers.png"
+                src="/assets/optimized/music-speakers-720-v1.webp"
                 alt=""
                 aria-hidden="true"
                 loading="lazy"
                 decoding="async"
+                width="720"
+                height="644"
                 draggable="false"
               />
             </div>
@@ -511,9 +653,12 @@ function Home() {
             <figure className="home-about__community-visual">
               <img
                 className="home-about__story-image"
-                src="/h2.png"
+                src="/assets/optimized/hero/h2-960-v1.webp"
                 alt="A group of friends sharing a mountain outing"
                 loading="lazy"
+                decoding="async"
+                width="960"
+                height="540"
               />
               <span className="home-about__orbit home-about__orbit--one" aria-hidden="true" />
               <span className="home-about__orbit home-about__orbit--two" aria-hidden="true" />
@@ -529,6 +674,8 @@ function Home() {
                 <img
                   className="home-about__story-image"
                   src={event.image}
+                srcSet={getResponsiveImageSrcSet(event.image)}
+                sizes="(max-width: 48rem) 100vw, 33vw"
                   alt={event.imageAlt}
                   loading="lazy"
                 />
@@ -543,24 +690,36 @@ function Home() {
         </div>
       </section>
 
-      <HomeCategoriesSection />
+      <DeferredHomepageSection component={HomeCategoriesSection} />
 
       <section
         className="home-section home-reasons"
         aria-labelledby="reasons-title"
+        ref={reasonsRef}
       >
         <div className="home-reasons__glow" aria-hidden="true" />
         <div className="container">
           <div className="home-reasons__showcase">
             <div className="home-reasons__art" aria-hidden="true">
               <div className="home-reasons__lottie-wrap">
-                <DotLottieReact
-                  autoplay
-                  backgroundColor="transparent"
-                  className="home-reasons__lottie"
-                  loop
-                  src="/assets/folder/ani1.json"
-                />
+                {isReasonsVisible && (
+                  <Suspense
+                    fallback={
+                      <div
+                        className="home-reasons__lottie"
+                        aria-hidden="true"
+                      />
+                    }
+                  >
+                    <DotLottieReact
+                      autoplay={!prefersReducedMotion}
+                      backgroundColor="transparent"
+                      className="home-reasons__lottie"
+                      loop
+                      src="/assets/folder/ani1.json"
+                    />
+                  </Suspense>
+                )}
               </div>
             </div>
 
@@ -653,11 +812,13 @@ function Home() {
         </div>
         <img
           className="home-decoration home-decoration--dj-party"
-          src="/assets/dj-party.png"
+          src="/assets/optimized/dj-party-650-v1.webp"
           alt=""
           aria-hidden="true"
           loading="lazy"
           decoding="async"
+          width="650"
+          height="540"
           draggable="false"
         />
       </section>

@@ -50,10 +50,11 @@ export default function Navbar() {
         <Link className="site-brand" to="/" aria-label="Vibe Together home">
           <img
             className="site-brand__logo"
-            src="/assets/folder/favicon.png"
+            src="/assets/optimized/favicon-256-v1.webp"
             alt="Vibe Together"
             width="64"
             height="64"
+            decoding="async"
           />
           <span className="site-brand__tagline">Different People. One Vibe.</span>
         </Link>

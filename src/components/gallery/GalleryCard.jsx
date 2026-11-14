@@ -1,4 +1,5 @@
 import { Share2 } from 'lucide-react'
+import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 
 export default function GalleryCard({ memory, category, onOpen, onShare }) {
   return (
@@ -15,6 +16,8 @@ export default function GalleryCard({ memory, category, onOpen, onShare }) {
       >
         <img
           src={memory.src}
+          srcSet={getResponsiveImageSrcSet(memory.src)}
+          sizes="(min-width: 64rem) 33vw, (min-width: 40rem) 50vw, 100vw"
           alt={memory.alt}
           loading="lazy"
           decoding="async"

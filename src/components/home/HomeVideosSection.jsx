@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Play } from 'lucide-react'
 import { categories } from '../../data/categories.js'
 import { galleryVideos } from '../../data/gallery.js'
+import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import './HomeVideosSection.css'
 
 function YouTubeMark({ className }) {
@@ -173,9 +174,13 @@ export default function HomeVideosSection() {
                   <img
                     className="home-videos__featured-image"
                     src={featuredVideo.thumbnail}
+                    srcSet={getResponsiveImageSrcSet(featuredVideo.thumbnail)}
+                    sizes="(max-width: 720px) 100vw, 65vw"
                     alt={featuredVideo.thumbnailAlt}
-                    fetchPriority="high"
+                    loading="lazy"
                     decoding="async"
+                    width="900"
+                    height="506"
                   />
                   <span className="home-videos__youtube-mark">
                     <YouTubeMark />
@@ -223,7 +228,7 @@ export default function HomeVideosSection() {
                 className={`home-videos__card${featuredVideo.id === video.id ? ' is-selected' : ''}`}
                 key={video.id}
                 type="button"
-                aria-label={`Preview ${video.title}, ${video.duration}. YouTube link coming soon.`}
+                aria-label={`${video.title}, ${video.duration}. YouTube link coming soon.`}
                 aria-pressed={featuredVideo.id === video.id}
                 onClick={() => selectVideo(video)}
               >
@@ -231,9 +236,13 @@ export default function HomeVideosSection() {
                   <img
                     className="home-videos__card-image"
                     src={video.thumbnail}
+                    srcSet={getResponsiveImageSrcSet(video.thumbnail)}
+                    sizes="(max-width: 720px) 45vw, 220px"
                     alt={video.thumbnailAlt}
                     loading="lazy"
                     decoding="async"
+                    width="900"
+                    height="506"
                   />
                   <span className="home-videos__card-play">
                     <Play size={17} fill="currentColor" aria-hidden="true" />

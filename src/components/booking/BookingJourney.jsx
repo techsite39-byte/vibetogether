@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 import { categories } from '../../data/categories.js'
 import { submitBookingEnquiry } from '../../services/bookingEnquiry.js'
 import { formatOfferExpiry, getDiwaliOffer, getOfferRemainingMs } from '../../services/diwaliOffer.js'
+import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import './BookingJourney.css'
 
 const steps = ['Name', 'Mobile', 'Category', 'Gender & attendees', 'Payment']
@@ -660,7 +661,15 @@ export default function BookingJourney({ onClose }) {
                             value={id}
                           />
                           <span className="booking-category-card__image-wrap">
-                            <img alt={imageAlt || `${title} event`} className="booking-category-card__image" src={image} />
+                            <img
+                              alt={imageAlt || `${title} event`}
+                              className="booking-category-card__image"
+                              src={image}
+                              srcSet={getResponsiveImageSrcSet(image)}
+                              sizes="(max-width: 48rem) 50vw, 240px"
+                              loading="lazy"
+                              decoding="async"
+                            />
                             <span aria-hidden="true" className="booking-category-card__selected-badge">
                               {form.categoryId === id && <Check size={16} />}
                             </span>

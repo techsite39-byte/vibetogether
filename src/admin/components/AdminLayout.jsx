@@ -154,7 +154,7 @@ export default function AdminLayout() {
           <Link className="site-brand" to="/admin">
             <img
               className="site-brand__logo"
-              src="/assets/folder/favicon.png"
+              src="/assets/optimized/favicon-256-v1.webp"
               alt="Vibe Together"
               width="64"
               height="64"

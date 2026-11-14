@@ -20,6 +20,7 @@ import { verifyPayment } from '../services/paymentCheckout.js'
 import { getBooking } from '../services/bookingRecords.js'
 import { downloadBookingTicket } from '../utils/bookingTicket.js'
 import { findBooking } from '../utils/bookingStorage.js'
+import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import NotFound from './NotFound.jsx'
 import './Booking.css'
 
@@ -322,7 +323,11 @@ export default function BookingConfirmation() {
             <img
               className="booking-ticket__image"
               src={eventInfo.image}
+              srcSet={getResponsiveImageSrcSet(eventInfo.image)}
+              sizes="(max-width: 48rem) 100vw, 50vw"
               alt={eventInfo.imageAlt ?? ''}
+              loading="lazy"
+              decoding="async"
             />
           )}
           <div className="booking-ticket__reference">

@@ -3,10 +3,10 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import AppErrorBoundary from './components/common/AppErrorBoundary.jsx'
 import Loader from './components/common/Loader.jsx'
 import { BookingEnquiryProvider } from './context/BookingEnquiryContext.jsx'
-import AdminLayout from './admin/components/AdminLayout.jsx'
 import MainLayout from './components/layout/MainLayout.jsx'
 
 const Dashboard = lazy(() => import('./admin/pages/Dashboard.jsx'))
+const AdminLayout = lazy(() => import('./admin/components/AdminLayout.jsx'))
 const AdminLoginPage = lazy(() => import('./admin/pages/AdminLoginPage.jsx'))
 const ManageUsers = lazy(() => import('./admin/pages/ManageUsers.jsx'))
 const ManageOrganizers = lazy(() => import('./admin/pages/ManageOrganizers.jsx'))

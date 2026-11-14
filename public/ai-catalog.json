@@ -1,0 +1,9 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "Vibe Together",
+    "documentationUrl": "https://www.vibetogether.show/about",
+    "logoUrl": "https://www.vibetogether.show/assets/optimized/favicon-192-v1.png"
+  },
+  "entries": []
+}

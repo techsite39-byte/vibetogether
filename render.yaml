@@ -66,6 +66,19 @@ services:
     rootDir: .
     buildCommand: npm ci --include=dev && npm run build
     staticPublishPath: ./dist
+    headers:
+      - path: /build-assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /assets/optimized/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+      - path: /index.html
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
     envVars:
       - key: VITE_API_URL
         value: https://vibetogether-ahgy.onrender.com/api
