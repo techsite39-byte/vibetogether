@@ -155,6 +155,7 @@ function Home() {
   const reasonsRef = useRef(null)
   const heroAnimationFrame = useRef(0)
   const heroPointerFrame = useRef(0)
+  const hasAdvancedHero = useRef(false)
   const latestHeroPointer = useRef({ x: 0, y: 0 })
   const { openBooking } = useBookingEnquiry()
   const { events } = usePublicEvents()
@@ -289,44 +290,94 @@ function Home() {
 
     const nextSlide = (activeHeroSlide + 1) % heroBackgroundSlides.length
     const preloadImage = new window.Image()
-    let preloadTimeout = 0
-    let fadeTimeout = 0
-    let switchTimeout = 0
-    let isMounted = true
+    const timers = { preload: 0, fallback: 0, fade: 0, switch: 0 }
+    let lcpObserver
+    const abortController = new AbortController()
+
+    function loadNextSlide() {
+      timers.preload = 0
+      preloadImage.sizes = '100vw'
+      preloadImage.srcset = heroBackgroundSlides[nextSlide].srcSet
+      preloadImage.src = heroBackgroundSlides[nextSlide].src
+    }
+
+    function schedulePreload(delay) {
+      if (abortController.signal.aborted || timers.preload) return
+      timers.preload = window.setTimeout(loadNextSlide, delay)
+    }
 
     preloadImage.decoding = 'async'
     preloadImage.fetchPriority = 'low'
     preloadImage.onload = () => {
-      if (isMounted) {
+      if (!abortController.signal.aborted) {
         setLoadedHeroSlides((slides) =>
           slides.includes(nextSlide) ? slides : [...slides, nextSlide],
         )
-        fadeTimeout = window.setTimeout(
+        timers.fade = window.setTimeout(
           () => setIsHeroTextVisible(false),
           2650,
         )
-        switchTimeout = window.setTimeout(() => {
+        timers.switch = window.setTimeout(() => {
+          hasAdvancedHero.current = true
           setActiveHeroSlide(nextSlide)
           setIsHeroTextVisible(true)
         }, 3000)
       }
     }
     preloadImage.onerror = () => {
-      console.error(
-        `Unable to load homepage hero background: ${heroBackgroundSlides[nextSlide].src}`,
-      )
+      if (!abortController.signal.aborted) {
+        console.error(
+          `Unable to load homepage hero background: ${heroBackgroundSlides[nextSlide].src}`,
+        )
+      }
     }
-    preloadTimeout = window.setTimeout(() => {
-      preloadImage.sizes = '100vw'
-      preloadImage.srcset = heroBackgroundSlides[nextSlide].srcSet
-      preloadImage.src = heroBackgroundSlides[nextSlide].src
-    }, 1200)
+
+    const initialHeroImage = heroRef.current?.querySelector(
+      '.home-hero__image--1 img',
+    )
+    const supportsLcpObserver =
+      window.PerformanceObserver?.supportedEntryTypes?.includes(
+        'largest-contentful-paint',
+      )
+
+    if (
+      activeHeroSlide === 0 &&
+      !hasAdvancedHero.current &&
+      initialHeroImage &&
+      supportsLcpObserver
+    ) {
+      lcpObserver = new window.PerformanceObserver((list) => {
+        const initialLcpRecorded = list
+          .getEntries()
+          .some((entry) => entry.element === initialHeroImage)
+
+        if (initialLcpRecorded) {
+          lcpObserver.disconnect()
+          window.clearTimeout(timers.fallback)
+          timers.fallback = 0
+          schedulePreload(0)
+        }
+      })
+      lcpObserver.observe({
+        type: 'largest-contentful-paint',
+        buffered: true,
+      })
+      timers.fallback = window.setTimeout(() => {
+        lcpObserver.disconnect()
+        timers.fallback = 0
+        schedulePreload(0)
+      }, 10000)
+    } else {
+      schedulePreload(1200)
+    }
 
     return () => {
-      isMounted = false
-      window.clearTimeout(preloadTimeout)
-      window.clearTimeout(fadeTimeout)
-      window.clearTimeout(switchTimeout)
+      abortController.abort()
+      window.clearTimeout(timers.preload)
+      window.clearTimeout(timers.fallback)
+      window.clearTimeout(timers.fade)
+      window.clearTimeout(timers.switch)
+      lcpObserver?.disconnect()
       preloadImage.onload = null
       preloadImage.onerror = null
     }

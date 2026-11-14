@@ -80,15 +80,66 @@ The existing optimized WebP hero variants total 1,053,528 bytes at 1672px versus
 
 The post-change mobile audit reports zero unused CSS, down from 16 KiB in the earlier mobile baseline, and 54 KiB of estimated unused JavaScript, versus 45 KiB in the earlier independent live audit. The initial entry chunk is 148,889 bytes; the production build splits below-the-fold homepage sections and route-specific code. The local audit also reports 270 ms of estimated savings from render-blocking CSS and a 1.9 s longest network dependency chain on mobile.
 
+## Latest follow-up local preview audit
+
+Captured against `http://127.0.0.1:4173` with Lighthouse 13.6.0 after the homepage carousel preload change. This is a local preview result, not a production audit or a controlled comparison with the user-provided live-site baseline.
+
+| Metric | Mobile | Desktop |
+| --- | ---: | ---: |
+| Performance | 44 | 61 |
+| Accessibility | 100 | 100 |
+| Best Practices | 100 | 100 |
+| SEO | 100 | 100 |
+| First Contentful Paint | 1.0 s | 0.3 s |
+| Lighthouse Largest Contentful Paint | 6.0 s | 1.6 s |
+| Total Blocking Time | 8,650 ms | 1,780 ms |
+| Cumulative Layout Shift | 0.009 | 0.005 |
+| Speed Index | 5.4 s | 1.8 s |
+| Total network transfer | 1,012 KiB | 1,097 KiB |
+| Estimated image-delivery savings | 236 KiB | 335 KiB |
+| Estimated unused JavaScript | 54 KiB | 54 KiB |
+
+### LCP evidence and limits
+
+Both Chrome traces identify the first hero image as the LCP candidate:
+
+| Device | LCP resource | Request interval | Trace-observed candidate | Lighthouse breakdown |
+| --- | --- | ---: | ---: | --- |
+| Mobile | `/assets/optimized/hero/h1-960-v1.webp` | 303–542 ms (239 ms) | 3,365 ms | TTFB 285 ms; load delay 18 ms; download 239 ms; render delay 2,823 ms |
+| Desktop | `/assets/optimized/hero/h1-1672-v1.webp` | 33–57 ms (24 ms) | 3,204 ms | TTFB 17 ms; load delay 16 ms; download 24 ms; render delay 3,147 ms |
+
+The Lighthouse LCP metric (6.0 s mobile, 1.6 s desktop) does not match the trace-observed candidate timing or the corresponding breakdown totals (3.365 s mobile, 3.204 s desktop). Treat these as discrepant measurements, not as one consistent before/after result. The image is discovered early and downloads quickly; the large reported render delay is the material LCP concern.
+
+The mobile trace contains a 1,848 ms `CrRendererMain` task from 1,525 ms to 3,373 ms, overlapping the hero LCP at 3,365 ms. The desktop trace contains a 1,689 ms `CrRendererMain` task from 1,109 ms to 2,798 ms, followed by the LCP candidate at 3,204 ms. Lighthouse reports nine mobile and three desktop long tasks; its largest entries are unattributed (7,391 ms mobile and 1,689 ms desktop), with smaller document and entry-script entries. The trace has no usable JavaScript call-stack attribution for the long tasks, so it does not identify a source function or dependency that can be safely optimized. The task is not considered fixed.
+
+The hero's existing opacity transition was preserved; an earlier isolated attempt to remove the fade did not measurably improve LCP and was reverted. The `h2-960-v1.webp` request seen before LCP is also used by a below-the-fold story image, so that request alone does not show that the carousel loaded its next slide early. The observer-based carousel preloader remains gated on the first hero LCP candidate, with a timeout fallback.
+
+### Hero image size audit
+
+The four original PNGs remain intact. The already-existing 1672px WebP variants have the following on-disk sizes:
+
+| Original | Dimensions | Original size | 1672px WebP | WebP size | Saved |
+| --- | ---: | ---: | --- | ---: | ---: |
+| `h1.png` | 1672 × 941 | 1,984,137 bytes | `h1-1672-v1.webp` | 109,232 bytes | 94.5% |
+| `h2.png` | 1672 × 941 | 3,056,141 bytes | `h2-1672-v1.webp` | 357,632 bytes | 88.3% |
+| `h3.png` | 1672 × 941 | 3,239,955 bytes | `h3-1672-v1.webp` | 408,416 bytes | 87.4% |
+| `h4.png` | 1672 × 941 | 2,077,888 bytes | `h4-1672-v1.webp` | 178,248 bytes | 91.4% |
+| **Total** | | **10,358,121 bytes** | | **1,053,528 bytes** | **89.8%** |
+
+These conversions predate this follow-up; no new image files were encoded. The latest Lighthouse image audit still estimates 236 KiB (mobile) and 335 KiB (desktop) of additional savings. Latest transfer size was 1,012 KiB mobile and 1,097 KiB desktop; an earlier nearby local run measured about 1,180 KiB and 1,110 KiB, respectively. These runs are variable and do not establish a controlled payload reduction.
+
+The latest build already splits route and below-the-fold homepage code. Its entry JavaScript chunk is about 490.12 kB (149.19 kB gzip) and the homepage chunk about 46.5 kB (9.81 kB gzip). The latest trace does not establish which code accounts for the long tasks, so these bundle sizes alone are not evidence that a specific dependency caused the observed LCP delay.
+
 ## Changes and validation
 
 - Deferred the homepage video and category sections until near the viewport, while keeping the first hero image eager and high priority.
+- Deferred next-slide carousel preloading until the first hero image is observed as the LCP candidate, with a timeout fallback.
 - Lazy-loaded the booking journey and admin layout; removed the extra three-second wait after the intro video ends.
 - Batched hero pointer updates with animation frames and used `ResizeObserverEntry.contentRect` for carousel sizing.
 - Added image dimensions, corrected two accessibility labels, and reused existing optimized image assets.
 - Configured immutable caching for hashed build assets.
 - Updated the homepage metadata and static AI discovery documents; verified local `robots.txt`, sitemap, `llms.txt`, AI catalog, and ARD manifest responses and content types.
 
-Validation completed: production build passed; focused tests passed (4/4); targeted lint passed and full lint exited successfully with pre-existing warnings; the homepage and lazy booking modal were checked in a browser. The full `npm test` run stalled after 15 reported tests for more than 30 minutes and was stopped, so the full suite has no verified result. The local backend is unavailable and its events/settings APIs returned 502; event-backed booking, payment completion, QR scanning, and all routes/buttons were not fully verified. No production deployment was made.
+Validation completed: production build passed; focused tests passed (4/4); targeted lint passed; the homepage and lazy booking modal were checked in a browser. The full `npm test` run stalled after 15 reported tests for more than 30 minutes and was stopped, so the full suite has no verified result. The local backend is unavailable and its events/settings APIs returned 502; event-backed booking, payment completion, QR scanning, and all routes/buttons were not fully verified. No production deployment was made.
 
-The local preview scores do not meet the requested performance targets. TBT is the largest remaining issue; Lighthouse attributes the mobile long task to the initial JavaScript entry bundle. Non-composited CSS animations and additional image savings also remain. Best Practices scored 96 rather than 100 in these local audits.
+The latest local preview results do not meet the requested performance or LCP targets. TBT remains high and long-task source attribution is unresolved; the trace establishes main-thread blocking but not the responsible code. Additional image savings remain. Lighthouse reported Best Practices 100 in the latest run; earlier local runs reported 96, another sign that results vary across runs. Do not treat these local results as production scores.
