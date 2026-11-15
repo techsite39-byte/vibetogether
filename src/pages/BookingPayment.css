@@ -820,6 +820,428 @@
 }
 
 /* ==========================================================================
+   FULLY BRANDED CASHFREE CUSTOM CHECKOUT (NO POPUP)
+   ========================================================================== */
+
+.booking-payment__custom-cashfree-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: bp-fade-up 350ms ease both;
+}
+
+.booking-payment__custom-method-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.booking-payment__custom-method-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0.95rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--bp-text-muted);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 180ms ease;
+  min-height: 44px;
+}
+
+.booking-payment__custom-method-pill:hover {
+  background: rgba(157, 78, 221, 0.12);
+  border-color: rgba(199, 125, 255, 0.35);
+  color: #ffffff;
+}
+
+.booking-payment__custom-method-pill.is-active {
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.35), rgba(45, 18, 77, 0.75));
+  border-color: #c77dff;
+  color: #ffffff;
+  box-shadow: 0 0 20px rgba(199, 125, 255, 0.35);
+}
+
+.booking-payment__custom-pill-icon {
+  display: flex;
+  align-items: center;
+  color: var(--bp-accent-violet);
+}
+
+.booking-payment__custom-method-pill.is-active .booking-payment__custom-pill-icon {
+  color: #ffffff;
+}
+
+.booking-payment__custom-pill-badge {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+}
+
+.booking-payment__custom-method-details {
+  border-radius: 1.15rem;
+  background: rgba(15, 8, 26, 0.85);
+  border: 1px solid rgba(199, 125, 255, 0.25);
+  padding: 1.35rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.booking-payment__cf-loading-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 1.5rem;
+  color: var(--bp-accent-violet);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.booking-payment__cf-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  animation: bp-fade-up 250ms ease both;
+}
+
+/* UPI Sub Switch */
+.booking-payment__upi-sub-switch {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.3rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.booking-payment__upi-sub-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border-radius: 0.55rem;
+  border: none;
+  background: transparent;
+  color: var(--bp-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 180ms ease;
+  min-height: 40px;
+}
+
+.booking-payment__upi-sub-btn.is-active {
+  background: rgba(157, 78, 221, 0.35);
+  color: #ffffff;
+  border: 1px solid rgba(199, 125, 255, 0.3);
+}
+
+/* QR Block */
+.booking-payment__cf-qr-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+
+.booking-payment__cf-qr-outer {
+  padding: 0.85rem;
+  border-radius: 1.15rem;
+  background: #ffffff;
+  box-shadow: 0 0 35px rgba(199, 125, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220px;
+  min-height: 220px;
+}
+
+.booking-payment__cf-qr-mount {
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.booking-payment__cf-qr-instructions {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.booking-payment__cf-qr-caption {
+  font-size: 0.82rem;
+  color: var(--bp-text-muted);
+}
+
+.booking-payment__cf-qr-caption strong {
+  color: #ffffff;
+}
+
+.booking-payment__cf-qr-beacons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #ffd166;
+}
+
+/* Collect Block */
+.booking-payment__cf-collect-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+/* Cashfree Element Input Mount */
+.booking-payment__cf-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bp-accent-violet);
+  margin-bottom: 0.35rem;
+  display: block;
+}
+
+.booking-payment__cf-input-mount {
+  background: rgba(7, 4, 15, 0.75);
+  border: 1px solid rgba(199, 125, 255, 0.28);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.95rem;
+  transition: all 180ms ease;
+  min-height: 46px;
+}
+
+.booking-payment__cf-input-mount:focus-within {
+  border-color: #c77dff;
+  box-shadow: 0 0 0 2px rgba(199, 125, 255, 0.25);
+}
+
+.booking-payment__cf-app-mount {
+  min-height: 10px;
+}
+
+/* Card Form */
+.booking-payment__cf-card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.booking-payment__cf-field-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.booking-payment__cf-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+.booking-payment__cf-card-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.booking-payment__cf-brand-chip {
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--bp-text-muted);
+}
+
+/* Intent Card */
+.booking-payment__intent-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.booking-payment__intent-icon-wrap {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.3), rgba(199, 125, 255, 0.2));
+  border: 1px solid rgba(199, 125, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.booking-payment__intent-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.booking-payment__intent-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.booking-payment__intent-desc {
+  font-size: 0.8rem;
+  color: var(--bp-text-muted);
+  line-height: 1.4;
+}
+
+/* Bank Grid */
+.booking-payment__cf-bank-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+}
+
+.booking-payment__cf-bank-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--bp-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 180ms ease;
+  min-height: 44px;
+}
+
+.booking-payment__cf-bank-chip:hover {
+  background: rgba(157, 78, 221, 0.15);
+  border-color: rgba(199, 125, 255, 0.35);
+  color: #ffffff;
+}
+
+.booking-payment__cf-bank-chip.is-selected {
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.4), rgba(45, 18, 77, 0.8));
+  border-color: #c77dff;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(199, 125, 255, 0.35);
+}
+
+/* Wallet Grid */
+.booking-payment__cf-wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+}
+
+.booking-payment__cf-wallet-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--bp-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 180ms ease;
+  min-height: 44px;
+}
+
+.booking-payment__cf-wallet-chip:hover {
+  background: rgba(157, 78, 221, 0.15);
+  border-color: rgba(199, 125, 255, 0.35);
+  color: #ffffff;
+}
+
+.booking-payment__cf-wallet-chip.is-selected {
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.4), rgba(45, 18, 77, 0.8));
+  border-color: #c77dff;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(199, 125, 255, 0.35);
+}
+
+/* Custom Submit Buttons */
+.booking-payment__cf-submit-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 1.1rem 1.75rem;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(135deg, #7b2cbf 0%, #9d4edd 50%, #c77dff 100%);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    0 12px 30px rgba(123, 44, 191, 0.6),
+    0 0 30px rgba(199, 125, 255, 0.3);
+  transition: all 200ms ease;
+  min-height: 48px;
+}
+
+.booking-payment__cf-submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    0 16px 38px rgba(123, 44, 191, 0.75),
+    0 0 40px rgba(199, 125, 255, 0.45);
+}
+
+.booking-payment__cf-submit-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.booking-payment__cf-submit-btn--gpay {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.4);
+}
+
+.booking-payment__cf-submit-btn--phonepe {
+  background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 50%, #8b5cf6 100%);
+  box-shadow: 0 12px 30px rgba(124, 58, 237, 0.4);
+}
+
+.booking-payment__cf-submit-btn--paytm {
+  background: linear-gradient(135deg, #0369a1 0%, #0284c7 50%, #00baf2 100%);
+  box-shadow: 0 12px 30px rgba(2, 132, 199, 0.4);
+}
+
+/* ==========================================================================
    PRIMARY CINEMATIC PAY BUTTON
    ========================================================================== */
 
