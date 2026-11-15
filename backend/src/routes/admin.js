@@ -502,6 +502,10 @@ function bookingFromEnquiry(enquiry) {
     paymentReference: enquiry.paymentReference ?? '',
     paymentOrderId: enquiry.paymentOrderId ?? '',
     razorpayPaymentId: enquiry.razorpayPaymentId ?? '',
+    cfOrderId: enquiry.cfOrderId ?? '',
+    cfPaymentId: enquiry.cfPaymentId ?? '',
+    cfPaymentStatus: enquiry.cfPaymentStatus ?? '',
+    cfPaymentMethod: enquiry.cfPaymentMethod ?? '',
     paidAt: enquiry.paidAt ?? null,
     paymentVerifiedAt: enquiry.paymentVerifiedAt ?? null,
     paymentFailureReason: enquiry.paymentFailureReason ?? '',
@@ -544,6 +548,12 @@ async function listBookings(request) {
   if (['not_required', 'pending', 'verified', 'paid', 'failed', 'unpaid', 'demo_paid', 'processing', 'refunded'].includes(paymentStatus)) {
     items = items.filter((item) => item.paymentStatus === paymentStatus)
   }
+  const paymentProviderFilter = typeof request.query.paymentProvider === 'string'
+    ? request.query.paymentProvider.trim().toLowerCase()
+    : ''
+  if (paymentProviderFilter) {
+    items = items.filter((item) => (item.paymentProvider || '').toLowerCase() === paymentProviderFilter)
+  }
   const search = typeof request.query.search === 'string'
     ? request.query.search.trim().slice(0, queryValueMaximum).toLowerCase()
     : ''
@@ -557,6 +567,10 @@ async function listBookings(request) {
         item.category,
         item.event,
         item.event?.title,
+        item.paymentOrderId,
+        item.razorpayPaymentId,
+        item.cfOrderId,
+        item.cfPaymentId,
       ]
         .join(' ')
         .toLowerCase()

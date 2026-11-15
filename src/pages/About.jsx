@@ -110,8 +110,11 @@ export default function About() {
 
           <div className="about-page__image about-page__image--main">
             <img
-              src="/assets/outdoor-dj-festival.png"
+              src="/assets/optimized/outdoor-dj-festival-480-v1.webp"
               alt="A crowd enjoying an outdoor DJ festival beneath the lights"
+              width="480"
+              height="306"
+              decoding="async"
             />
             <div className="about-page__image-caption">
               <span className="about-page__live-dot" />
@@ -121,15 +124,21 @@ export default function About() {
 
           <div className="about-page__image about-page__image--top">
             <img
-              src="/assets/dj-party.png"
+              src="/assets/optimized/dj-party-650-v1.webp"
               alt="A DJ bringing people together on the dance floor"
+              width="650"
+              height="540"
+              decoding="async"
             />
           </div>
 
           <div className="about-page__image about-page__image--bottom">
             <img
-              src="/assets/festival-crowd.png"
+              src="/assets/optimized/festival-crowd-480-v1.webp"
               alt="Friends sharing the energy of a live music crowd"
+              width="470"
+              height="576"
+              decoding="async"
             />
           </div>
 

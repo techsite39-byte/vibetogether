@@ -1,6 +1,7 @@
 import { CalendarDays, Clock3, MapPin, Users, UsersRound } from 'lucide-react'
 import Button from '../common/Button.jsx'
 import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
+import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import {
   resetInteractiveTilt,
   updateInteractiveTilt,
@@ -55,8 +56,13 @@ export default function EventCard({
           <img
             className="event-card__image"
             src={image}
+            srcSet={getResponsiveImageSrcSet(image)}
+            sizes="(min-width: 64rem) 33vw, (min-width: 40rem) 50vw, 100vw"
             alt={imageAlt ?? title ?? ''}
             loading="lazy"
+            decoding="async"
+            width="1200"
+            height="750"
           />
         ) : (
           <div className="event-card__image-placeholder" aria-hidden="true" />

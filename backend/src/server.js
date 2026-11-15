@@ -20,6 +20,7 @@ import {
 import mongoose from 'mongoose'
 import Razorpay from 'razorpay'
 import { initializeAdminRecords } from './services/adminSetup.js'
+import { createCashfreePaymentService } from './services/cashfreePayments.js'
 import { createRazorpayPaymentService } from './services/razorpayPayments.js'
 import { createDiwaliOfferService } from './services/diwaliOffer.js'
 import { createWhatsAppNotificationService } from './services/whatsappNotifications.js'
@@ -39,6 +40,14 @@ const emailService = createEmailService({
 })
 
 const diwaliOfferService = createDiwaliOfferService()
+const cashfreePayments = createCashfreePaymentService({
+  appId: config.cashfreeAppId,
+  secretKey: config.cashfreeSecretKey,
+  environment: config.cashfreeEnv,
+  apiVersion: config.cashfreeApiVersion,
+  frontendUrl: config.frontendUrl,
+  diwaliOfferService,
+})
 const razorpayPayments = createRazorpayPaymentService({
   client: config.razorpayConfigured
     ? new Razorpay({
@@ -86,6 +95,9 @@ const app = createApp({
     submitUpiPayment: submitBookingEnquiryUpiPayment,
     verifyUpiPayment: verifyBookingEnquiryUpiPayment,
   },
+  cashfreePayments,
+  cashfreeConfigured: config.cashfreeConfigured,
+  cashfreeSecretKey: config.cashfreeSecretKey,
   razorpayPayments,
   razorpayConfigured: config.razorpayConfigured,
   razorpayKeyId: config.razorpayKeyId,

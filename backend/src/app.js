@@ -10,6 +10,7 @@ import { createPublicEnquiriesRouter } from './routes/publicEnquiries.js'
 import { createPublicSettingsRouter } from './routes/publicSettings.js'
 import { createWhatsAppWebhookRouter } from './routes/whatsappWebhook.js'
 import { createRazorpayWebhookRouter } from './routes/razorpayWebhook.js'
+import { createCashfreeWebhookRouter } from './routes/cashfreeWebhook.js'
 import healthRouter from './routes/health.js'
 import { PlatformSetting } from './models/adminRecords.js'
 import { DiwaliOffer } from './models/diwaliOffer.js'
@@ -31,6 +32,9 @@ export function createApp({
   bookingEventModel,
   bookingReferenceCounterModel,
   bookingEnquiryRepository,
+  cashfreePayments,
+  cashfreeConfigured = false,
+  cashfreeSecretKey = '',
   razorpayPayments,
   razorpayConfigured = false,
   razorpayKeyId = '',
@@ -65,16 +69,54 @@ export function createApp({
       port: request.socket.localPort,
     })
   })
+  const cashfreeWebhookRouter = createCashfreeWebhookRouter({
+    payments: cashfreePayments,
+    notifications: whatsappNotifications,
+    secret: cashfreeSecretKey,
+  })
+  const cashfreeWebhookBodyParser = express.raw({
+    type: ['application/json', 'application/*+json'],
+    limit: '1mb',
+  })
+  app.use('/api/payments/cashfree/webhook', cashfreeWebhookBodyParser, cashfreeWebhookRouter)
+  app.use('/api/cashfree/webhook', cashfreeWebhookBodyParser, cashfreeWebhookRouter)
   app.use(
     cors({
       credentials: true,
       methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
+      allowedHeaders: [
+        'Content-Type',
+        'X-CSRF-Token',
+        'Authorization',
+        'Accept',
+        'Origin',
+        'X-Requested-With',
+      ],
+      exposedHeaders: ['X-CSRF-Token', 'Retry-After'],
       origin(origin, callback) {
-        const isLocalDevelopmentOrigin =
-          nodeEnv === 'development' &&
-          /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin ?? '')
-        if (!origin || corsOrigins.includes(origin) || isLocalDevelopmentOrigin) {
+        if (!origin) {
+          callback(null, true)
+          return
+        }
+
+        const isLocalNetworkOrigin =
+          /^https?:\/\/(?:localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[0-1])\.\d+\.\d+)(?::\d+)?$/i.test(
+            origin,
+          )
+        const isVibeTogetherDomain =
+          /^https:\/\/(?:[a-z0-9-]+\.)?vibetogether\.show(?::\d+)?$/i.test(origin)
+        const isRenderFrontend =
+          /^https:\/\/vibetogether[a-z0-9-]*\.onrender\.com(?::\d+)?$/i.test(origin)
+        const isVercelFrontend =
+          /^https:\/\/vibe-together[a-z0-9-]*\.vercel\.app(?::\d+)?$/i.test(origin)
+
+        if (
+          corsOrigins.includes(origin) ||
+          isVibeTogetherDomain ||
+          isRenderFrontend ||
+          isVercelFrontend ||
+          (nodeEnv !== 'production' && isLocalNetworkOrigin)
+        ) {
           callback(null, true)
           return
         }
@@ -159,6 +201,8 @@ export function createApp({
         events,
         eventRepository,
         repository: bookingEnquiryRepository,
+        cashfreePayments,
+        cashfreeConfigured,
         razorpayPayments,
         razorpayConfigured,
         paymentProvider,

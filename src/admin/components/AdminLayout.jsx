@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   BarChart3,
@@ -25,6 +25,7 @@ import {
   signOutAdmin,
 } from '../services/adminApi.js'
 import { AdminNotice } from './AdminUI.jsx'
+import Loader from '../../components/common/Loader.jsx'
 import useScrollReveal from '../../hooks/useScrollReveal.js'
 import './Admin.css'
 
@@ -154,7 +155,7 @@ export default function AdminLayout() {
           <Link className="site-brand" to="/admin">
             <img
               className="site-brand__logo"
-              src="/assets/folder/favicon.png"
+              src="/assets/optimized/favicon-256-v1.webp"
               alt="Vibe Together"
               width="64"
               height="64"
@@ -207,7 +208,16 @@ export default function AdminLayout() {
             <span>CONNECTED TO MONGODB</span>
           </div>
           {accessError && <AdminNotice tone="error">{accessError}</AdminNotice>}
-          <Outlet />
+          <Suspense
+            fallback={
+              <Loader
+                className="route-loader"
+                label="Loading admin page..."
+              />
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </AdminDataProvider>

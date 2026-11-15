@@ -354,7 +354,7 @@ export default function AdminLoginPage() {
         <header className="admin-auth-header">
           <Link to="/" className="admin-auth-logo-link" title="Return to Vibe Together Home">
             <img
-              src="/assets/folder/favicon.png"
+              src="/assets/optimized/favicon-256-v1.webp"
               alt="Vibe Together"
               className="admin-auth-logo"
             />

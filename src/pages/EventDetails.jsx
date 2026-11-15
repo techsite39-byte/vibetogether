@@ -19,6 +19,7 @@ import WhatsAppLink from '../components/contact/WhatsAppLink.jsx'
 import EventCard from '../components/events/EventCard.jsx'
 import NotFound from './NotFound.jsx'
 import usePublicEvents from '../hooks/usePublicEvents.js'
+import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import './EventDetails.css'
 
 function formatEventDate(date) {
@@ -138,7 +139,12 @@ function EventLightbox({ images, onClose, selectedIndex, onSelect }) {
           <ArrowLeft size={20} aria-hidden="true" />
         </button>
         <figure className="event-lightbox__figure">
-          <img src={selectedImage.src} alt={selectedImage.alt} />
+          <img
+            src={selectedImage.src}
+            srcSet={getResponsiveImageSrcSet(selectedImage.src)}
+            sizes="80vw"
+            alt={selectedImage.alt}
+          />
           <figcaption id="event-lightbox-caption">
             {selectedImage.alt}
             <span>
@@ -249,6 +255,8 @@ export default function EventDetails() {
         <img
           className="event-detail__hero-image"
           src={event.image}
+          srcSet={getResponsiveImageSrcSet(event.image)}
+          sizes="100vw"
           alt=""
           fetchPriority="high"
         />
@@ -362,7 +370,14 @@ export default function EventDetails() {
                   aria-label={`View image ${index + 1}: ${image.alt}`}
                   onClick={() => setLightboxIndex(index)}
                 >
-                  <img src={image.src} alt={image.alt} loading="lazy" />
+                  <img
+                    src={image.src}
+                    srcSet={getResponsiveImageSrcSet(image.src)}
+                    sizes="(max-width: 48rem) 100vw, 50vw"
+                    alt={image.alt}
+                    loading="lazy"
+                    decoding="async"
+                  />
                   <span className="event-gallery__zoom" aria-hidden="true">
                     <Plus size={18} />
                   </span>

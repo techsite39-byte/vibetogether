@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
+import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import './HomeCategoriesSection.css'
 
 // The signature experiences featuring the exact 4 categories + curated club adventures
@@ -13,7 +14,7 @@ const baseExperiences = [
     description: 'Big choruses, familiar songs, and voices raised together.',
     image:
       'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/h1.png',
+    fallbackImage: '/assets/optimized/hero/h1-480-v1.webp',
     imageAlt: 'Microphone and singer under warm concert stage lights',
     link: '/sing-along',
   },
@@ -24,7 +25,7 @@ const baseExperiences = [
     description: 'Easy-going gatherings where new conversations begin.',
     image:
       'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/h2.png',
+    fallbackImage: '/assets/optimized/hero/h2-480-v1.webp',
     imageAlt: 'Friends meeting and enjoying each other’s company outdoors',
     link: '/strangers-meet',
   },
@@ -35,7 +36,7 @@ const baseExperiences = [
     description: 'Take the long way round with a crew you just met.',
     image:
       'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/h3.png',
+    fallbackImage: '/assets/optimized/hero/h3-480-v1.webp',
     imageAlt: 'Scenic mountain lake and cabin in the hills',
     link: '/strangers-trip',
   },
@@ -46,7 +47,7 @@ const baseExperiences = [
     description: 'A little friendly competition and a lot of shared laughs.',
     image:
       'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/h4.png',
+    fallbackImage: '/assets/optimized/hero/h4-480-v1.webp',
     imageAlt: 'People having fun under a colorful rainbow canopy outdoors',
     link: '/fun-games',
   },
@@ -57,7 +58,7 @@ const baseExperiences = [
     description: 'Warm chords, soulful vocals, and candlelit sets.',
     image:
       'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/assets/music-speakers.png',
+    fallbackImage: '/assets/optimized/music-speakers-720-v1.webp',
     imageAlt: 'Acoustic guitar and musician in warm lighting',
     link: '/events',
   },
@@ -68,7 +69,7 @@ const baseExperiences = [
     description: 'Good food, honest talks, and chairs pulled close.',
     image:
       'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/assets/folder/sub.png',
+    fallbackImage: '/assets/optimized/sub-480-v1.webp',
     imageAlt: 'Warmly lit dinner table ready for dinner and conversation',
     link: '/events',
   },
@@ -79,7 +80,7 @@ const baseExperiences = [
     description: 'Crackling embers, midnight skies, and stories shared.',
     image:
       'https://images.unsplash.com/photo-1517824806704-9040b037703b?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/assets/outdoor-dj-festival.png',
+    fallbackImage: '/assets/optimized/outdoor-dj-festival-480-v1.webp',
     imageAlt: 'Bonfire outdoors with friends gathered under night sky',
     link: '/events',
   },
@@ -90,7 +91,7 @@ const baseExperiences = [
     description: 'Chasing morning light with an adventurous crew.',
     image:
       'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/assets/folder/image.png',
+    fallbackImage: '/assets/optimized/image-480-v1.webp',
     imageAlt: 'Dramatic alpine mountain peaks under morning sun',
     link: '/events',
   },
@@ -101,7 +102,7 @@ const baseExperiences = [
     description: 'Feel the bass, ride the rhythm, and lose track of time.',
     image:
       'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/assets/dj-party.png',
+    fallbackImage: '/assets/optimized/dj-party-650-v1.webp',
     imageAlt: 'Joyful festival crowd with warm golden lighting',
     link: '/events',
   },
@@ -112,7 +113,7 @@ const baseExperiences = [
     description: 'Roll the dice, plan your move, and share the win.',
     image:
       'https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?auto=format&fit=crop&w=800&q=82',
-    fallbackImage: '/assets/festival-crowd.png',
+    fallbackImage: '/assets/optimized/festival-crowd-480-v1.webp',
     imageAlt: 'Tabletop board game with dice and tokens',
     link: '/events',
   },
@@ -139,17 +140,16 @@ export default function HomeCategoriesSection() {
   const velocityRef = useRef(0)
 
   // Hover state (controls auto-scroll: ONLY scrolls on hover!)
-  const [isHovered, setIsHovered] = useState(false)
   const isHoveredRef = useRef(false)
 
   // Rotation angle state
   const [rotation, setRotation] = useState(0)
   const [activeCardId, setActiveCardId] = useState(null)
+  const [isAnimating, setIsAnimating] = useState(false)
   const [dimensions, setDimensions] = useState({
-    width: 1200,
+    width: typeof window === 'undefined' ? 1200 : window.innerWidth,
     height: 520,
   })
-
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -168,16 +168,13 @@ export default function HomeCategoriesSection() {
     const stage = stageRef.current
     if (!stage) return
 
-    const updateDimensions = () => {
-      const rect = stage.getBoundingClientRect()
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
       setDimensions({
-        width: Math.max(320, rect.width || 1200),
-        height: Math.max(420, rect.height || 520),
+        width: Math.max(320, width || window.innerWidth || 1200),
+        height: Math.max(420, height || 520),
       })
-    }
-
-    updateDimensions()
-    const observer = new ResizeObserver(updateDimensions)
+    })
     observer.observe(stage)
 
     return () => observer.disconnect()
@@ -185,40 +182,45 @@ export default function HomeCategoriesSection() {
 
   // Animation Loop: STRICT REQUIREMENT: "if hover only auto scroll"
   useEffect(() => {
-    const loop = { id: 0, lastTime: 0, autoSpeed: 0 }
+    if (!isAnimating) return undefined
+
+    const frame = { id: 0 }
+    const loopState = { lastTime: 0, autoSpeed: 0 }
 
     function step(timestamp) {
-      if (!loop.lastTime) loop.lastTime = timestamp
-      const delta = Math.min(40, timestamp - loop.lastTime)
-      loop.lastTime = timestamp
+      if (!loopState.lastTime) loopState.lastTime = timestamp
+      const delta = Math.min(40, timestamp - loopState.lastTime)
+      loopState.lastTime = timestamp
 
       if (!isDraggingRef.current) {
-        // Momentum release after dragging
         if (Math.abs(velocityRef.current) > 0.005) {
           setRotation((prev) => prev + velocityRef.current * (delta / 16))
           velocityRef.current *= Math.pow(0.92, delta / 16)
         } else {
           velocityRef.current = 0
-
-          // STRICT: ONLY auto-scroll when hovered!
+          const isHoveredNow = isHoveredRef.current
           const targetSpeed =
-            isHoveredRef.current && !prefersReducedMotion ? 0.038 : 0
+            isHoveredNow && !prefersReducedMotion ? 0.038 : 0
+          loopState.autoSpeed +=
+            (targetSpeed - loopState.autoSpeed) * 0.08
 
-          // Smooth acceleration into scroll, smooth deceleration to stop
-          loop.autoSpeed += (targetSpeed - loop.autoSpeed) * 0.08
-
-          if (Math.abs(loop.autoSpeed) > 0.0004) {
-            setRotation((prev) => prev + loop.autoSpeed * (delta / 16))
+          if (Math.abs(loopState.autoSpeed) > 0.0004) {
+            setRotation(
+              (prev) => prev + loopState.autoSpeed * (delta / 16),
+            )
+          } else if (!isHoveredNow || prefersReducedMotion) {
+            setIsAnimating(false)
+            return
           }
         }
       }
 
-      loop.id = requestAnimationFrame(step)
+      frame.id = requestAnimationFrame(step)
     }
 
-    loop.id = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(loop.id)
-  }, [prefersReducedMotion])
+    frame.id = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame.id)
+  }, [isAnimating, prefersReducedMotion])
 
   // Responsive Arc Geometry: Overhead fan crown arch
   const { width } = dimensions
@@ -286,6 +288,10 @@ export default function HomeCategoriesSection() {
   const handlePointerUp = () => {
     if (!isDraggingRef.current) return
     isDraggingRef.current = false
+    setIsAnimating(
+      Math.abs(velocityRef.current) > 0.005 ||
+        (isHoveredRef.current && !prefersReducedMotion),
+    )
   }
 
   // Step cards with arrows
@@ -323,24 +329,22 @@ export default function HomeCategoriesSection() {
 
   const handleMouseEnter = () => {
     isHoveredRef.current = true
-    setIsHovered(true)
+    if (!prefersReducedMotion) setIsAnimating(true)
   }
 
   const handleMouseLeave = () => {
     isHoveredRef.current = false
-    setIsHovered(false)
     setActiveCardId(null)
   }
 
   const handleTouchStart = () => {
     isHoveredRef.current = true
-    setIsHovered(true)
+    if (!prefersReducedMotion) setIsAnimating(true)
   }
 
   const handleTouchEnd = () => {
     window.setTimeout(() => {
       isHoveredRef.current = false
-      setIsHovered(false)
     }, 2500)
   }
 
@@ -375,7 +379,7 @@ export default function HomeCategoriesSection() {
         aria-roledescription="curved rotating experience carousel"
       >
         {/* Floating Rotating Arc Cards (Tangent-tilted overhead crown) */}
-        <div className="experiences-arc__track" aria-hidden="true">
+        <div className="experiences-arc__track">
           {ringCards.map((card, index) => {
             const {
               rx,
@@ -439,8 +443,13 @@ export default function HomeCategoriesSection() {
                   <img
                     className="arc-card__image"
                     src={card.image}
+                    srcSet={getResponsiveImageSrcSet(card.image)}
+                    sizes="(max-width: 720px) 25vw, 144px"
                     alt={card.imageAlt || card.title}
-                    loading="eager"
+                    loading="lazy"
+                    decoding="async"
+                    width="450"
+                    height="540"
                     draggable={false}
                     onError={(e) => {
                       if (card.fallbackImage && e.currentTarget.src !== card.fallbackImage) {

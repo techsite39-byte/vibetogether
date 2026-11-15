@@ -162,7 +162,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Regular price per ticket</dt><dd>{formatAmount(currentBooking.regularPrice ?? 299, currentBooking.currency)}</dd></div>
           <div><dt>Diwali offer</dt><dd>{currentBooking.diwaliOfferApplied ? `Applied · saved ${formatAmount(currentBooking.discount ?? (currentBooking.regularPrice ?? 299) - currentBooking.amount, currentBooking.currency)}` : 'Not applied'}</dd></div>
           <div><dt>Payment status</dt><dd><StatusBadge status={currentBooking.paymentStatus}>{formatPaymentStatus(currentBooking.paymentStatus)}</StatusBadge></dd></div>
-          <div><dt>Payment provider</dt><dd>{currentBooking.paymentProvider || '—'}</dd></div>
+          <div><dt>Payment provider</dt><dd><strong>{currentBooking.paymentProvider === 'cashfree' ? 'Cashfree Payments' : currentBooking.paymentProvider === 'razorpay' ? 'Razorpay (Historical)' : currentBooking.paymentProvider || '—'}</strong></dd></div>
           {currentBooking.upiPayments?.map((payment, index) => (
             <div key={`${payment.utr}-${index}`}>
               <dt>UPI submission {index + 1}</dt>
@@ -177,8 +177,24 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
               </dd>
             </div>
           ))}
-          <div><dt>Razorpay order ID</dt><dd>{currentBooking.paymentOrderId || '—'}</dd></div>
-          <div><dt>Razorpay payment ID</dt><dd>{currentBooking.razorpayPaymentId || '—'}</dd></div>
+          {currentBooking.paymentProvider === 'cashfree' ? (
+            <>
+              <div><dt>Cashfree order ID</dt><dd>{currentBooking.cfOrderId || currentBooking.paymentOrderId || '—'}</dd></div>
+              <div><dt>Cashfree payment ID</dt><dd>{currentBooking.cfPaymentId || '—'}</dd></div>
+              <div><dt>Cashfree payment status</dt><dd>{currentBooking.cfPaymentStatus || currentBooking.paymentStatus || '—'}</dd></div>
+              {currentBooking.cfPaymentMethod && <div><dt>Cashfree payment method</dt><dd>{currentBooking.cfPaymentMethod}</dd></div>}
+            </>
+          ) : currentBooking.paymentProvider === 'razorpay' ? (
+            <>
+              <div><dt>Razorpay order ID</dt><dd>{currentBooking.paymentOrderId || '—'}</dd></div>
+              <div><dt>Razorpay payment ID</dt><dd>{currentBooking.razorpayPaymentId || '—'}</dd></div>
+            </>
+          ) : (
+            <>
+              <div><dt>Order ID</dt><dd>{currentBooking.paymentOrderId || currentBooking.cfOrderId || '—'}</dd></div>
+              <div><dt>Payment ID</dt><dd>{currentBooking.cfPaymentId || currentBooking.razorpayPaymentId || '—'}</dd></div>
+            </>
+          )}
           <div><dt>Payment reference</dt><dd>{currentBooking.paymentReference || '—'}</dd></div>
           <div><dt>Payment verified at</dt><dd>{formatBookingDate(currentBooking.paymentVerifiedAt ?? currentBooking.paidAt)}</dd></div>
           <div><dt>Payment failure</dt><dd>{currentBooking.paymentFailureReason || '—'}</dd></div>
@@ -243,6 +259,7 @@ export default function ManageBookings() {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [paymentStatus, setPaymentStatus] = useState('all')
+  const [gateway, setGateway] = useState('all')
   const [selected, setSelected] = useState(null)
   const [actionError, setActionError] = useState('')
 
@@ -256,6 +273,11 @@ export default function ManageBookings() {
           : booking.paymentStatus === paymentStatus
       ))
       .filter((booking) => {
+        if (gateway === 'all') return true
+        const prov = (booking.paymentProvider || '').toLowerCase()
+        return prov === gateway
+      })
+      .filter((booking) => {
         const event = events.find((item) => item.id === booking.eventId)
         const organizer = organizers.find((item) => item.id === booking.organizerId)
         return [
@@ -267,10 +289,14 @@ export default function ManageBookings() {
           booking.event?.title,
           typeof booking.event === 'string' ? booking.event : '',
           organizer?.name,
+          booking.paymentOrderId,
+          booking.razorpayPaymentId,
+          booking.cfOrderId,
+          booking.cfPaymentId,
         ].join(' ').toLocaleLowerCase().includes(term)
       })
       .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt))
-  }, [bookings, events, organizers, paymentStatus, query, status])
+  }, [bookings, events, organizers, paymentStatus, gateway, query, status])
   const pendingUpiPayments = useMemo(
     () => bookings.flatMap((booking) =>
       (booking.upiPayments ?? [])
@@ -400,6 +426,7 @@ export default function ManageBookings() {
           <label className="admin-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search bookings</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Reference, customer, event, category or organizer" value={query} /></label>
           <label className="admin-select"><span>Booking</span><select onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All statuses</option><option value="confirmed">Confirmed</option><option value="pending">Pending</option><option value="cancelled">Cancelled</option></select></label>
           <label className="admin-select"><span>Payment</span><select onChange={(event) => setPaymentStatus(event.target.value)} value={paymentStatus}><option value="all">All payment states</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="demo_paid">Demo Paid</option><option value="processing">Verifying</option><option value="failed">Failed</option><option value="refunded">Refunded</option><option value="not_required">Not required</option></select></label>
+          <label className="admin-select"><span>Gateway</span><select onChange={(event) => setGateway(event.target.value)} value={gateway}><option value="all">All Gateways</option><option value="cashfree">Cashfree Payments</option><option value="razorpay">Razorpay (Historical)</option><option value="upi">Direct UPI</option></select></label>
         </div>
         <AdminTable label="Booking records">
           <thead><tr><th scope="col">Reference / customer</th><th scope="col">Event / interest</th><th scope="col">Ticket details</th><th scope="col">Booked</th><th scope="col">Total amount</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">WhatsApp</th><th scope="col">Actions</th></tr></thead>

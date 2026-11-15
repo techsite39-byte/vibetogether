@@ -118,27 +118,29 @@ function readCookie(request, name) {
   return item ? decodeURIComponent(item.slice(name.length + 1)) : ''
 }
 
-function cookieOptions({ secure, maxAge, httpOnly }) {
+export function cookieOptions({ secure, maxAge, httpOnly }) {
   return [
-    'Path=/api/admin',
-    `SameSite=${secure ? 'None' : 'Strict'}`,
+    'Path=/',
+    `SameSite=${secure ? 'None' : 'Lax'}`,
     maxAge == null ? '' : `Max-Age=${maxAge}`,
     httpOnly ? 'HttpOnly' : '',
     secure ? 'Secure' : '',
+    secure ? 'Partitioned' : '',
   ]
     .filter(Boolean)
     .join('; ')
 }
 
-function googleBindingCookieValue(binding, secure, maxAge = 600) {
+export function googleBindingCookieValue(binding, secure, maxAge = 600) {
   const name = secure ? secureGoogleBindingCookie : googleBindingCookie
   return [
     `${name}=${encodeURIComponent(binding)}`,
     'Path=/',
-    'SameSite=Lax',
-    `Max-Age=${maxAge}`,
+    `SameSite=${secure ? 'None' : 'Lax'}`,
+    maxAge == null ? '' : `Max-Age=${maxAge}`,
     'HttpOnly',
     secure ? 'Secure' : '',
+    secure ? 'Partitioned' : '',
   ]
     .filter(Boolean)
     .join('; ')
@@ -210,11 +212,17 @@ async function verifyGoogleIdentityToken(token, clientId) {
   }
 }
 
-function setSessionCookies(response, token, csrfToken, secure, maxAge = defaultSessionLifetimeSeconds) {
+export function setSessionCookies(response, token, csrfToken, secure, maxAge = defaultSessionLifetimeSeconds) {
   const existing = response.getHeader('Set-Cookie')
   const cookies = Array.isArray(existing) ? existing : existing ? [existing] : []
+  const retainedCookies = cookies.filter(
+    (cookie) =>
+      typeof cookie === 'string' &&
+      !cookie.startsWith(`${sessionCookie}=`) &&
+      !cookie.startsWith(`${csrfCookie}=`),
+  )
   response.setHeader('Set-Cookie', [
-    ...cookies,
+    ...retainedCookies,
     `${sessionCookie}=${encodeURIComponent(token)}; ${cookieOptions({
       secure,
       maxAge,
@@ -229,7 +237,16 @@ function setSessionCookies(response, token, csrfToken, secure, maxAge = defaultS
 }
 
 export function clearAdminSession(response, secure) {
+  const existing = response.getHeader('Set-Cookie')
+  const cookies = Array.isArray(existing) ? existing : existing ? [existing] : []
+  const retainedCookies = cookies.filter(
+    (cookie) =>
+      typeof cookie === 'string' &&
+      !cookie.startsWith(`${sessionCookie}=`) &&
+      !cookie.startsWith(`${csrfCookie}=`),
+  )
   response.setHeader('Set-Cookie', [
+    ...retainedCookies,
     `${sessionCookie}=; ${cookieOptions({ secure, maxAge: 0, httpOnly: true })}`,
     `${csrfCookie}=; ${cookieOptions({ secure, maxAge: 0, httpOnly: false })}`,
   ])
@@ -281,7 +298,32 @@ export function createRequireAdmin({
         return
       }
 
-      const payload = verifyPayload(readCookie(request, sessionCookie), sessionSecret)
+      let token = null
+      let authSource = null
+
+      const authHeader = request.get('authorization') || request.headers?.authorization
+      if (typeof authHeader === 'string' && authHeader.trim()) {
+        const parts = authHeader.trim().split(/\s+/)
+        if (parts.length === 2 && /^bearer$/i.test(parts[0])) {
+          token = parts[1]
+          authSource = 'bearer'
+        }
+      }
+
+      if (!token) {
+        const cookieVal = readCookie(request, sessionCookie)
+        if (cookieVal) {
+          token = cookieVal
+          authSource = 'cookie'
+        }
+      }
+
+      if (!token) {
+        response.status(401).json({ message: 'Admin sign-in is required.' })
+        return
+      }
+
+      const payload = verifyPayload(token, sessionSecret)
       if (
         !payload ||
         typeof payload.sub !== 'string' ||
@@ -320,6 +362,8 @@ export function createRequireAdmin({
         status: admin.status || 'active',
       }
       request.adminSessionId = payload.sid
+      request.adminAuthSource = authSource
+      request.adminToken = token
       next()
     } catch (error) {
       next(error)
@@ -328,6 +372,12 @@ export function createRequireAdmin({
 }
 
 export function requireAdminCsrf(request, response, next) {
+  // Requests authenticated using Authorization: Bearer tokens are impervious to CSRF attacks
+  if (request.adminAuthSource === 'bearer') {
+    next()
+    return
+  }
+
   const origin = request.get('origin') || request.get('referer') || request.get('host')
   const cookieToken = readCookie(request, csrfCookie)
   const headerToken = request.get('x-csrf-token')
@@ -588,6 +638,8 @@ export function createAdminAuthRouter({
         status: admin.status || 'active',
       },
       csrfToken,
+      token,
+      expiresAt,
     }
   }
 
@@ -617,7 +669,9 @@ export function createAdminAuthRouter({
       return
     }
 
-    const state = randomBytes(32).toString('base64url')
+    const isTokenMode = request.query.auth_mode === 'token'
+    const randomPart = randomBytes(30).toString('base64url')
+    const state = isTokenMode ? `tok_${randomPart}` : randomBytes(32).toString('base64url')
     const bindingCookie = secureCookies
       ? secureGoogleBindingCookie
       : googleBindingCookie
@@ -652,7 +706,14 @@ export function createAdminAuthRouter({
     }).toString()
     console.info('[Google OAuth] Authorization transaction created.')
     response.setHeader('Cache-Control', 'no-store')
-    response.setHeader('Set-Cookie', googleBindingCookieValue(browserBinding, secureCookies))
+    const bindingValue = googleBindingCookieValue(browserBinding, secureCookies)
+    const existing = response.getHeader('Set-Cookie')
+    const cookies = Array.isArray(existing) ? existing : existing ? [existing] : []
+    const bindingCookieName = secureCookies ? secureGoogleBindingCookie : googleBindingCookie
+    const retainedCookies = cookies.filter(
+      (cookie) => typeof cookie === 'string' && !cookie.startsWith(`${bindingCookieName}=`),
+    )
+    response.setHeader('Set-Cookie', [...retainedCookies, bindingValue])
     response.redirect(302, authorizationUrl.toString())
   })
 
@@ -713,9 +774,16 @@ export function createAdminAuthRouter({
 
     try {
       const googleUser = await exchangeGoogleCode(code)
-      await establishGoogleSession(googleUser, response)
+      const sessionResult = await establishGoogleSession(googleUser, response)
       console.info('[Google OAuth] Authorized admin session established.')
-      response.redirect(302, new URL('/admin/dashboard', callbackFrontendOrigin).toString())
+      const redirectUrl = new URL('/admin/dashboard', callbackFrontendOrigin)
+      if (state.startsWith('tok_')) {
+        redirectUrl.hash = new URLSearchParams({
+          admin_token: sessionResult.token,
+          admin_csrf: sessionResult.csrfToken,
+        }).toString()
+      }
+      response.redirect(302, redirectUrl.toString())
     } catch (error) {
       if (error.status === 403) {
         console.warn('[Google OAuth] Sign-in denied: Google identity is not an active authorized admin.')
@@ -801,6 +869,8 @@ export function createAdminAuthRouter({
           status: admin.status || 'active',
         },
         csrfToken,
+        token,
+        expiresAt,
       })
     } catch (error) {
       next(error)
@@ -1128,7 +1198,8 @@ export function createAdminAuthRouter({
   const handleGetMe = (request, response) => {
     response.json({
       admin: request.admin,
-      csrfToken: readCookie(request, csrfCookie),
+      csrfToken: readCookie(request, csrfCookie) || request.get('x-csrf-token') || '',
+      token: request.adminToken || null,
     })
   }
 

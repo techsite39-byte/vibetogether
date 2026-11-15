@@ -1,12 +1,16 @@
 import {
   useCallback,
   useEffect,
+  lazy,
   useRef,
   useState,
+  Suspense,
 } from 'react'
 import { useLocation } from 'react-router-dom'
 import { BookingEnquiryContext } from './bookingEnquiryContext.js'
-import BookingJourney from '../components/booking/BookingJourney.jsx'
+import Loader from '../components/common/Loader.jsx'
+
+const BookingJourney = lazy(() => import('../components/booking/BookingJourney.jsx'))
 
 function isBookingFlow(pathname) {
   return (
@@ -50,11 +54,13 @@ export function BookingEnquiryProvider({ children }) {
     <BookingEnquiryContext.Provider value={{ openBooking }}>
       {children}
       {activeBooking && (
-        <BookingJourney
-          key={activeBooking.key}
-          initialCategory={activeBooking.category}
-          onClose={closeBooking}
-        />
+        <Suspense fallback={<Loader className="route-loader" label="Loading booking form..." />}>
+          <BookingJourney
+            key={activeBooking.key}
+            initialCategory={activeBooking.category}
+            onClose={closeBooking}
+          />
+        </Suspense>
       )}
     </BookingEnquiryContext.Provider>
   )

@@ -1,7 +1,24 @@
 import { BookingApiError, readBookingApiResponse } from './bookingApiResponse.js'
 import { API_BASE_URL } from '../config/api.js'
 
+const PUBLIC_EVENTS_CACHE_TTL_MS = 30_000
+let publicEventsCache
+let publicEventsCachedAt = 0
+
 export async function getBookingEvents(signal) {
+  if (signal?.aborted) {
+    const error = new Error('The operation was aborted.')
+    error.name = 'AbortError'
+    throw error
+  }
+
+  if (
+    publicEventsCache &&
+    Date.now() - publicEventsCachedAt < PUBLIC_EVENTS_CACHE_TTL_MS
+  ) {
+    return publicEventsCache.map((event) => ({ ...event }))
+  }
+
   let payload
   try {
     const response = await fetch(`${API_BASE_URL}/events`, { signal })
@@ -32,12 +49,15 @@ export async function getBookingEvents(signal) {
     )
   }
 
-  return payload.events.map((event) => ({
+  const events = payload.events.map((event) => ({
     ...event,
     description: event.description ?? '',
     image: event.image ?? '',
     imageAlt: event.imageAlt ?? '',
   }))
+  publicEventsCache = events
+  publicEventsCachedAt = Date.now()
+  return events.map((event) => ({ ...event }))
 }
 
 export async function submitBookingEnquiry(enquiry, signal) {

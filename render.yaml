@@ -10,13 +10,21 @@ services:
       - key: NODE_ENV
         value: production
       - key: PAYMENT_PROVIDER
-        value: upi
+        value: cashfree
+      - key: FRONTEND_URL
+        value: https://www.vibetogether.show
+      - key: CASHFREE_APP_ID
+        sync: false
+      - key: CASHFREE_SECRET_KEY
+        sync: false
+      - key: CASHFREE_ENV
+        value: PRODUCTION
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB_NAME
         value: main
       - key: CORS_ORIGIN
-        value: https://www.vibetogether.show
+        value: https://www.vibetogether.show,https://vibetogether.show,https://vibetogether-frontend.onrender.com,https://vibetogether.onrender.com,https://vibe-together.vercel.app
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_SESSION_SECRET
@@ -66,6 +74,19 @@ services:
     rootDir: .
     buildCommand: npm ci --include=dev && npm run build
     staticPublishPath: ./dist
+    headers:
+      - path: /build-assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /assets/optimized/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+      - path: /index.html
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
     envVars:
       - key: VITE_API_URL
         value: https://vibetogether-ahgy.onrender.com/api

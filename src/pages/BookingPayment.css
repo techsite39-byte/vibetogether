@@ -1575,6 +1575,59 @@
   font-size: 0.82rem;
 }
 
+/* =========================================================================
+   GATEWAY CHECKOUT & ACCEPTED PAYMENT MODES
+   ========================================================================= */
+
+.booking-payment__gateway-checkout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  width: 100%;
+}
+
+.booking-payment__methods-showcase {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgb(180 110 255 / 16%);
+  background: rgb(255 255 255 / 2.5%);
+  backdrop-filter: blur(8px);
+}
+
+.booking-payment__methods-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #bf98e6;
+}
+
+.booking-payment__methods-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.booking-payment__method-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #e5d4f7;
+  background: rgb(155 77 255 / 10%);
+  border: 1px solid rgb(180 110 255 / 22%);
+}
+
+.booking-payment__method-chip svg {
+  color: #c48aff;
+}
+
 @media (max-width: 34rem) {
   .booking-payment__custom-checkout {
     padding: 0.8rem;
@@ -1590,5 +1643,14 @@
 
   .booking-payment__card-expiry-row {
     grid-column: auto;
+  }
+
+  .booking-payment__methods-badges {
+    gap: 0.35rem;
+  }
+
+  .booking-payment__method-chip {
+    font-size: 0.68rem;
+    padding: 0.3rem 0.55rem;
   }
 }

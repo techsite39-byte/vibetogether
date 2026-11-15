@@ -1,6 +1,6 @@
-import { useRef } from 'react'
+import { Suspense, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import BrandIntro from './BrandIntro.jsx'
+import Loader from '../common/Loader.jsx'
 import FloatingWhatsApp from '../contact/FloatingWhatsApp.jsx'
 import Footer from './Footer.jsx'
 import Navbar from './Navbar.jsx'
@@ -36,13 +36,16 @@ export default function MainLayout({ children }) {
 
   return (
     <div className="site-layout">
-      <BrandIntro />
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
       <Navbar />
       <main id="main-content" className="site-main" ref={mainRef}>
-        {children ?? <Outlet />}
+        <Suspense
+          fallback={<Loader className="route-loader" label="Loading page..." />}
+        >
+          {children ?? <Outlet />}
+        </Suspense>
       </main>
       <Footer />
       <FloatingWhatsApp />

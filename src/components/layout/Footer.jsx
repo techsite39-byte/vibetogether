@@ -117,10 +117,12 @@ export default function Footer({ socialLinks: initialSocialLinks = [] }) {
           <div className="site-footer__cta-mascot" aria-hidden="true">
             <img
               className="site-footer__cta-image"
-              src="/assets/folder/footer.png"
+              src="/assets/optimized/footer-1536-v1.webp"
               alt=""
               loading="lazy"
               decoding="async"
+              width="1536"
+              height="576"
               draggable="false"
             />
           </div>
@@ -146,7 +148,7 @@ export default function Footer({ socialLinks: initialSocialLinks = [] }) {
           <Link className="site-brand site-brand--footer" to="/">
             <img
               className="site-brand__logo"
-              src="/assets/folder/favicon.png"
+              src="/assets/optimized/favicon-256-v1.webp"
               alt="Vibe Together"
               width="88"
               height="88"

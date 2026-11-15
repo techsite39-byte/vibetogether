@@ -567,7 +567,7 @@ body::before {
   height: 100%;
   aspect-ratio: auto;
   border-radius: 0;
-  background: url('/assets/crowd-silhouettes.png') center bottom / min(100%, 96rem)
+  background: url('/assets/optimized/crowd-silhouettes-v1.webp') center bottom / min(100%, 96rem)
     auto no-repeat;
   filter:
     drop-shadow(0 0 4px rgb(168 43 255 / 72%))
@@ -879,7 +879,7 @@ body::before {
 }
 
 .site-footer::before {
-  background: url('/assets/crowd-silhouettes.png') center bottom / min(100%, 96rem)
+  background: url('/assets/optimized/crowd-silhouettes-v1.webp') center bottom / min(100%, 96rem)
     auto no-repeat;
   filter:
     drop-shadow(0 0 5px rgb(168 43 255 / 82%))

@@ -1,14 +1,23 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
-import { DotLottieReact } from '@lottiefiles/dotlottie-react'
 import { API_BASE_URL } from '../../config/api.js'
 import { readBookingApiResponse } from '../../services/bookingApiResponse.js'
 import './NewsletterSignup.css'
 
+const DotLottieReact = lazy(() =>
+  import('@lottiefiles/dotlottie-react').then((module) => ({
+    default: module.DotLottieReact,
+  })),
+)
+
 export default function NewsletterSignup() {
+  const visualRef = useRef(null)
   const [feedback, setFeedback] = useState({ type: '', message: '' })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [dotLottie, setDotLottie] = useState(null)
+  const [shouldLoadAnimation, setShouldLoadAnimation] = useState(
+    () => !('IntersectionObserver' in window),
+  )
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(
     () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
@@ -26,6 +35,24 @@ export default function NewsletterSignup() {
       motionPreference.removeEventListener('change', updateMotionPreference)
     }
   }, [])
+
+  useEffect(() => {
+    const visual = visualRef.current
+    if (!visual || shouldLoadAnimation) return undefined
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoadAnimation(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '250px 0px' },
+    )
+    observer.observe(visual)
+
+    return () => observer.disconnect()
+  }, [shouldLoadAnimation])
 
   useEffect(() => {
     if (!dotLottie) {
@@ -81,22 +108,37 @@ export default function NewsletterSignup() {
       <div className="newsletter-section__container">
         <div className="newsletter-card">
           <div className="newsletter-card__layout">
-            <div className="newsletter-card__visual" aria-hidden="true">
+            <div
+              className="newsletter-card__visual"
+              aria-hidden="true"
+              ref={visualRef}
+            >
               <span className="newsletter-card__particle newsletter-card__particle--one" />
               <span className="newsletter-card__particle newsletter-card__particle--two" />
               <span className="newsletter-card__particle newsletter-card__particle--three" />
               <span className="newsletter-card__particle newsletter-card__particle--four" />
               <span className="newsletter-card__particle newsletter-card__particle--five" />
               <div className="newsletter-card__animation">
-                <DotLottieReact
-                  autoplay={!prefersReducedMotion}
-                  backgroundColor="transparent"
-                  className="newsletter-card__lottie"
-                  dotLottieRefCallback={setDotLottie}
-                  layout={{ fit: 'contain', align: [0.5, 0.5] }}
-                  loop
-                  src="/assets/folder/ani.lottie"
-                />
+                {shouldLoadAnimation && (
+                  <Suspense
+                    fallback={
+                      <div
+                        className="newsletter-card__lottie"
+                        aria-hidden="true"
+                      />
+                    }
+                  >
+                    <DotLottieReact
+                      autoplay={!prefersReducedMotion}
+                      backgroundColor="transparent"
+                      className="newsletter-card__lottie"
+                      dotLottieRefCallback={setDotLottie}
+                      layout={{ fit: 'contain', align: [0.5, 0.5] }}
+                      loop
+                      src="/assets/folder/ani.lottie"
+                    />
+                  </Suspense>
+                )}
               </div>
             </div>
             <svg

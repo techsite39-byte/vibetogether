@@ -570,9 +570,10 @@ test('Google OAuth redirect verifies state, Google identity, and creates a serve
       .find((cookie) => cookie.startsWith('__Host-vt_google_browser_binding='))
     assert.ok(productionBindingCookie)
     assert.match(productionBindingCookie, /Path=\//)
-    assert.match(productionBindingCookie, /SameSite=Lax/)
+    assert.match(productionBindingCookie, /SameSite=None/)
     assert.match(productionBindingCookie, /HttpOnly/)
     assert.match(productionBindingCookie, /Secure/)
+    assert.match(productionBindingCookie, /Partitioned/)
     assert.doesNotMatch(productionBindingCookie, /Domain=/i)
 
     const missingBindingCallback = await fetch(

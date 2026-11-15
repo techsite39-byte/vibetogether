@@ -26,6 +26,7 @@ import {
 import {
   rememberBookingReference,
 } from '../utils/bookingStorage.js'
+import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import { validateBookingForm } from '../utils/bookingValidation.js'
 import { createCheckoutSession } from '../services/paymentCheckout.js'
 import { createBooking } from '../services/bookingRecords.js'
@@ -258,8 +259,11 @@ export default function Booking() {
               <div className="booking-event">
                 <img
                   src={event.image}
+                  srcSet={getResponsiveImageSrcSet(event.image)}
+                  sizes="(max-width: 48rem) 100vw, 50vw"
                   alt={event.imageAlt}
                   loading="lazy"
+                  decoding="async"
                 />
                 <div className="booking-event__content">
                   <span className="booking-event__category">{event.category}</span>

@@ -1,6 +1,7 @@
 import { ArrowUpRight } from 'lucide-react'
 import Button from '../common/Button.jsx'
 import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
+import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import {
   resetInteractiveTilt,
   updateInteractiveTilt,
@@ -26,8 +27,11 @@ export default function CategoryCard({
           <img
             className="category-card__image"
             src={image}
+            srcSet={getResponsiveImageSrcSet(image)}
+            sizes="(min-width: 64rem) 33vw, (min-width: 40rem) 50vw, 100vw"
             alt={imageAlt ?? title ?? ''}
             loading="lazy"
+            decoding="async"
           />
         ) : (
           <div className="category-card__image-placeholder" aria-hidden="true" />

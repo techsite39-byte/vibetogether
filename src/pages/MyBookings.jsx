@@ -13,6 +13,7 @@ import Container from '../components/common/Container.jsx'
 import useBookings from '../hooks/useBookings.js'
 import { events } from '../data/events.js'
 import { cancelBooking as cancelBookingRecord } from '../services/bookingRecords.js'
+import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import './Booking.css'
 
 const CURRENT_TIMESTAMP = Date.now()
@@ -81,8 +82,11 @@ function BookingCard({ booking, canCancel, onCancel }) {
         <img
           className="my-booking-card__image"
           src={event.image}
+          srcSet={getResponsiveImageSrcSet(event.image)}
+          sizes="(max-width: 48rem) 100vw, 50vw"
           alt={event.imageAlt ?? ''}
           loading="lazy"
+          decoding="async"
         />
       )}
       <div className="my-booking-card__body">
