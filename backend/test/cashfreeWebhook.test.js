@@ -94,3 +94,37 @@ test('rejects invalid signatures and malformed JSON without processing the event
   })
   assert.equal(processed, 0)
 })
+
+test('accepts webhooks with application/*+json content-type on both primary and alternate routes', async () => {
+  const received = []
+  const baseUrl = await startServer({
+    cashfreeSecretKey: webhookSecret,
+    cashfreePayments: {
+      async handleWebhook(payload, signature, timestamp, rawBody) {
+        received.push({ payload, signature, timestamp, rawBody })
+        return { received: true, ignored: true, eventType: payload.type }
+      },
+    },
+  })
+
+  // Test alternate route /api/cashfree/webhook with application/payment+json
+  const body = JSON.stringify({ type: 'PAYMENT_SUCCESS_WEBHOOK', data: { order: { order_id: 'cf_order_test' } } })
+  const timestamp = String(Math.floor(Date.now() / 1000))
+  const signature = createHmac('sha256', webhookSecret).update(timestamp + body).digest('base64')
+
+  const response = await fetch(`${baseUrl}/api/cashfree/webhook`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/payment+json',
+      'x-webhook-signature': signature,
+      'x-webhook-timestamp': timestamp,
+    },
+    body,
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { received: true })
+  assert.equal(received.length, 1)
+  assert.equal(received[0].payload.type, 'PAYMENT_SUCCESS_WEBHOOK')
+  assert.deepEqual(received[0].rawBody, Buffer.from(body))
+})

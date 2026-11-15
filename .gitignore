@@ -26,3 +26,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary scratch/exported QR web artifacts
+public/assets/folder/qr.html
+public/assets/folder/qr_files/*
+!public/assets/folder/qr_files/qr.png

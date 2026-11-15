@@ -119,7 +119,7 @@ async function startCrossDeviceServer({ corsOrigins, secureCookies = false }) {
         'Origin',
         'X-Requested-With',
       ],
-      exposedHeaders: ['Set-Cookie', 'X-CSRF-Token', 'Retry-After'],
+      exposedHeaders: ['X-CSRF-Token', 'Retry-After'],
       origin(origin, callback) {
         if (!origin) {
           callback(null, true)

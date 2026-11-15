@@ -118,7 +118,7 @@ function readCookie(request, name) {
   return item ? decodeURIComponent(item.slice(name.length + 1)) : ''
 }
 
-function cookieOptions({ secure, maxAge, httpOnly }) {
+export function cookieOptions({ secure, maxAge, httpOnly }) {
   return [
     'Path=/',
     `SameSite=${secure ? 'None' : 'Lax'}`,
@@ -131,15 +131,16 @@ function cookieOptions({ secure, maxAge, httpOnly }) {
     .join('; ')
 }
 
-function googleBindingCookieValue(binding, secure, maxAge = 600) {
+export function googleBindingCookieValue(binding, secure, maxAge = 600) {
   const name = secure ? secureGoogleBindingCookie : googleBindingCookie
   return [
     `${name}=${encodeURIComponent(binding)}`,
     'Path=/',
-    'SameSite=Lax',
-    `Max-Age=${maxAge}`,
+    `SameSite=${secure ? 'None' : 'Lax'}`,
+    maxAge == null ? '' : `Max-Age=${maxAge}`,
     'HttpOnly',
     secure ? 'Secure' : '',
+    secure ? 'Partitioned' : '',
   ]
     .filter(Boolean)
     .join('; ')
@@ -211,11 +212,17 @@ async function verifyGoogleIdentityToken(token, clientId) {
   }
 }
 
-function setSessionCookies(response, token, csrfToken, secure, maxAge = defaultSessionLifetimeSeconds) {
+export function setSessionCookies(response, token, csrfToken, secure, maxAge = defaultSessionLifetimeSeconds) {
   const existing = response.getHeader('Set-Cookie')
   const cookies = Array.isArray(existing) ? existing : existing ? [existing] : []
+  const retainedCookies = cookies.filter(
+    (cookie) =>
+      typeof cookie === 'string' &&
+      !cookie.startsWith(`${sessionCookie}=`) &&
+      !cookie.startsWith(`${csrfCookie}=`),
+  )
   response.setHeader('Set-Cookie', [
-    ...cookies,
+    ...retainedCookies,
     `${sessionCookie}=${encodeURIComponent(token)}; ${cookieOptions({
       secure,
       maxAge,
@@ -230,7 +237,16 @@ function setSessionCookies(response, token, csrfToken, secure, maxAge = defaultS
 }
 
 export function clearAdminSession(response, secure) {
+  const existing = response.getHeader('Set-Cookie')
+  const cookies = Array.isArray(existing) ? existing : existing ? [existing] : []
+  const retainedCookies = cookies.filter(
+    (cookie) =>
+      typeof cookie === 'string' &&
+      !cookie.startsWith(`${sessionCookie}=`) &&
+      !cookie.startsWith(`${csrfCookie}=`),
+  )
   response.setHeader('Set-Cookie', [
+    ...retainedCookies,
     `${sessionCookie}=; ${cookieOptions({ secure, maxAge: 0, httpOnly: true })}`,
     `${csrfCookie}=; ${cookieOptions({ secure, maxAge: 0, httpOnly: false })}`,
   ])
@@ -690,7 +706,14 @@ export function createAdminAuthRouter({
     }).toString()
     console.info('[Google OAuth] Authorization transaction created.')
     response.setHeader('Cache-Control', 'no-store')
-    response.setHeader('Set-Cookie', googleBindingCookieValue(browserBinding, secureCookies))
+    const bindingValue = googleBindingCookieValue(browserBinding, secureCookies)
+    const existing = response.getHeader('Set-Cookie')
+    const cookies = Array.isArray(existing) ? existing : existing ? [existing] : []
+    const bindingCookieName = secureCookies ? secureGoogleBindingCookie : googleBindingCookie
+    const retainedCookies = cookies.filter(
+      (cookie) => typeof cookie === 'string' && !cookie.startsWith(`${bindingCookieName}=`),
+    )
+    response.setHeader('Set-Cookie', [...retainedCookies, bindingValue])
     response.redirect(302, authorizationUrl.toString())
   })
 

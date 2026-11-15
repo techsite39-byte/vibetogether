@@ -75,7 +75,7 @@ export function createApp({
     secret: cashfreeSecretKey,
   })
   const cashfreeWebhookBodyParser = express.raw({
-    type: 'application/json',
+    type: ['application/json', 'application/*+json'],
     limit: '1mb',
   })
   app.use('/api/payments/cashfree/webhook', cashfreeWebhookBodyParser, cashfreeWebhookRouter)
@@ -92,7 +92,7 @@ export function createApp({
         'Origin',
         'X-Requested-With',
       ],
-      exposedHeaders: ['Set-Cookie', 'X-CSRF-Token', 'Retry-After'],
+      exposedHeaders: ['X-CSRF-Token', 'Retry-After'],
       origin(origin, callback) {
         if (!origin) {
           callback(null, true)
