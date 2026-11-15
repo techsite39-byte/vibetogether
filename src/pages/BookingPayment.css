@@ -1002,6 +1002,44 @@
   color: #ffd166;
 }
 
+.booking-payment__cf-qr-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 340px;
+  margin-top: 0.75rem;
+}
+
+.booking-payment__cf-submit-btn--verify {
+  background: linear-gradient(135deg, #7b2cbf 0%, #9d4edd 50%, #c77dff 100%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 24px -4px rgba(157, 78, 221, 0.45);
+}
+
+.booking-payment__cf-submit-btn--verify:hover:not(:disabled) {
+  box-shadow: 0 10px 30px -2px rgba(199, 125, 255, 0.6);
+  transform: translateY(-2px);
+}
+
+.booking-payment__auto-poll-hint {
+  font-size: 0.74rem;
+  color: var(--bp-text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.booking-payment__cf-inline-slot {
+  width: 100%;
+  min-height: 540px;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: transparent;
+  margin-top: 0.75rem;
+}
+
 /* Collect Block */
 .booking-payment__cf-collect-block {
   display: flex;
