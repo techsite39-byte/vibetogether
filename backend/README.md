@@ -72,7 +72,8 @@ Configure secrets in Render, not in frontend code:
 - API: `MONGODB_URI`, `MONGODB_DB_NAME=main`, `CORS_ORIGIN`, `ADMIN_EMAIL`,
   `ADMIN_SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
   `GOOGLE_CALLBACK_URL`, `SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`,
-  `SMTP_PASSWORD`, and optionally `SMTP_FROM_EMAIL`.
+  `SMTP_PASSWORD`, `CASHFREE_APP_ID`, `CASHFREE_SECRET_KEY`, and optionally
+  `SMTP_FROM_EMAIL`.
 - API account bootstrap: generate a bcrypt password hash locally with
   `npm run admin:credentials` from `backend/` and set `ADMIN_PASSWORD_HASH` if
   the target database does not already contain the admin account. Never put
@@ -111,14 +112,13 @@ permanent reference. Never prefix or expose any Razorpay secret to Vite.
 Without the key ID and key secret, the page uses the explicit demo simulator;
 it does not charge money.
 
-Select the active payment method on the API with `PAYMENT_PROVIDER=upi` or
-`PAYMENT_PROVIDER=razorpay`. The API defaults to `razorpay` to preserve the
-existing checkout configuration; changing this server variable requires an
-API restart/redeploy, not a frontend rebuild. In UPI mode, `UPI_ID` and
+Select the active payment method on the API with `PAYMENT_PROVIDER=cashfree`,
+`PAYMENT_PROVIDER=upi`, or `PAYMENT_PROVIDER=razorpay`. The Render Blueprint
+selects Cashfree; changing this server variable requires an API restart/redeploy,
+not a frontend rebuild. In UPI mode, `UPI_ID` and
 `UPI_PAYEE_NAME` are public receiving-account details (defaults are the UPI
-details supplied for this integration). The Render Blueprint selects `upi`
-temporarily; change it to `razorpay` after merchant verification. Keep all
-Razorpay keys server-only.
+details supplied for this integration). Keep all payment-provider secrets
+server-only.
 UPI submissions are also accepted in Razorpay mode when the booking has no
 Razorpay order or provider attached. Bookings with an existing Razorpay
 payment remain locked to that provider to prevent duplicate payment attempts.
@@ -142,6 +142,15 @@ Razorpay Test Mode webhook settings. Subscribe to `payment.captured`,
 a terminal booking failure by itself; the checkout dismissal/status check
 reconciles all attempts before sending assistance, so a later successful retry
 is not preceded by a false failure message.
+
+Cashfree webhook endpoint:
+`https://vibetogether-ahgy.onrender.com/api/payments/cashfree/webhook`
+
+Configure this exact URL in Cashfree, and keep `CASHFREE_SECRET_KEY` set to the
+webhook secret configured there. The endpoint verifies Cashfree's HMAC-SHA256
+signature against the unparsed request body and a recent webhook timestamp. It
+does not require customer authentication or browser CORS access. Valid test
+webhooks without a booking order are acknowledged without changing a booking.
 
 WhatsApp booking notifications use the official Meta Cloud API and are sent to
 the customer's consented, validated mobile number (not the business number).

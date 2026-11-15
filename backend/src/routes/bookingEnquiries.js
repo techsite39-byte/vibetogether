@@ -273,9 +273,11 @@ export function createBookingEnquiriesRouter({
   events = defaultEvents,
   eventRepository,
   repository,
+  cashfreePayments,
+  cashfreeConfigured = false,
   razorpayPayments,
   razorpayConfigured = false,
-  paymentProvider = 'razorpay',
+  paymentProvider = 'cashfree',
   upiId = 'vinothinimoorthi37-1@okhdfcbank',
   upiPayeeName = 'Vinothini Moorthi',
   diwaliOfferService,
@@ -344,13 +346,19 @@ export function createBookingEnquiriesRouter({
       paymentProviderMode: paymentProvider,
       paymentReference: enquiry.paymentReference ?? '',
       paymentOrderId: enquiry.paymentOrderId ?? '',
-      razorpayPaymentId: enquiry.razorpayPaymentId ?? '',
+      razorpayPaymentId: paymentProvider === 'razorpay' ? (enquiry.razorpayPaymentId ?? '') : '',
+      cfOrderId: enquiry.cfOrderId ?? '',
+      cfPaymentId: enquiry.cfPaymentId ?? '',
+      cfPaymentSessionId: enquiry.cfPaymentSessionId ?? '',
+      cfPaymentStatus: enquiry.cfPaymentStatus ?? '',
+      cfPaymentMethod: enquiry.cfPaymentMethod ?? '',
       paidAt: enquiry.paidAt ?? null,
       paymentVerifiedAt: enquiry.paymentVerifiedAt ?? null,
       paymentFailureReason: enquiry.paymentFailureReason ?? '',
       paymentAttemptedAt: enquiry.paymentAttemptedAt ?? null,
       whatsappConsent: Boolean(enquiry.whatsappConsent),
-      razorpayConfigured: paymentProvider === 'razorpay' && razorpayConfigured,
+      cashfreeConfigured: paymentProvider === 'cashfree' && Boolean(cashfreeConfigured),
+      razorpayConfigured: paymentProvider === 'razorpay' && Boolean(razorpayConfigured),
       upiId,
       upiPayeeName,
       upiPayment: enquiry.upiPayments?.at(-1)
@@ -632,6 +640,144 @@ export function createBookingEnquiriesRouter({
       })
     }
   })
+
+  // ==========================================
+  // CASHFREE PAYMENT GATEWAY INTEGRATION
+  // ==========================================
+
+  router.post('/:requestId/cashfree-order', async (request, response) => {
+    const { requestId } = request.params
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+    if (paymentProvider !== 'cashfree' || !cashfreeConfigured || typeof cashfreePayments?.createOrder !== 'function') {
+      response.status(503).json({ message: 'Cashfree Payments is not configured on the booking server.' })
+      return
+    }
+
+    try {
+      const { returnUrl, notifyUrl } = request.body || {}
+      const result = await cashfreePayments.createOrder(requestId, { returnUrl, notifyUrl })
+      if (!result) {
+        response.status(409).json({ message: 'This booking session is no longer payable.' })
+        return
+      }
+      if (result.alreadyPaid) {
+        response.json({
+          alreadyPaid: true,
+          booking: serializeEnquiry(result.booking),
+        })
+        return
+      }
+      response.json({
+        ...result,
+        booking: serializeEnquiry(result.booking),
+      })
+    } catch (error) {
+      response.status(error.status ?? 500).json({
+        message: error.message || 'Cashfree could not create the payment order.',
+      })
+    }
+  })
+
+  router.post('/:requestId/cashfree-verify', async (request, response) => {
+    const { requestId } = request.params
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+    const { cf_payment_id, order_id } = request.body || {}
+
+    try {
+      const result = await cashfreePayments?.verifyPayment?.(requestId, { cf_payment_id, order_id })
+      if (!result) {
+        response.status(409).json({ message: 'The payment could not be matched to this booking session.' })
+        return
+      }
+      if (result.pending) {
+        response.status(202).json({
+          message: 'The payment is still being processed by Cashfree.',
+          pending: true,
+          booking: serializeEnquiry(result.booking),
+        })
+        return
+      }
+      if (result.booking.paymentStatus === 'paid') {
+        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
+      }
+      const booking = await getUpdatedEnquiry(requestId, result.booking)
+      response.json({
+        verified: result.verified,
+        duplicate: result.duplicate,
+        booking: serializeEnquiry(booking),
+      })
+    } catch (error) {
+      response.status(error.status ?? 500).json({
+        message: error.message || 'Cashfree payment verification failed.',
+      })
+    }
+  })
+
+  router.post('/:requestId/cashfree-status', async (request, response) => {
+    const { requestId } = request.params
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'The booking request could not be verified.' })
+      return
+    }
+    try {
+      const result = await cashfreePayments?.checkStatus?.(requestId)
+      if (!result) {
+        response.status(404).json({ message: 'Booking enquiry not found.' })
+        return
+      }
+      if (result.booking.paymentStatus === 'paid') {
+        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
+      } else if (result.booking.paymentStatus === 'failed') {
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+      }
+      const booking = await getUpdatedEnquiry(requestId, result.booking)
+      response.set('Cache-Control', 'no-store').json({
+        pending: Boolean(result.pending),
+        duplicate: Boolean(result.duplicate),
+        booking: serializeEnquiry(booking),
+      })
+    } catch (error) {
+      response.status(error.status ?? 502).json({
+        message: error.message || 'Cashfree payment status could not be checked.',
+      })
+    }
+  })
+
+  router.post('/:requestId/cashfree-failure', async (request, response) => {
+    const { requestId } = request.params
+    const { orderId, outcome = 'failed' } = request.body ?? {}
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ message: 'A valid booking is required.' })
+      return
+    }
+    try {
+      const result = await cashfreePayments?.recordFailure?.(requestId, { orderId, outcome })
+      if (!result?.booking) {
+        response.status(404).json({ message: 'Booking enquiry not found.' })
+        return
+      }
+      await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+      const booking = await getUpdatedEnquiry(requestId, result.booking)
+      response.json({
+        recorded: true,
+        booking: serializeEnquiry(booking),
+      })
+    } catch (error) {
+      response.status(error.status ?? 500).json({
+        message: error.message || 'Cashfree payment failure could not be recorded.',
+      })
+    }
+  })
+
+  // ==========================================
+  // RAZORPAY INTEGRATION (PRESERVED SAFELY)
+  // ==========================================
 
   router.post('/:requestId/razorpay-order', async (request, response) => {
     const { requestId } = request.params

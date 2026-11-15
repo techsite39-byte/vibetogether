@@ -10,6 +10,7 @@ import { createPublicEnquiriesRouter } from './routes/publicEnquiries.js'
 import { createPublicSettingsRouter } from './routes/publicSettings.js'
 import { createWhatsAppWebhookRouter } from './routes/whatsappWebhook.js'
 import { createRazorpayWebhookRouter } from './routes/razorpayWebhook.js'
+import { createCashfreeWebhookRouter } from './routes/cashfreeWebhook.js'
 import healthRouter from './routes/health.js'
 import { PlatformSetting } from './models/adminRecords.js'
 import { DiwaliOffer } from './models/diwaliOffer.js'
@@ -31,6 +32,9 @@ export function createApp({
   bookingEventModel,
   bookingReferenceCounterModel,
   bookingEnquiryRepository,
+  cashfreePayments,
+  cashfreeConfigured = false,
+  cashfreeSecretKey = '',
   razorpayPayments,
   razorpayConfigured = false,
   razorpayKeyId = '',
@@ -65,6 +69,17 @@ export function createApp({
       port: request.socket.localPort,
     })
   })
+  const cashfreeWebhookRouter = createCashfreeWebhookRouter({
+    payments: cashfreePayments,
+    notifications: whatsappNotifications,
+    secret: cashfreeSecretKey,
+  })
+  const cashfreeWebhookBodyParser = express.raw({
+    type: 'application/json',
+    limit: '1mb',
+  })
+  app.use('/api/payments/cashfree/webhook', cashfreeWebhookBodyParser, cashfreeWebhookRouter)
+  app.use('/api/cashfree/webhook', cashfreeWebhookBodyParser, cashfreeWebhookRouter)
   app.use(
     cors({
       credentials: true,
@@ -186,6 +201,8 @@ export function createApp({
         events,
         eventRepository,
         repository: bookingEnquiryRepository,
+        cashfreePayments,
+        cashfreeConfigured,
         razorpayPayments,
         razorpayConfigured,
         paymentProvider,

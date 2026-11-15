@@ -10,7 +10,15 @@ services:
       - key: NODE_ENV
         value: production
       - key: PAYMENT_PROVIDER
-        value: upi
+        value: cashfree
+      - key: FRONTEND_URL
+        value: https://www.vibetogether.show
+      - key: CASHFREE_APP_ID
+        sync: false
+      - key: CASHFREE_SECRET_KEY
+        sync: false
+      - key: CASHFREE_ENV
+        value: PRODUCTION
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB_NAME

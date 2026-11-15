@@ -27,6 +27,10 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
 import UpiPayment from './UpiPayment.jsx'
 import {
+  checkCashfreePaymentStatus,
+  createCashfreeOrder,
+  recordCashfreePaymentFailure,
+  verifyCashfreePayment,
   checkRazorpayPaymentStatus,
   createRazorpayOrder,
   getBookingEnquiry,
@@ -36,6 +40,7 @@ import {
 import './BookingPayment.css'
 
 const paymentAttemptTimeoutMs = 2 * 60 * 1000
+const cashfreeScriptUrl = 'https://sdk.cashfree.com/js/v3/cashfree.js'
 const razorpayScriptUrl = 'https://checkout.razorpay.com/v1/razorpay.js'
 const customUpiQrEnabled = import.meta.env.VITE_RAZORPAY_CUSTOM_UPI_QR_ENABLED === 'true'
 const cardYears = Array.from({ length: 16 }, (_, index) => String((new Date().getFullYear() + index) % 100).padStart(2, '0'))
@@ -53,6 +58,28 @@ function getMobileViewportSnapshot() {
 
 function getServerMobileViewportSnapshot() {
   return false
+}
+
+function loadCashfreeSdk() {
+  if (typeof window.Cashfree === 'function') {
+    return Promise.resolve(true)
+  }
+
+  return new Promise((resolve) => {
+    const existing = document.querySelector(`script[src="${cashfreeScriptUrl}"]`)
+    if (existing) {
+      existing.addEventListener('load', () => resolve(typeof window.Cashfree === 'function'), { once: true })
+      existing.addEventListener('error', () => resolve(false), { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = cashfreeScriptUrl
+    script.async = true
+    script.onload = () => resolve(typeof window.Cashfree === 'function')
+    script.onerror = () => resolve(false)
+    document.head.append(script)
+  })
 }
 
 function loadRazorpayCheckout() {
@@ -129,6 +156,7 @@ export default function BookingPayment() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const retryingPayment = searchParams.get('retry') === '1'
+  const orderIdFromUrl = searchParams.get('order_id')
   const [bookingState, setBookingState] = useState({
     requestId,
     status: 'loading',
@@ -139,6 +167,8 @@ export default function BookingPayment() {
   const [paymentError, setPaymentError] = useState('')
   const [paymentUncertain, setPaymentUncertain] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // Razorpay fallback state (preserved for backward compatibility)
   const [paymentMethods, setPaymentMethods] = useState(null)
   const [selectedMethod, setSelectedMethod] = useState('')
   const [selectedBank, setSelectedBank] = useState('')
@@ -158,18 +188,35 @@ export default function BookingPayment() {
   const paymentOutcomeHandled = useRef(false)
   const paymentFallbackTimer = useRef(null)
   const customCheckout = useRef(null)
+
   const bookingReady = bookingState.status
   const bookingPaymentStatus = bookingState.booking?.paymentStatus
   const bookingHasReference = Boolean(bookingState.booking?.reference)
+  const activeProvider = bookingState.booking?.paymentProviderMode || bookingState.booking?.paymentProvider || 'cashfree'
+  const isCashfreeActive = activeProvider === 'cashfree'
+  const cashfreeConfiguredForBooking = Boolean(bookingState.booking?.cashfreeConfigured)
   const razorpayConfiguredForBooking = Boolean(bookingState.booking?.razorpayConfigured)
 
   async function refreshPaymentStatus() {
     setPaymentError('')
     try {
       let booking = await getBookingEnquiry(requestId)
-      if (booking.razorpayConfigured && booking.paymentOrderId && booking.paymentStatus !== 'paid') {
-        const status = await checkRazorpayPaymentStatus(requestId)
-        booking = status.booking
+      if (booking.paymentStatus !== 'paid') {
+        if (isCashfreeActive || booking.cfOrderId || booking.cfPaymentSessionId) {
+          try {
+            const status = await checkCashfreePaymentStatus(requestId)
+            booking = status.booking
+          } catch {
+            // Keep current booking if status query fails
+          }
+        } else if (booking.razorpayConfigured && booking.paymentOrderId) {
+          try {
+            const status = await checkRazorpayPaymentStatus(requestId)
+            booking = status.booking
+          } catch {
+            // Keep current booking if status query fails
+          }
+        }
       }
       setBookingState({ requestId, status: 'ready', booking, error: '' })
       setPaymentUncertain(isRecentProcessing(booking))
@@ -178,7 +225,7 @@ export default function BookingPayment() {
       setPaymentUncertain(true)
       setPaymentError(
         error instanceof Error
-          ? 'Payment status could not be verified. Check again before trying to pay.'
+          ? error.message
           : 'Payment status could not be verified. Check again before trying to pay.',
       )
       return null
@@ -194,7 +241,168 @@ export default function BookingPayment() {
 
   useEffect(() => () => clearPaymentFallbackTimer(), [])
 
-  async function reconcileUnreportedPayment() {
+  // Initial booking fetch
+  useEffect(() => {
+    const controller = new AbortController()
+    getBookingEnquiry(requestId, controller.signal)
+      .then(async (initialBooking) => {
+        let booking = initialBooking
+        let statusCheckFailed = false
+
+        // Check if returning with order_id in URL params
+        if (orderIdFromUrl && booking.paymentStatus !== 'paid') {
+          try {
+            const verifyResult = await verifyCashfreePayment(requestId, { order_id: orderIdFromUrl })
+            booking = verifyResult.booking
+          } catch {
+            statusCheckFailed = true
+          }
+        } else if (booking.paymentStatus !== 'paid') {
+          if (
+            (booking.paymentProviderMode === 'cashfree' || booking.paymentProvider === 'cashfree') &&
+            (booking.cfOrderId || booking.paymentOrderId)
+          ) {
+            try {
+              const result = await checkCashfreePaymentStatus(requestId)
+              booking = result.booking
+            } catch {
+              statusCheckFailed = true
+            }
+          } else if (booking.razorpayConfigured && booking.paymentOrderId) {
+            try {
+              const result = await checkRazorpayPaymentStatus(requestId)
+              booking = result.booking
+            } catch {
+              statusCheckFailed = true
+            }
+          }
+        }
+
+        setBookingState({ requestId, status: 'ready', booking, error: '' })
+        setPaymentUncertain(statusCheckFailed || isRecentProcessing(booking))
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          setBookingState({
+            requestId,
+            status: 'error',
+            booking: null,
+            error: error instanceof Error ? error.message : 'Booking details could not be loaded.',
+          })
+        }
+      })
+
+    return () => controller.abort()
+  }, [requestId, orderIdFromUrl])
+
+  // Real-time WhatsApp Notification polling
+  const whatsappBookingReference = bookingState.booking?.reference
+  const whatsappNotificationStatus = bookingState.booking?.whatsappNotification?.status
+
+  useEffect(() => {
+    if (
+      !whatsappBookingReference ||
+      !['pending', 'sent'].includes(whatsappNotificationStatus)
+    ) {
+      return undefined
+    }
+
+    let active = true
+    const timer = window.setInterval(async () => {
+      try {
+        const latest = await getBookingEnquiry(requestId)
+        if (active) {
+          setBookingState({ requestId, status: 'ready', booking: latest, error: '' })
+        }
+      } catch {
+        // Silent refresh until next cycle
+      }
+    }, 4000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [whatsappBookingReference, whatsappNotificationStatus, requestId])
+
+  // =========================================================================
+  // CASHFREE PAYMENT HANDLER (ACTIVE / DEFAULT)
+  // =========================================================================
+
+  async function handleCashfreePay() {
+    if (paying.current || isPaying || paymentUncertain) return
+    paying.current = true
+    setIsPaying(true)
+    setPaymentError('')
+
+    try {
+      const sdkLoaded = await loadCashfreeSdk()
+      if (!sdkLoaded || typeof window.Cashfree !== 'function') {
+        throw new Error('Payment gateway could not be loaded. Please check your internet connection.')
+      }
+
+      // Cashfree strictly requires return_url to be HTTPS. If running on plain http (e.g. localhost),
+      // pass empty string so backend generates the valid HTTPS URL using FRONTEND_URL.
+      const returnUrl = window.location.protocol === 'https:'
+        ? `${window.location.origin}/booking/payment/${encodeURIComponent(requestId)}?order_id={order_id}`
+        : ''
+      const order = await createCashfreeOrder(requestId, returnUrl)
+
+      if (order.alreadyPaid) {
+        setBookingState({ requestId, status: 'ready', booking: order.booking, error: '' })
+        return
+      }
+
+      setBookingState((current) => ({
+        ...current,
+        booking: {
+          ...current.booking,
+          paymentAmount: order.amount,
+          paymentAmountPaise: Math.round(order.amount * 100),
+          ...(order.pricing ?? {}),
+        },
+      }))
+
+      const cashfree = window.Cashfree({
+        mode: order.environment === 'production' ? 'production' : 'sandbox',
+      })
+
+      const checkoutResult = await cashfree.checkout({
+        paymentSessionId: order.payment_session_id,
+        redirectTarget: '_modal',
+      })
+
+      // When modal checkout completes or is closed, verify with backend
+      const verifyResult = await verifyCashfreePayment(requestId, { order_id: order.order_id })
+      setBookingState({ requestId, status: 'ready', booking: verifyResult.booking, error: '' })
+
+      if (verifyResult.booking?.paymentStatus !== 'paid') {
+        if (checkoutResult?.error) {
+          const outcome = checkoutResult.error.code === 'USER_DROPPED' ? 'cancelled' : 'failed'
+          await recordCashfreePaymentFailure(requestId, {
+            orderId: order.order_id,
+            outcome,
+            reason: checkoutResult.error.message,
+          }).catch(() => {})
+          setPaymentError(
+            checkoutResult.error.message || 'Payment was not completed. You can try again whenever you are ready.',
+          )
+        }
+      }
+    } catch (error) {
+      console.error('[Payment Error]', error)
+      setPaymentError(error instanceof Error ? error.message : 'Payment could not be started. Please try again.')
+      void refreshPaymentStatus()
+    } finally {
+      paying.current = false
+      setIsPaying(false)
+    }
+  }
+
+  // =========================================================================
+  // PRESERVED RAZORPAY HANDLERS (BACKWARD COMPATIBILITY / FALLBACK)
+  // =========================================================================
+
+  async function reconcileUnreportedRazorpayPayment() {
     clearPaymentFallbackTimer()
     if (!paying.current || paymentOutcomeHandled.current) return
     setPaymentError('')
@@ -207,11 +415,11 @@ export default function BookingPayment() {
       } else if (result.booking.paymentStatus === 'failed') {
         setPaymentError('Payment did not complete. Retry or choose another payment method.')
       } else {
-        setPaymentError('Razorpay is still processing this attempt. Check its status before retrying.')
+        setPaymentError('Payment is still processing. Check status before retrying.')
       }
     } catch {
       setPaymentUncertain(true)
-      setPaymentError('Razorpay has not confirmed this attempt yet. Check its status before retrying.')
+      setPaymentError('Payment confirmation is pending. Check status before retrying.')
     } finally {
       paying.current = false
       setIsPaying(false)
@@ -219,9 +427,7 @@ export default function BookingPayment() {
   }
 
   async function handleRazorpayFailure(failure) {
-    if (paymentOutcomeHandled.current) {
-      return
-    }
+    if (paymentOutcomeHandled.current) return
     paymentOutcomeHandled.current = true
     clearPaymentFallbackTimer()
     paying.current = true
@@ -288,46 +494,13 @@ export default function BookingPayment() {
     paying.current = false
     setIsPaying(false)
     setQrData(null)
-    setPaymentError(error?.description || 'Razorpay could not start this payment. Try another method.')
+    setPaymentError(error?.description || 'Payment could not be started. Try another method.')
   })
 
-  useEffect(() => {
-    const controller = new AbortController()
-    getBookingEnquiry(requestId, controller.signal)
-      .then(async (initialBooking) => {
-        let booking = initialBooking
-        let statusCheckFailed = false
-        if (
-          booking.razorpayConfigured &&
-          booking.paymentOrderId &&
-          booking.paymentStatus !== 'paid'
-        ) {
-          try {
-            const result = await checkRazorpayPaymentStatus(requestId)
-            booking = result.booking
-          } catch {
-            statusCheckFailed = true
-          }
-        }
-        setBookingState({ requestId, status: 'ready', booking, error: '' })
-        setPaymentUncertain(statusCheckFailed || isRecentProcessing(booking))
-      })
-      .catch((error) => {
-        if (error.name !== 'AbortError') {
-          setBookingState({
-            requestId,
-            status: 'error',
-            booking: null,
-            error: error instanceof Error ? error.message : 'Booking details could not be loaded.',
-          })
-        }
-      })
-
-    return () => controller.abort()
-  }, [requestId])
-
+  // Initialize Razorpay custom checkout only if explicitly active
   useEffect(() => {
     if (
+      isCashfreeActive ||
       bookingReady !== 'ready' ||
       !checkoutRequested ||
       !razorpayConfiguredForBooking ||
@@ -364,7 +537,7 @@ export default function BookingPayment() {
       }))
 
       if (!(await loadRazorpayCheckout())) {
-        throw new Error('Razorpay Custom Checkout could not be loaded. Check your connection and retry.')
+        throw new Error('Payment checkout could not be loaded. Check your connection and retry.')
       }
       if (!active.current) return
 
@@ -409,7 +582,7 @@ export default function BookingPayment() {
     initializeCustomCheckout().catch((error) => {
       if (active.current) {
         setIsInitializingCheckout(false)
-        setPaymentError(error instanceof Error ? error.message : 'Custom Checkout could not be initialized.')
+        setPaymentError(error instanceof Error ? error.message : 'Payment options could not be initialized.')
       }
     })
 
@@ -418,6 +591,7 @@ export default function BookingPayment() {
       customCheckout.current = null
     }
   }, [
+    isCashfreeActive,
     bookingReady,
     razorpayConfiguredForBooking,
     bookingHasReference,
@@ -430,9 +604,7 @@ export default function BookingPayment() {
   ])
 
   useEffect(() => {
-    if (!qrData?.qr_url) {
-      return undefined
-    }
+    if (!qrData?.qr_url) return undefined
     const active = { current: true }
     QRCode.toDataURL(qrData.qr_url, { errorCorrectionLevel: 'M', margin: 1, width: 240 })
       .then((image) => {
@@ -446,39 +618,9 @@ export default function BookingPayment() {
     }
   }, [qrData])
 
-  const whatsappBookingReference = bookingState.booking?.reference
-  const whatsappNotificationStatus = bookingState.booking?.whatsappNotification?.status
-
-  useEffect(() => {
-    if (
-      !whatsappBookingReference ||
-      !['pending', 'sent'].includes(whatsappNotificationStatus)
-    ) {
-      return undefined
-    }
-
-    let active = true
-    const timer = window.setInterval(async () => {
-      try {
-        const latest = await getBookingEnquiry(requestId)
-        if (active) {
-          setBookingState({ requestId, status: 'ready', booking: latest, error: '' })
-        }
-      } catch {
-        // Silent refresh until next cycle
-      }
-    }, 4000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [whatsappBookingReference, whatsappNotificationStatus, requestId])
-
   function handleCustomPayment(event) {
     event.preventDefault()
-    if (paying.current || paymentUncertain || !razorpayOrder || !customCheckout.current) {
-      return
-    }
+    if (paying.current || paymentUncertain || !razorpayOrder || !customCheckout.current) return
 
     const booking = bookingState.booking
     const form = event.currentTarget
@@ -533,7 +675,7 @@ export default function BookingPayment() {
       } else if (customUpiQrEnabled) {
         paymentOptions = { app: 'any', flow: 'qr' }
       } else {
-        setPaymentError('UPI QR on desktop requires activation for this Razorpay account. Use UPI on a phone or choose another method.')
+        setPaymentError('UPI QR on desktop requires activation for this account. Use UPI on a phone or choose another method.')
         return
       }
     } else if (selectedMethod === 'netbanking') {
@@ -565,13 +707,13 @@ export default function BookingPayment() {
     try {
       customCheckout.current.createPayment(paymentData, paymentOptions)
       paymentFallbackTimer.current = window.setTimeout(() => {
-        void reconcileUnreportedPayment()
+        void reconcileUnreportedRazorpayPayment()
       }, 15000)
     } catch (error) {
       clearPaymentFallbackTimer()
       paying.current = false
       setIsPaying(false)
-      setPaymentError(error instanceof Error ? error.message : 'Razorpay could not start this payment.')
+      setPaymentError(error instanceof Error ? error.message : 'Could not start payment.')
     } finally {
       if (isCardMethod) form.reset()
     }
@@ -584,7 +726,7 @@ export default function BookingPayment() {
     try {
       customCheckout.current?.emit('payment.cancel')
     } catch {
-      // The server status check below remains authoritative.
+      // Handled by server check
     }
     void handleRazorpayFailure({ orderId, outcome: 'cancelled' })
   }
@@ -592,13 +734,19 @@ export default function BookingPayment() {
   function handleTryPaymentAgain() {
     setPaymentError('')
     setPaymentUncertain(false)
-    setIsInitializingCheckout(true)
-    setPaymentMethods(null)
-    setRazorpayOrder(null)
-    setQrData(null)
-    setQrImage('')
-    setCheckoutRequested(true)
     navigate(`/booking/payment/${encodeURIComponent(requestId)}?retry=1`, { replace: true })
+    if (isCashfreeActive) {
+      setTimeout(() => {
+        void handleCashfreePay()
+      }, 100)
+    } else {
+      setIsInitializingCheckout(true)
+      setPaymentMethods(null)
+      setRazorpayOrder(null)
+      setQrData(null)
+      setQrImage('')
+      setCheckoutRequested(true)
+    }
   }
 
   function handleCopyReference() {
@@ -613,16 +761,12 @@ export default function BookingPayment() {
     : { status: 'loading', booking: null, error: '' }
   const booking = currentBookingState.booking
   const isPaid = ['demo_paid', 'paid'].includes(booking?.paymentStatus) && Boolean(booking?.reference)
-  const hasRazorpayPayment = Boolean(booking?.paymentOrderId) || booking?.paymentProvider === 'razorpay'
-  const isUpiPayment = Boolean(booking) && !isPaid && !hasRazorpayPayment && (
+  const isUpiPayment = Boolean(booking) && !isPaid && (
     booking.paymentProvider === 'upi' ||
-    booking.paymentProviderMode === 'upi' ||
-    (
-      ['unpaid', 'failed'].includes(booking.paymentStatus) &&
-      !booking.paymentProvider
-    )
+    booking.paymentProviderMode === 'upi'
   )
-  const isDemoPayment = !booking?.razorpayConfigured && !isUpiPayment
+  const isGatewayConfigured = isCashfreeActive ? cashfreeConfiguredForBooking : razorpayConfiguredForBooking
+  const isDemoPayment = !isGatewayConfigured && !isUpiPayment
   const isPaymentFailed =
     booking?.paymentStatus === 'failed' &&
     booking?.paymentProvider !== 'upi' &&
@@ -695,7 +839,7 @@ export default function BookingPayment() {
 
             {isPaid ? (
               /* =========================================================================
-                 10. ATTRACTIVE ANIMATED SUCCESS SCREEN
+                 ATTRACTIVE ANIMATED SUCCESS SCREEN
                  ========================================================================= */
               <div className="booking-payment__success-view" role="status">
                 <div className="booking-payment__success-badge-wrap">
@@ -792,12 +936,14 @@ export default function BookingPayment() {
                       </strong>
                     </div>
                     <div className="booking-payment__ticket-col">
-                      <span className="booking-payment__meta-label">Razorpay Order ID</span>
-                      <strong className="booking-payment__meta-value">{booking.paymentOrderId || '—'}</strong>
+                      <span className="booking-payment__meta-label">Order ID</span>
+                      <strong className="booking-payment__meta-value">{booking.paymentOrderId || booking.cfOrderId || '—'}</strong>
                     </div>
                     <div className="booking-payment__ticket-col">
-                      <span className="booking-payment__meta-label">Razorpay Payment ID</span>
-                      <strong className="booking-payment__meta-value">{booking.razorpayPaymentId || '—'}</strong>
+                      <span className="booking-payment__meta-label">Payment Reference</span>
+                      <strong className="booking-payment__meta-value">
+                        {booking.cfPaymentId || booking.paymentReference || booking.razorpayPaymentId || 'Verified'}
+                      </strong>
                     </div>
                     <div className="booking-payment__ticket-col">
                       <span className="booking-payment__meta-label">Booking Time</span>
@@ -821,7 +967,7 @@ export default function BookingPayment() {
               </div>
             ) : isFailureView ? (
               /* =========================================================================
-                 11. CLEAR RETRY SCREEN (AFTER FAILURE OR CANCELLATION)
+                 CLEAR RETRY SCREEN (AFTER FAILURE OR CANCELLATION)
                  ========================================================================= */
               <div className="booking-payment__failure-view" role="alert">
                 <div className="booking-payment__failure-badge">
@@ -895,15 +1041,15 @@ export default function BookingPayment() {
                     <LockKeyhole size={12} aria-hidden="true" />
                     {isUpiPayment
                       ? 'DIRECT UPI PAYMENT'
-                      : isDemoPayment ? 'PAYMENT UNAVAILABLE' : 'OFFICIAL PAYMENT GATEWAY'}
+                      : isDemoPayment ? 'PAYMENT UNAVAILABLE' : '100% SECURE CHECKOUT'}
                   </span>
                   <h1>Complete Your Booking</h1>
                   <p className="booking-payment__subtitle">
                     {isUpiPayment
                       ? 'Review your experience reservation and complete your payment securely.'
                       : isDemoPayment
-                      ? 'Secure Razorpay Checkout is not configured for this booking. Your details are saved, but payment cannot be taken yet.'
-                      : 'Review your experience reservation and complete your payment securely with Razorpay.'}
+                      ? 'Online payments are currently being configured. Your reservation details are safely saved.'
+                      : 'Review your experience reservation and complete your payment securely.'}
                   </p>
                 </div>
 
@@ -1039,7 +1185,7 @@ export default function BookingPayment() {
                     )}
                     {isDemoPayment && (
                       <p className="booking-payment__secure-note" role="status">
-                        Payments are disabled until Razorpay is configured. No simulated payment will be accepted.
+                        Online payments are temporarily unavailable. Please check back shortly.
                       </p>
                     )}
 
@@ -1071,10 +1217,63 @@ export default function BookingPayment() {
                       ) : isDemoPayment ? (
                         <div className="booking-payment__custom-unavailable" role="status">
                           <LockKeyhole size={18} aria-hidden="true" />
-                          <span>Configure Razorpay on the server to accept secure payments.</span>
+                          <span>Online checkout is being configured on the server.</span>
+                        </div>
+                      ) : isCashfreeActive ? (
+                        /* =========================================================================
+                           ACTIVE CASHFREE CHECKOUT TRIGGER & TRUST SHOWCASE
+                           ========================================================================= */
+                        <div className="booking-payment__gateway-checkout">
+                          <button
+                            className="booking-payment__pay-btn"
+                            disabled={isPaying}
+                            onClick={handleCashfreePay}
+                            type="button"
+                          >
+                            <span className="booking-payment__pay-btn-glow" aria-hidden="true" />
+                            <span className="booking-payment__pay-btn-shine" aria-hidden="true" />
+                            <span className="booking-payment__pay-btn-content">
+                              {isPaying ? (
+                                <>
+                                  <LoaderCircle className="booking-payment__spinner" size={20} aria-hidden="true" />
+                                  <span>Opening Secure Payment…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <LockKeyhole size={18} aria-hidden="true" />
+                                  <span>PAY ₹{finalPayable} NOW</span>
+                                  <ArrowRight size={18} aria-hidden="true" />
+                                </>
+                              )}
+                            </span>
+                          </button>
+
+                          <div className="booking-payment__methods-showcase">
+                            <span className="booking-payment__methods-title">ACCEPTED PAYMENT MODES</span>
+                            <div className="booking-payment__methods-badges">
+                              <span className="booking-payment__method-chip">
+                                <Smartphone size={12} aria-hidden="true" /> UPI / QR
+                              </span>
+                              <span className="booking-payment__method-chip">GPay · PhonePe · Paytm</span>
+                              <span className="booking-payment__method-chip">
+                                <CreditCard size={12} aria-hidden="true" /> Cards
+                              </span>
+                              <span className="booking-payment__method-chip">
+                                <Landmark size={12} aria-hidden="true" /> Net Banking
+                              </span>
+                            </div>
+                          </div>
+
+                          <p className="booking-payment__security-note">
+                            <ShieldCheck size={15} aria-hidden="true" />
+                            100% Secure Checkout · Encrypted by 256-Bit SSL
+                          </p>
                         </div>
                       ) : (
-                        <section aria-label="Custom payment options" className="booking-payment__custom-checkout">
+                        /* =========================================================================
+                           PRESERVED RAZORPAY CUSTOM CHECKOUT (FALLBACK IF EXPLICITLY CONFIGURED)
+                           ========================================================================= */
+                        <section aria-label="Payment options" className="booking-payment__custom-checkout">
                           <div className="booking-payment__custom-heading">
                             <span className="booking-payment__meta-label">PAY SECURELY</span>
                             <h3>Choose a payment method</h3>
@@ -1126,7 +1325,7 @@ export default function BookingPayment() {
 
                           {!isInitializingCheckout && paymentMethods && methodOptions.length === 0 && (
                             <p className="booking-payment__method-status" role="alert">
-                              No payment methods are enabled for this Razorpay account.
+                              No payment methods are available at this moment.
                             </p>
                           )}
 
@@ -1200,10 +1399,10 @@ export default function BookingPayment() {
                                   <div className="booking-payment__method-explainer">
                                     <Smartphone size={20} aria-hidden="true" />
                                     <p>{isMobileCheckout
-                                      ? 'Continue to an available UPI app on this device. The app switch is part of the UPI flow.'
+                                      ? 'Continue to an available UPI app on this device.'
                                       : customUpiQrEnabled
                                         ? 'Generate a UPI QR code here and scan it with a UPI app on your phone.'
-                                        : 'Mobile UPI intent is supported. Desktop QR requires Razorpay activation for this account.'}</p>
+                                        : 'Mobile UPI intent is supported.'}</p>
                                   </div>
                                 )}
 
@@ -1271,7 +1470,7 @@ export default function BookingPayment() {
                               )}
                               <p className="booking-payment__custom-security-note">
                                 <ShieldCheck size={15} aria-hidden="true" />
-                                Card details go directly from this browser to Razorpay and are never sent to or stored by our booking server.
+                                Card details go directly to the secure payment processor and are never sent to or stored by our booking server.
                               </p>
                             </>
                           )}

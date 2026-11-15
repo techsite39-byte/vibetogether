@@ -83,6 +83,9 @@ const frontendOrigin =
   devFrontendOrigins[0] ??
   configuredCorsOrigins[0] ??
   (nodeEnv === 'production' ? 'https://www.vibetogether.show' : 'http://localhost:5173')
+const frontendUrl =
+  process.env.FRONTEND_URL?.trim().replace(/\/+$/, '') ||
+  'https://www.vibetogether.show'
 
 if (nodeEnv === 'production' && corsOrigins.length === 0) {
   throw new Error('CORS_ORIGIN must list trusted frontend origins in production.')
@@ -144,13 +147,19 @@ const smtpPassword = process.env.SMTP_PASSWORD?.trim() ?? ''
 const smtpFromEmail =
   process.env.SMTP_FROM_EMAIL?.trim() ??
   (smtpUser ? `"Vibe Together" <${smtpUser}>` : 'Vibe Together <no-reply@vibetogether.com>')
+const cashfreeAppId = process.env.CASHFREE_APP_ID?.trim() ?? ''
+const cashfreeSecretKey = process.env.CASHFREE_SECRET_KEY?.trim() ?? ''
+const cashfreeEnv = (process.env.CASHFREE_ENV?.trim() ?? 'SANDBOX').toUpperCase()
+const cashfreeApiVersion = process.env.CASHFREE_API_VERSION?.trim() ?? '2023-08-01'
+const cashfreeConfigured = Boolean(cashfreeAppId && cashfreeSecretKey)
+
 const razorpayKeyId = process.env.RAZORPAY_KEY_ID?.trim() ?? ''
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET?.trim() ?? ''
 const razorpayWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim() ?? ''
 const razorpayConfigured = Boolean(razorpayKeyId && razorpayKeySecret)
-const paymentProvider = (process.env.PAYMENT_PROVIDER ?? 'razorpay').trim().toLowerCase()
-if (!['upi', 'razorpay'].includes(paymentProvider)) {
-  throw new Error('PAYMENT_PROVIDER must be either upi or razorpay.')
+const paymentProvider = (process.env.PAYMENT_PROVIDER ?? 'cashfree').trim().toLowerCase()
+if (!['cashfree', 'upi', 'razorpay'].includes(paymentProvider)) {
+  throw new Error('PAYMENT_PROVIDER must be one of: cashfree, upi, razorpay.')
 }
 const upiId = process.env.UPI_ID?.trim() ?? 'vinothinimoorthi37-1@okhdfcbank'
 const upiPayeeName = process.env.UPI_PAYEE_NAME?.trim() ?? 'Vinothini Moorthi'
@@ -182,6 +191,7 @@ export const config = Object.freeze({
   adminUsername,
   corsOrigins,
   frontendOrigin,
+  frontendUrl,
   googleClientId,
   googleClientSecret,
   googleCallbackUrl,
@@ -195,6 +205,11 @@ export const config = Object.freeze({
   smtpUser,
   smtpPassword,
   smtpFromEmail,
+  cashfreeAppId,
+  cashfreeSecretKey,
+  cashfreeEnv,
+  cashfreeApiVersion,
+  cashfreeConfigured,
   razorpayConfigured,
   razorpayKeyId,
   razorpayKeySecret,

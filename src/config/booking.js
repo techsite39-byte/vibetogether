@@ -48,7 +48,7 @@ export const bookingConfig = {
     ? Math.round(configuredFee * 100) / 100
     : 0,
   paymentApiUrl: configuredApiUrl.replace(/\/+$/, ''),
-  paymentProvider: providerIsValid && providerValue ? providerValue : 'razorpay',
+  paymentProvider: providerIsValid && providerValue ? providerValue : 'cashfree',
 }
 
 export const isPaymentBackendConfigured =

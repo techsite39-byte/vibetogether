@@ -326,8 +326,33 @@ const bookingEnquirySchema = new mongoose.Schema(
     },
     paymentProvider: {
       type: String,
-      enum: ['razorpay_demo', 'razorpay', 'upi'],
+      enum: ['cashfree', 'razorpay_demo', 'razorpay', 'upi'],
       default: null,
+    },
+    cfOrderId: {
+      type: String,
+      maxlength: 100,
+      default: '',
+    },
+    cfPaymentId: {
+      type: String,
+      maxlength: 100,
+      default: '',
+    },
+    cfPaymentSessionId: {
+      type: String,
+      maxlength: 255,
+      default: '',
+    },
+    cfPaymentStatus: {
+      type: String,
+      maxlength: 50,
+      default: '',
+    },
+    cfPaymentMethod: {
+      type: String,
+      maxlength: 50,
+      default: '',
     },
     paymentReference: {
       type: String,

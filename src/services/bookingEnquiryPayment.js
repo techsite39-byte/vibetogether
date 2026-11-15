@@ -66,6 +66,80 @@ export async function recordDemoBookingFailure(requestId, outcome) {
   )
 }
 
+export async function createCashfreeOrder(requestId, returnUrl) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/cashfree-order`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ returnUrl }),
+    },
+    undefined,
+    'Cashfree order',
+  )
+  if (payload.alreadyPaid) {
+    return { alreadyPaid: true, booking: validateBooking(payload.booking) }
+  }
+  if (typeof payload.payment_session_id !== 'string' || !payload.payment_session_id) {
+    throw new Error('Cashfree did not return a valid payment session.')
+  }
+  return {
+    ...payload,
+    booking: payload.booking ? validateBooking(payload.booking) : undefined,
+  }
+}
+
+export async function verifyCashfreePayment(requestId, paymentData) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/cashfree-verify`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(paymentData || {}),
+    },
+    undefined,
+    'Cashfree payment verification',
+  )
+  return {
+    ...payload,
+    booking: validateBooking(payload.booking),
+  }
+}
+
+export async function checkCashfreePaymentStatus(requestId) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/cashfree-status`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+    undefined,
+    'Cashfree payment status',
+  )
+  return {
+    ...payload,
+    booking: validateBooking(payload.booking),
+  }
+}
+
+export async function recordCashfreePaymentFailure(requestId, failure) {
+  const payload = await requestPayload(
+    `${encodeURIComponent(requestId)}/cashfree-failure`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(failure || {}),
+    },
+    undefined,
+    'Cashfree payment failure',
+  )
+  return {
+    ...payload,
+    booking: validateBooking(payload.booking),
+  }
+}
+
 export async function createRazorpayOrder(requestId) {
   const payload = await requestPayload(
     `${encodeURIComponent(requestId)}/razorpay-order`,
