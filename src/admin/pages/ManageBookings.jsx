@@ -454,7 +454,12 @@ export default function ManageBookings() {
                     {formatAmount(booking.amount, booking.currency)}
                     {booking.diwaliOfferApplied && <span className="admin-table__secondary"><s>{formatAmount(booking.subtotal ?? booking.regularPrice, booking.currency)}</s> Diwali offer · saved {formatAmount(booking.discount ?? 0, booking.currency)}</span>}
                   </td>
-                  <td><StatusBadge status={booking.paymentStatus}>{formatPaymentStatus(booking.paymentStatus)}</StatusBadge></td>
+                  <td>
+                    <StatusBadge status={booking.paymentStatus}>{formatPaymentStatus(booking.paymentStatus)}</StatusBadge>
+                    <span className="admin-table__secondary" style={{ display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                      {booking.paymentProvider === 'cashfree' ? 'Cashfree' : booking.paymentProvider === 'razorpay' ? 'Razorpay' : booking.paymentProvider === 'upi' ? 'Direct UPI' : '—'}
+                    </span>
+                  </td>
                   <td><StatusBadge status={booking.status}>{formatBookingStatus(booking.status)}</StatusBadge></td>
                   <td><StatusBadge status={booking.whatsappNotification?.status ?? 'not_available'}>{formatWhatsAppStatus(booking.whatsappNotification?.status, booking.whatsappConsent)}</StatusBadge>{mobileDigits && <a className="admin-button admin-button--small" href={`https://wa.me/${mobileDigits}`} rel="noopener noreferrer" target="_blank"><MessageCircle size={15} aria-hidden="true" /> Contact</a>}</td>
                   <td><div className="admin-row-actions admin-row-actions--wrap">
