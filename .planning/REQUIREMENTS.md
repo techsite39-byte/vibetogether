@@ -52,24 +52,24 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LCP-01 | Pending roadmap | Pending |
-| LCP-02 | Pending roadmap | Pending |
-| IMG-01 | Pending roadmap | Pending |
-| IMG-02 | Pending roadmap | Pending |
-| PATH-01 | Pending roadmap | Pending |
-| ANIM-01 | Pending roadmap | Pending |
-| JS-01 | Pending roadmap | Pending |
-| REG-01 | Pending roadmap | Pending |
-| TEST-01 | Pending roadmap | Pending |
-| VIEW-01 | Pending roadmap | Pending |
-| LH-01 | Pending roadmap | Pending |
-| LH-02 | Pending roadmap | Pending |
+| LCP-01 | Phase 1 | Pending |
+| LCP-02 | Phase 2 | Pending |
+| IMG-01 | Phase 2 | Pending |
+| IMG-02 | Phase 2 | Pending |
+| PATH-01 | Phase 2 | Pending |
+| ANIM-01 | Phase 2 | Pending |
+| JS-01 | Phase 2 | Pending |
+| REG-01 | Phase 3 | Pending |
+| TEST-01 | Phase 3 | Pending |
+| VIEW-01 | Phase 3 | Pending |
+| LH-01 | Phase 3 | Pending |
+| LH-02 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12
+- Mapped to phases: 12
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-11-16*
-*Last updated: 2026-11-16 after initial definition*
+*Last updated: 2026-11-16 after roadmap creation*
