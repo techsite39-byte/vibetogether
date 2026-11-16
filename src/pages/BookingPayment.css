@@ -1279,6 +1279,43 @@
   box-shadow: 0 12px 30px rgba(2, 132, 199, 0.4);
 }
 
+.booking-payment__collect-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+  margin-top: 0.85rem;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.38);
+  border-radius: 0.75rem;
+  color: #6ee7b7;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.45;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.booking-payment__cf-alt-link {
+  display: block;
+  width: 100%;
+  margin-top: 0.85rem;
+  padding: 0.45rem 0.65rem;
+  background: none;
+  border: none;
+  color: rgba(199, 125, 255, 0.75);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: color 150ms ease, text-decoration 150ms ease;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.booking-payment__cf-alt-link:hover {
+  color: #c77dff;
+}
+
 /* ==========================================================================
    PRIMARY CINEMATIC PAY BUTTON
    ========================================================================== */

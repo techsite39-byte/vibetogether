@@ -278,6 +278,7 @@ export default function BookingPayment() {
   const [isOrderLoading, setIsOrderLoading] = useState(false)
   const [isElementReady, setIsElementReady] = useState(false)
   const [elementLoadError, setElementLoadError] = useState('')
+  const [collectNotice, setCollectNotice] = useState('')
 
   // Active Cashfree instances & elements
   const cashfreeInstanceRef = useRef(null)
@@ -595,6 +596,7 @@ export default function BookingPayment() {
         fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
         fontSize: '15px',
         lineHeight: '26px',
+        backgroundColor: 'transparent',
         '::placeholder': {
           color: '#8e8a9f',
         },
@@ -638,7 +640,7 @@ export default function BookingPayment() {
               activeComponentRef.current = gpay
             }
           } else {
-            const collectSlot = document.getElementById('vibetogether-cf-upi-collect')
+            const collectSlot = document.getElementById('vibetogether-cf-upi-collect-gpay')
             if (collectSlot) {
               const col = cf.create('upiCollect', {
                 values: { placeholder: 'Enter Google Pay UPI ID (e.g. name@okhdfcbank)' },
@@ -646,7 +648,7 @@ export default function BookingPayment() {
               })
               col.on('ready', () => active && setIsElementReady(true))
               col.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load Google Pay UPI field.'))
-              col.mount('#vibetogether-cf-upi-collect')
+              col.mount('#vibetogether-cf-upi-collect-gpay')
               activeComponentRef.current = col
             }
           }
@@ -663,7 +665,7 @@ export default function BookingPayment() {
               activeComponentRef.current = phonepe
             }
           } else {
-            const collectSlot = document.getElementById('vibetogether-cf-upi-collect')
+            const collectSlot = document.getElementById('vibetogether-cf-upi-collect-phonepe')
             if (collectSlot) {
               const col = cf.create('upiCollect', {
                 values: { placeholder: 'Enter PhonePe UPI ID (e.g. mobile@ybl)' },
@@ -671,7 +673,7 @@ export default function BookingPayment() {
               })
               col.on('ready', () => active && setIsElementReady(true))
               col.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load PhonePe UPI field.'))
-              col.mount('#vibetogether-cf-upi-collect')
+              col.mount('#vibetogether-cf-upi-collect-phonepe')
               activeComponentRef.current = col
             }
           }
@@ -688,7 +690,7 @@ export default function BookingPayment() {
               activeComponentRef.current = paytm
             }
           } else {
-            const collectSlot = document.getElementById('vibetogether-cf-upi-collect')
+            const collectSlot = document.getElementById('vibetogether-cf-upi-collect-paytm')
             if (collectSlot) {
               const col = cf.create('upiCollect', {
                 values: { placeholder: 'Enter Paytm UPI ID (e.g. mobile@paytm)' },
@@ -696,7 +698,7 @@ export default function BookingPayment() {
               })
               col.on('ready', () => active && setIsElementReady(true))
               col.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load Paytm UPI field.'))
-              col.mount('#vibetogether-cf-upi-collect')
+              col.mount('#vibetogether-cf-upi-collect-paytm')
               activeComponentRef.current = col
             }
           }
@@ -840,49 +842,70 @@ export default function BookingPayment() {
       }
 
       if (['gpay', 'phonepe', 'paytm'].includes(selectedMethod)) {
+        const appTitle = selectedMethod === 'gpay' ? 'Google Pay' : selectedMethod === 'phonepe' ? 'PhonePe' : 'Paytm'
+
         if (device.isAndroid) {
           // Direct one-tap app launch
           const appComponent = activeComponentRef.current
-          if (!appComponent) {
-            setPaymentError('Payment channel is initializing. Please tap again.')
-            return
-          }
-          const payResult = await cf.pay({
-            paymentMethod: appComponent,
-            paymentSessionId: sessionId,
-            returnUrl,
-            redirect: 'if_required',
-          })
-          if (payResult?.error) {
-            if (payResult.error.code === 'app_not_installed' || /not installed/i.test(payResult.error.message)) {
-              setPaymentError(`${selectedMethod.toUpperCase()} app was not detected on this device. Please scan the UPI QR code or pay with card.`)
-            } else {
-              setPaymentError(payResult.error.message || 'Could not launch payment application.')
+          let payResult = null
+          if (appComponent) {
+            try {
+              payResult = await cf.pay({
+                paymentMethod: appComponent,
+                paymentSessionId: sessionId,
+                returnUrl,
+                redirect: 'if_required',
+              })
+            } catch (err) {
+              console.warn(`[Cashfree] ${selectedMethod} app launch error:`, err)
             }
-            await recordCashfreePaymentFailure(requestId, {
-              orderId: currentOrder.order_id,
-              outcome: 'failed',
-              reason: payResult.error.message,
-            }).catch(() => {})
+          }
+
+          if (!appComponent || payResult?.error) {
+            console.warn(`[Cashfree] Direct ${appTitle} launch unavailable or returned error. Opening modal checkout:`, payResult?.error)
+            await cf.checkout({
+              paymentSessionId: sessionId,
+              redirectTarget: '_modal',
+            })
+            const checkRes = await checkCashfreePaymentStatus(requestId)
+            if (checkRes?.booking?.paymentStatus === 'paid') {
+              setBookingState({ requestId, status: 'ready', booking: checkRes.booking, error: '' })
+              return
+            }
           }
           return
         } else {
           // Direct UPI ID request (Desktop / iOS)
           const collectComponent = activeComponentRef.current
-          if (!collectComponent) {
-            const appTitle = selectedMethod === 'gpay' ? 'Google Pay' : selectedMethod === 'phonepe' ? 'PhonePe' : 'Paytm'
-            setPaymentError(`Please enter your ${appTitle} UPI ID.`)
-            return
+          let payResult = null
+
+          if (collectComponent) {
+            try {
+              payResult = await cf.pay({
+                paymentMethod: collectComponent,
+                paymentSessionId: sessionId,
+                returnUrl,
+                redirect: 'if_required',
+              })
+            } catch (err) {
+              console.warn(`[Cashfree] ${appTitle} collect exception:`, err)
+              payResult = { error: { message: err instanceof Error ? err.message : 'Collect request error' } }
+            }
           }
-          const payResult = await cf.pay({
-            paymentMethod: collectComponent,
-            paymentSessionId: sessionId,
-            returnUrl,
-            redirect: 'if_required',
-          })
-          if (payResult?.error) {
-            setPaymentError(payResult.error.message || 'Could not send UPI Collect request. Please check your UPI ID.')
+
+          if (!collectComponent || payResult?.error) {
+            console.warn(`[Cashfree] ${appTitle} collect returned error or empty. Opening Cashfree checkout modal:`, payResult?.error)
+            await cf.checkout({
+              paymentSessionId: sessionId,
+              redirectTarget: '_modal',
+            })
+            const checkRes = await checkCashfreePaymentStatus(requestId)
+            if (checkRes?.booking?.paymentStatus === 'paid') {
+              setBookingState({ requestId, status: 'ready', booking: checkRes.booking, error: '' })
+              return
+            }
           } else {
+            setCollectNotice(`Payment request sent to your ${appTitle} app! Please approve ₹${finalPayable} on your phone to complete your booking.`)
             setPaymentError('')
             await refreshPaymentStatus()
           }
@@ -892,40 +915,33 @@ export default function BookingPayment() {
 
       if (selectedMethod === 'card') {
         const cardNum = cardElementsRef.current.cardNum
-        if (!cardNum) {
-          setPaymentError('Please enter your complete card details.')
-          return
-        }
-        const payResult = await cf.pay({
-          paymentMethod: cardNum,
-          paymentSessionId: sessionId,
-          returnUrl,
-          redirect: 'if_required',
-          redirectTarget: '_self',
-        })
-        if (payResult?.error) {
-          if (payResult.error.code === 'domain_name_not_approved' || payResult.error.type === 'feature_not_enabled') {
-            console.warn('[Cashfree] Custom element requires domain whitelist. Opening Cashfree inline checkout.')
-            const mountTarget = document.getElementById('vibetogether-cf-inline-slot') || document.getElementById('vibetogether-cf-card-number')
-            await cf.checkout({
+        let payResult = null
+        if (cardNum) {
+          try {
+            payResult = await cf.pay({
+              paymentMethod: cardNum,
               paymentSessionId: sessionId,
-              redirectTarget: mountTarget,
               returnUrl,
-              appearance: {
-                width: '100%',
-                height: '560px',
-                backgroundColor: 'transparent',
-                borderWidth: '0px',
-              },
+              redirect: 'if_required',
+              redirectTarget: '_modal',
             })
+          } catch (err) {
+            console.warn('[Cashfree] Card pay exception:', err)
+            payResult = { error: { message: err instanceof Error ? err.message : 'Card payment error' } }
+          }
+        }
+        if (!cardNum || payResult?.error) {
+          console.warn('[Cashfree] Card custom payment error. Opening Cashfree modal checkout:', payResult?.error)
+          await cf.checkout({
+            paymentSessionId: sessionId,
+            redirectTarget: '_modal',
+            returnUrl,
+          })
+          const checkRes = await checkCashfreePaymentStatus(requestId)
+          if (checkRes?.booking?.paymentStatus === 'paid') {
+            setBookingState({ requestId, status: 'ready', booking: checkRes.booking, error: '' })
             return
           }
-          setPaymentError(payResult.error.message || 'Card payment was declined. Please verify card details.')
-          await recordCashfreePaymentFailure(requestId, {
-            orderId: currentOrder.order_id,
-            outcome: 'failed',
-            reason: payResult.error.message,
-          }).catch(() => {})
         } else {
           await refreshPaymentStatus()
         }
@@ -936,32 +952,30 @@ export default function BookingPayment() {
         const nbComponent = activeComponentRef.current
         let payResult = null
         if (nbComponent) {
-          payResult = await cf.pay({
-            paymentMethod: nbComponent,
-            paymentSessionId: sessionId,
-            returnUrl,
-            redirect: 'if_required',
-            redirectTarget: '_self',
-          })
+          try {
+            payResult = await cf.pay({
+              paymentMethod: nbComponent,
+              paymentSessionId: sessionId,
+              returnUrl,
+              redirect: 'if_required',
+              redirectTarget: '_modal',
+            })
+          } catch (err) {
+            console.warn('[Cashfree] Net Banking exception:', err)
+          }
         }
-        if (!nbComponent || payResult?.error?.code === 'domain_name_not_approved' || payResult?.error?.type === 'feature_not_enabled') {
-          console.warn('[Cashfree] Custom element not enabled for Net Banking. Opening Cashfree inline checkout.')
-          const slot = document.getElementById('vibetogether-cf-netbanking') || document.getElementById('vibetogether-cf-inline-slot')
+        if (!nbComponent || payResult?.error) {
+          console.warn('[Cashfree] Net Banking fallback. Opening Cashfree modal checkout.')
           await cf.checkout({
             paymentSessionId: sessionId,
-            redirectTarget: slot,
+            redirectTarget: '_modal',
             returnUrl,
-            appearance: {
-              width: '100%',
-              height: '560px',
-              backgroundColor: 'transparent',
-              borderWidth: '0px',
-            },
           })
-          return
-        }
-        if (payResult?.error) {
-          setPaymentError(payResult.error.message || 'Net Banking routing failed.')
+          const checkRes = await checkCashfreePaymentStatus(requestId)
+          if (checkRes?.booking?.paymentStatus === 'paid') {
+            setBookingState({ requestId, status: 'ready', booking: checkRes.booking, error: '' })
+            return
+          }
         }
         return
       }
@@ -970,32 +984,30 @@ export default function BookingPayment() {
         const wComponent = activeComponentRef.current
         let payResult = null
         if (wComponent) {
-          payResult = await cf.pay({
-            paymentMethod: wComponent,
-            paymentSessionId: sessionId,
-            returnUrl,
-            redirect: 'if_required',
-            redirectTarget: '_self',
-          })
+          try {
+            payResult = await cf.pay({
+              paymentMethod: wComponent,
+              paymentSessionId: sessionId,
+              returnUrl,
+              redirect: 'if_required',
+              redirectTarget: '_modal',
+            })
+          } catch (err) {
+            console.warn('[Cashfree] Wallet exception:', err)
+          }
         }
-        if (!wComponent || payResult?.error?.code === 'domain_name_not_approved' || payResult?.error?.type === 'feature_not_enabled') {
-          console.warn('[Cashfree] Custom element not enabled for Wallet. Opening Cashfree inline checkout.')
-          const slot = document.getElementById('vibetogether-cf-wallet') || document.getElementById('vibetogether-cf-inline-slot')
+        if (!wComponent || payResult?.error) {
+          console.warn('[Cashfree] Wallet fallback. Opening Cashfree modal checkout.')
           await cf.checkout({
             paymentSessionId: sessionId,
-            redirectTarget: slot,
+            redirectTarget: '_modal',
             returnUrl,
-            appearance: {
-              width: '100%',
-              height: '560px',
-              backgroundColor: 'transparent',
-              borderWidth: '0px',
-            },
           })
-          return
-        }
-        if (payResult?.error) {
-          setPaymentError(payResult.error.message || 'Digital wallet connection failed.')
+          const checkRes = await checkCashfreePaymentStatus(requestId)
+          if (checkRes?.booking?.paymentStatus === 'paid') {
+            setBookingState({ requestId, status: 'ready', booking: checkRes.booking, error: '' })
+            return
+          }
         }
         return
       }
@@ -1005,6 +1017,41 @@ export default function BookingPayment() {
         error instanceof Error ? error.message : 'Payment could not be started. Check details and retry.',
       )
       void refreshPaymentStatus()
+    } finally {
+      paying.current = false
+      setIsPaying(false)
+    }
+  }
+
+  async function handleOpenCashfreeModal() {
+    if (isPaying || paying.current || !requestId) return
+    paying.current = true
+    setIsPaying(true)
+    setPaymentError('')
+    try {
+      let currentOrder = cashfreeOrder
+      const returnUrl = window.location.protocol === 'https:'
+        ? `${window.location.origin}/booking/payment/${encodeURIComponent(requestId)}?order_id={order_id}`
+        : ''
+      if (!currentOrder?.payment_session_id) {
+        currentOrder = await createCashfreeOrder(requestId, returnUrl)
+        setCashfreeOrder(currentOrder)
+      }
+      const cf = cashfreeInstanceRef.current || (typeof window.Cashfree === 'function' ? window.Cashfree({
+        mode: currentOrder.environment === 'production' ? 'production' : 'sandbox',
+      }) : null)
+      if (!cf) throw new Error('Payment gateway could not be loaded.')
+      await cf.checkout({
+        paymentSessionId: currentOrder.payment_session_id,
+        redirectTarget: '_modal',
+      })
+      const checkRes = await checkCashfreePaymentStatus(requestId)
+      if (checkRes?.booking?.paymentStatus === 'paid') {
+        setBookingState({ requestId, status: 'ready', booking: checkRes.booking, error: '' })
+      }
+    } catch (err) {
+      console.error('[Cashfree Modal Error]', err)
+      setPaymentError(err instanceof Error ? err.message : 'Could not open payment window.')
     } finally {
       paying.current = false
       setIsPaying(false)
@@ -1920,20 +1967,20 @@ export default function BookingPayment() {
                             </>
                           ) : (
                             <div className="booking-payment__cf-collect-block">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect">
+                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect-gpay">
                                 GOOGLE PAY UPI ID (VPA)
                               </label>
-                              <div id="vibetogether-cf-upi-collect" className="booking-payment__cf-input-mount" />
+                              <div id="vibetogether-cf-upi-collect-gpay" className="booking-payment__cf-input-mount" />
                               <button
                                 type="button"
                                 className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--gpay"
-                                disabled={isPaying || !isElementReady}
+                                disabled={isPaying}
                                 onClick={handleExecuteCustomPayment}
                               >
                                 {isPaying ? (
                                   <>
                                     <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Sending Google Pay Request…</span>
+                                    <span>Connecting Google Pay…</span>
                                   </>
                                 ) : (
                                   <>
@@ -1942,6 +1989,19 @@ export default function BookingPayment() {
                                     <ArrowRight size={16} aria-hidden="true" />
                                   </>
                                 )}
+                              </button>
+                              {collectNotice && selectedMethod === 'gpay' && (
+                                <div className="booking-payment__collect-notice" role="status">
+                                  <CheckCircle2 size={16} aria-hidden="true" />
+                                  <span>{collectNotice}</span>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                className="booking-payment__cf-alt-link"
+                                onClick={handleOpenCashfreeModal}
+                              >
+                                Having trouble with UPI ID? Open direct payment window →
                               </button>
                             </div>
                           )}
@@ -1993,20 +2053,20 @@ export default function BookingPayment() {
                             </>
                           ) : (
                             <div className="booking-payment__cf-collect-block">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect">
+                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect-phonepe">
                                 PHONEPE UPI ID / NUMBER
                               </label>
-                              <div id="vibetogether-cf-upi-collect" className="booking-payment__cf-input-mount" />
+                              <div id="vibetogether-cf-upi-collect-phonepe" className="booking-payment__cf-input-mount" />
                               <button
                                 type="button"
                                 className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--phonepe"
-                                disabled={isPaying || !isElementReady}
+                                disabled={isPaying}
                                 onClick={handleExecuteCustomPayment}
                               >
                                 {isPaying ? (
                                   <>
                                     <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Sending PhonePe Request…</span>
+                                    <span>Connecting PhonePe…</span>
                                   </>
                                 ) : (
                                   <>
@@ -2015,6 +2075,19 @@ export default function BookingPayment() {
                                     <ArrowRight size={16} aria-hidden="true" />
                                   </>
                                 )}
+                              </button>
+                              {collectNotice && selectedMethod === 'phonepe' && (
+                                <div className="booking-payment__collect-notice" role="status">
+                                  <CheckCircle2 size={16} aria-hidden="true" />
+                                  <span>{collectNotice}</span>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                className="booking-payment__cf-alt-link"
+                                onClick={handleOpenCashfreeModal}
+                              >
+                                Having trouble with UPI ID? Open direct payment window →
                               </button>
                             </div>
                           )}
@@ -2066,20 +2139,20 @@ export default function BookingPayment() {
                             </>
                           ) : (
                             <div className="booking-payment__cf-collect-block">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect">
+                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect-paytm">
                                 PAYTM UPI ID / NUMBER
                               </label>
-                              <div id="vibetogether-cf-upi-collect" className="booking-payment__cf-input-mount" />
+                              <div id="vibetogether-cf-upi-collect-paytm" className="booking-payment__cf-input-mount" />
                               <button
                                 type="button"
                                 className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--paytm"
-                                disabled={isPaying || !isElementReady}
+                                disabled={isPaying}
                                 onClick={handleExecuteCustomPayment}
                               >
                                 {isPaying ? (
                                   <>
                                     <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Sending Paytm Request…</span>
+                                    <span>Connecting Paytm…</span>
                                   </>
                                 ) : (
                                   <>
@@ -2088,6 +2161,19 @@ export default function BookingPayment() {
                                     <ArrowRight size={16} aria-hidden="true" />
                                   </>
                                 )}
+                              </button>
+                              {collectNotice && selectedMethod === 'paytm' && (
+                                <div className="booking-payment__collect-notice" role="status">
+                                  <CheckCircle2 size={16} aria-hidden="true" />
+                                  <span>{collectNotice}</span>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                className="booking-payment__cf-alt-link"
+                                onClick={handleOpenCashfreeModal}
+                              >
+                                Having trouble with UPI ID? Open direct payment window →
                               </button>
                             </div>
                           )}
@@ -2139,7 +2225,7 @@ export default function BookingPayment() {
                             <button
                               type="button"
                               className="booking-payment__cf-submit-btn"
-                              disabled={isPaying || !isElementReady}
+                              disabled={isPaying}
                               onClick={handleExecuteCustomPayment}
                             >
                               {isPaying ? (
