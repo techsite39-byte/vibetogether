@@ -1,5 +1,6 @@
+.site-main--home,
 .site-main:has(.home-page) {
-  padding-block: 0;
+  padding-block: 0 !important;
 }
 
 @property --hero-scroll-scale {

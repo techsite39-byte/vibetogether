@@ -118,6 +118,30 @@ function normalizeMemberNames(value, count) {
   return [...names, ...Array(count - names.length).fill('')]
 }
 
+function normalizeMemberMobiles(value, count, defaultCountry = 'IN') {
+  if (value === undefined || !Array.isArray(value)) {
+    return Array(count).fill('')
+  }
+  const mobiles = value.slice(0, count).map((mobile) => {
+    if (typeof mobile !== 'string' || !mobile.trim()) {
+      return ''
+    }
+    const trimmed = mobile.trim()
+    const parsed = parsePhoneNumberFromString(trimmed, defaultCountry)
+    if (parsed?.isValid()) {
+      return parsed.number
+    }
+    if (!trimmed.startsWith('+')) {
+      const withPlus = parsePhoneNumberFromString(`+${trimmed}`, defaultCountry)
+      if (withPlus?.isValid()) {
+        return withPlus.number
+      }
+    }
+    return trimmed
+  })
+  return [...mobiles, ...Array(Math.max(0, count - mobiles.length)).fill('')]
+}
+
 async function validateBookingEnquiry(body, eventRepository) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'Please provide valid booking details.' }
@@ -161,8 +185,14 @@ async function validateBookingEnquiry(body, eventRepository) {
     return { error: 'Male and Female counts must equal the total ticket quantity.' }
   }
 
-  const maleMemberNames = normalizeMemberNames(body.maleMemberNames, maleCount)
-  const femaleMemberNames = normalizeMemberNames(body.femaleMemberNames, femaleCount)
+  let maleMemberNames = normalizeMemberNames(body.maleMemberNames, maleCount)
+  let femaleMemberNames = normalizeMemberNames(body.femaleMemberNames, femaleCount)
+
+  if (body.maleMemberNames === undefined && body.femaleMemberNames === undefined && ticketQuantity === 1) {
+    if (maleCount === 1) maleMemberNames = [name]
+    if (femaleCount === 1) femaleMemberNames = [name]
+  }
+
   if (
     !maleMemberNames ||
     !femaleMemberNames ||
@@ -171,6 +201,33 @@ async function validateBookingEnquiry(body, eventRepository) {
   ) {
     return { error: 'Every ticket must have a valid attendee name matching the selected ticket counts.' }
   }
+
+  const maleMemberMobiles = normalizeMemberMobiles(body.maleMemberMobiles, maleCount)
+  const femaleMemberMobiles = normalizeMemberMobiles(body.femaleMemberMobiles, femaleCount)
+  const maleMemberConsents = Array.from({ length: maleCount }, (_, i) => body.maleMemberConsents?.[i] === true)
+  const femaleMemberConsents = Array.from({ length: femaleCount }, (_, i) => body.femaleMemberConsents?.[i] === true)
+  const nowTime = new Date()
+  const maleMemberConsentAts = maleMemberConsents.map((c) => (c ? nowTime : null))
+  const femaleMemberConsentAts = femaleMemberConsents.map((c) => (c ? nowTime : null))
+
+  const attendees = [
+    ...maleMemberNames.map((mName, i) => ({
+      name: mName,
+      gender: 'Male',
+      mobile: maleMemberMobiles[i] || '',
+      whatsappConsent: maleMemberConsents[i],
+      whatsappConsentAt: maleMemberConsentAts[i],
+      whatsappConsentSource: 'Website booking journey',
+    })),
+    ...femaleMemberNames.map((fName, i) => ({
+      name: fName,
+      gender: 'Female',
+      mobile: femaleMemberMobiles[i] || '',
+      whatsappConsent: femaleMemberConsents[i],
+      whatsappConsentAt: femaleMemberConsentAts[i],
+      whatsappConsentSource: 'Website booking journey',
+    })),
+  ]
 
   if (maleCount + femaleCount !== ticketQuantity) {
     return { error: 'Male and Female attendee counts must equal the selected ticket quantity.' }
@@ -258,10 +315,18 @@ async function validateBookingEnquiry(body, eventRepository) {
       femaleCount,
       maleMemberNames,
       femaleMemberNames,
+      maleMemberMobiles,
+      femaleMemberMobiles,
+      maleMemberConsents,
+      femaleMemberConsents,
+      maleMemberConsentAts,
+      femaleMemberConsentAts,
+      attendees,
       ticketType,
       ticketQuantity,
       whatsappConsent: body.whatsappConsent === true,
       whatsappConsentAt: body.whatsappConsent === true ? new Date() : null,
+      whatsappConsentSource: 'Website booking journey',
       createdAt: new Date(),
       source: 'Website booking journey',
       status: 'pending',
@@ -324,6 +389,13 @@ export function createBookingEnquiriesRouter({
       femaleCount,
       maleMemberNames: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberNames?.[index] ?? ''),
       femaleMemberNames: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberNames?.[index] ?? ''),
+      maleMemberMobiles: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberMobiles?.[index] ?? ''),
+      femaleMemberMobiles: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberMobiles?.[index] ?? ''),
+      maleMemberConsents: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberConsents?.[index] === true),
+      femaleMemberConsents: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberConsents?.[index] === true),
+      attendees: enquiry.attendees ?? [],
+      attendeeNotifications: enquiry.attendeeNotifications ?? [],
+      adminNotification: enquiry.adminNotification ?? null,
       ticketType,
       ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ??
         BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)?.name ?? 'General Admission',
@@ -733,7 +805,7 @@ export function createBookingEnquiriesRouter({
       }
       if (result.booking.paymentStatus === 'paid') {
         await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed') {
+      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
         await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
@@ -762,7 +834,9 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found.' })
         return
       }
-      await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+      if (result.booking?.paymentStatus === 'failed' && outcome === 'failed') {
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+      }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
       response.json({
         recorded: true,
@@ -881,7 +955,7 @@ export function createBookingEnquiriesRouter({
       }
       if (result.booking.paymentStatus === 'paid') {
         await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed') {
+      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
         await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
@@ -932,7 +1006,7 @@ export function createBookingEnquiriesRouter({
       }
       if (result.booking.paymentStatus === 'paid') {
         await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed') {
+      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
         await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)

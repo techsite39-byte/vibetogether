@@ -481,6 +481,13 @@ function bookingFromEnquiry(enquiry) {
     femaleCount: enquiry.femaleCount ?? (enquiry.gender === 'Female' ? (enquiry.ticketQuantity ?? 1) : 0),
     maleMemberNames: enquiry.maleMemberNames ?? [],
     femaleMemberNames: enquiry.femaleMemberNames ?? [],
+    maleMemberMobiles: enquiry.maleMemberMobiles ?? [],
+    femaleMemberMobiles: enquiry.femaleMemberMobiles ?? [],
+    maleMemberConsents: enquiry.maleMemberConsents ?? [],
+    femaleMemberConsents: enquiry.femaleMemberConsents ?? [],
+    attendees: enquiry.attendees ?? [],
+    attendeeNotifications: enquiry.attendeeNotifications ?? [],
+    adminNotification: enquiry.adminNotification ?? null,
     gender: enquiry.gender,
     pricePerTicket: enquiry.pricePerTicket ?? enquiry.regularPrice ?? 299,
     subtotal: enquiry.subtotal ?? enquiry.regularPrice ?? 299,
@@ -842,6 +849,29 @@ export function createAdminRouter({
         response.status(404).json({ message: 'Booking enquiry was not found.' })
         return
       }
+
+      const target = request.body?.target || 'primary'
+      const attendeeIndex = typeof request.body?.attendeeIndex === 'number' ? request.body.attendeeIndex : undefined
+
+      // If targeted resend via whatsappNotifications.resendNotification is available:
+      if (typeof whatsappNotifications?.resendNotification === 'function') {
+        const result = await whatsappNotifications.resendNotification(enquiry.requestId, {
+          target,
+          attendeeIndex,
+          force: true,
+        })
+        const updated = await bookingEnquiryRepository?.findByReference?.(request.params.reference) ?? enquiry
+        response.json({
+          message: result?.message || (result?.sent || result?.success ? 'WhatsApp notification sent successfully.' : 'WhatsApp notification could not be sent.'),
+          result,
+          notification: updated.whatsappNotification,
+          attendeeNotifications: updated.attendeeNotifications,
+          adminNotification: updated.adminNotification,
+          booking: jsonRecord(updated),
+        })
+        return
+      }
+
       if (!enquiry.whatsappConsent) {
         response.status(400).json({ message: 'Customer has not provided WhatsApp notification consent.' })
         return
@@ -872,6 +902,8 @@ export function createAdminRouter({
               : 'WhatsApp notification request processed.',
         result,
         notification: updated.whatsappNotification,
+        attendeeNotifications: updated.attendeeNotifications,
+        adminNotification: updated.adminNotification,
         booking: jsonRecord(updated),
       })
     } catch (error) {

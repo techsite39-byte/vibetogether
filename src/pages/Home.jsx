@@ -17,18 +17,14 @@ import { homeImages } from '../data/homepage.js'
 import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import { useBookingEnquiry } from '../context/useBookingEnquiry.js'
 import usePublicEvents from '../hooks/usePublicEvents.js'
+import HomeCategoriesSection from '../components/home/HomeCategoriesSection.jsx'
+import HomeVideosSection from '../components/home/HomeVideosSection.jsx'
 import './Home.css'
 
 const DotLottieReact = lazy(() =>
   import('@lottiefiles/dotlottie-react').then((module) => ({
     default: module.DotLottieReact,
   })),
-)
-const HomeCategoriesSection = lazy(
-  () => import('../components/home/HomeCategoriesSection.jsx'),
-)
-const HomeVideosSection = lazy(
-  () => import('../components/home/HomeVideosSection.jsx'),
 )
 const heroBackgroundSlides = [
   {
@@ -108,47 +104,6 @@ const aboutCommunityCategory = categories.find(
   ({ id }) => id === 'strangers-meet',
 )
 
-function DeferredHomepageSection({ component: Section }) {
-  const anchorRef = useRef(null)
-  const [isVisible, setIsVisible] = useState(
-    () => !('IntersectionObserver' in window),
-  )
-
-  useEffect(() => {
-    const anchor = anchorRef.current
-    if (!anchor || isVisible) return undefined
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true)
-          observer.disconnect()
-        }
-      },
-      { rootMargin: '700px 0px' },
-    )
-    observer.observe(anchor)
-
-    return () => observer.disconnect()
-  }, [isVisible])
-
-  return (
-    <>
-      {!isVisible && (
-        <div
-          aria-hidden="true"
-          className="home-page__deferred-anchor"
-          ref={anchorRef}
-        />
-      )}
-      {isVisible && (
-        <Suspense fallback={null}>
-          <Section />
-        </Suspense>
-      )}
-    </>
-  )
-}
 
 function Home() {
   const heroRef = useRef(null)
@@ -502,7 +457,7 @@ function Home() {
         </div>
       </section>
 
-      <DeferredHomepageSection component={HomeVideosSection} />
+      <HomeVideosSection />
 
       <section className="home-section home-about" aria-labelledby="about-title">
         <svg
@@ -654,6 +609,9 @@ function Home() {
                 sizes="(max-width: 48rem) 100vw, 50vw"
                 alt="Friends enjoying a gathering together"
                 loading="lazy"
+                decoding="async"
+                width="800"
+                height="600"
               />
               <img
                 className="home-about__image home-about__image--detail"
@@ -662,6 +620,9 @@ function Home() {
                 sizes="(max-width: 48rem) 100vw, 33vw"
                 alt="A warmly lit evening event"
                 loading="lazy"
+                decoding="async"
+                width="600"
+                height="450"
               />
               <span className="home-about__orbit home-about__orbit--one" aria-hidden="true" />
               <span className="home-about__orbit home-about__orbit--two" aria-hidden="true" />
@@ -725,10 +686,13 @@ function Home() {
                 <img
                   className="home-about__story-image"
                   src={event.image}
-                srcSet={getResponsiveImageSrcSet(event.image)}
-                sizes="(max-width: 48rem) 100vw, 33vw"
+                  srcSet={getResponsiveImageSrcSet(event.image)}
+                  sizes="(max-width: 48rem) 100vw, 33vw"
                   alt={event.imageAlt}
                   loading="lazy"
+                  decoding="async"
+                  width="600"
+                  height="400"
                 />
                 <figcaption>
                   <span>{event.category}</span>
@@ -741,7 +705,7 @@ function Home() {
         </div>
       </section>
 
-      <DeferredHomepageSection component={HomeCategoriesSection} />
+      <HomeCategoriesSection />
 
       <section
         className="home-section home-reasons"

@@ -168,11 +168,34 @@ if (!/^[\w.-]+@[\w.-]+$/.test(upiId) || !upiPayeeName || upiPayeeName.length > 1
 }
 const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ?? ''
 const whatsappAccessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim() ?? ''
-const whatsappApiVersion = process.env.WHATSAPP_API_VERSION?.trim() ?? ''
+const whatsappBusinessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID?.trim() ?? ''
+const whatsappApiVersion = (process.env.WHATSAPP_API_VERSION?.trim() || 'v22.0')
+const whatsappBookingTemplate = (
+  process.env.WHATSAPP_BOOKING_TEMPLATE?.trim() ||
+  process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ||
+  'vibetogether_payment_success'
+)
+const whatsappBookingTemplateLanguage = (
+  process.env.WHATSAPP_BOOKING_TEMPLATE_LANGUAGE?.trim() ||
+  'en_US'
+)
+const whatsappAdminPhoneNumber = process.env.WHATSAPP_ADMIN_PHONE_NUMBER?.trim() ?? ''
+const whatsappNotificationsEnabled = process.env.WHATSAPP_NOTIFICATIONS_ENABLED !== 'false'
 const whatsappWebhookVerifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim() ?? ''
 const whatsappAppSecret = process.env.WHATSAPP_APP_SECRET?.trim() ?? ''
-const whatsappSuccessTemplateName = process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ?? ''
-const whatsappFailureTemplateName = process.env.WHATSAPP_FAILURE_TEMPLATE_NAME?.trim() ?? ''
+const whatsappSuccessTemplateName = (
+  process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ||
+  whatsappBookingTemplate ||
+  'vibetogether_payment_success'
+)
+const whatsappFailureTemplateName = (
+  process.env.WHATSAPP_FAILURE_TEMPLATE_NAME?.trim() ||
+  'vibetogether_payment_failed'
+)
+const whatsappSuccessTicketParam = (
+  process.env.WHATSAPP_SUCCESS_TICKET_PARAM?.trim() ||
+  'type'
+).toLowerCase()
 if (whatsappApiVersion && !/^v\d+\.\d+$/.test(whatsappApiVersion)) {
   throw new Error('WHATSAPP_API_VERSION must use the format vNN.N.')
 }
@@ -180,8 +203,8 @@ const whatsappConfigured = Boolean(
   whatsappPhoneNumberId &&
   whatsappAccessToken &&
   whatsappApiVersion &&
-  whatsappSuccessTemplateName &&
-  whatsappFailureTemplateName,
+  whatsappBookingTemplate &&
+  whatsappNotificationsEnabled,
 )
 
 export const config = Object.freeze({
@@ -219,10 +242,16 @@ export const config = Object.freeze({
   upiPayeeName,
   whatsappPhoneNumberId,
   whatsappAccessToken,
+  whatsappBusinessAccountId,
   whatsappApiVersion,
+  whatsappBookingTemplate,
+  whatsappBookingTemplateLanguage,
+  whatsappAdminPhoneNumber,
+  whatsappNotificationsEnabled,
   whatsappWebhookVerifyToken,
   whatsappAppSecret,
   whatsappSuccessTemplateName,
   whatsappFailureTemplateName,
+  whatsappSuccessTicketParam,
   whatsappConfigured,
 })

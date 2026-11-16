@@ -129,11 +129,12 @@ function formatBookingDate(value) {
 
 function getBookingMembers(booking) {
   return [
-    ['Male', booking?.maleCount ?? (booking?.gender === 'Male' ? booking?.ticketQuantity ?? 1 : 0), booking?.maleMemberNames],
-    ['Female', booking?.femaleCount ?? (booking?.gender === 'Female' ? booking?.ticketQuantity ?? 1 : 0), booking?.femaleMemberNames],
-  ].flatMap(([gender, count, names]) => Array.from({ length: count }, (_, index) => ({
+    ['Male', booking?.maleCount ?? (booking?.gender === 'Male' ? booking?.ticketQuantity ?? 1 : 0), booking?.maleMemberNames, booking?.maleMemberMobiles],
+    ['Female', booking?.femaleCount ?? (booking?.gender === 'Female' ? booking?.ticketQuantity ?? 1 : 0), booking?.femaleMemberNames, booking?.femaleMemberMobiles],
+  ].flatMap(([gender, count, names, mobiles]) => Array.from({ length: count }, (_, index) => ({
     label: `${gender} Member ${index + 1}`,
     name: Array.isArray(names) ? names[index] ?? '' : '',
+    mobile: Array.isArray(mobiles) ? mobiles[index] ?? '' : '',
   })))
 }
 
@@ -915,10 +916,13 @@ export default function BookingPayment() {
                         )}
                       </strong>
                     </div>
-                    {memberDetails.map(({ label, name }) => (
+                    {memberDetails.map(({ label, name, mobile }) => (
                       <div className="booking-payment__ticket-col" key={label}>
                         <span className="booking-payment__meta-label">{label}</span>
-                        <strong className="booking-payment__meta-value">{name || 'Not provided'}</strong>
+                        <strong className="booking-payment__meta-value">
+                          {name || 'Not provided'}
+                          {mobile ? ` (${mobile})` : ''}
+                        </strong>
                       </div>
                     ))}
                     <div className="booking-payment__ticket-col">
@@ -1097,8 +1101,11 @@ export default function BookingPayment() {
                             <Users size={14} aria-hidden="true" /> Member names
                           </span>
                           <div className="booking-payment__detail-val">
-                            {memberDetails.map(({ label, name }) => (
-                              <div key={label}>{label}: {name || 'Not provided'}</div>
+                            {memberDetails.map(({ label, name, mobile }) => (
+                              <div key={label}>
+                                {label}: {name || 'Not provided'}
+                                {mobile ? ` (${mobile})` : ''}
+                              </div>
                             ))}
                           </div>
                         </div>

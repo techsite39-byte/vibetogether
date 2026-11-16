@@ -87,6 +87,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
     status: 'not_available',
     history: [],
   }
+  const adminNotif = currentBooking.adminNotification
   const mobileDigits = String(currentBooking.mobile ?? '').replace(/\D/g, '')
   const isPaymentFinalized = ['demo_paid', 'paid', 'verified'].includes(currentBooking.paymentStatus)
   const whatsappPreview = getWhatsAppNotificationPreview(
@@ -94,21 +95,50 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
     isPaymentFinalized ? 'success' : 'failure',
   )
 
-  async function handleRetryWhatsApp() {
+  const attendeesList = useMemo(() => {
+    const list = []
+    const maleCount = currentBooking.maleCount ?? 0
+    const femaleCount = currentBooking.femaleCount ?? 0
+    for (let i = 0; i < maleCount; i++) {
+      const name = currentBooking.maleMemberNames?.[i]?.trim() || `Male Member ${i + 1}`
+      const mobile = currentBooking.maleMemberMobiles?.[i]?.trim() || ''
+      const consent = currentBooking.maleMemberConsents?.[i] === true
+      const notif = currentBooking.attendeeNotifications?.find((an) => an.attendeeIndex === i && an.gender === 'Male') ||
+        currentBooking.attendeeNotifications?.find((an) => mobile && an.recipient === mobile)
+      list.push({ index: i, gender: 'Male', label: `Male Member ${i + 1}`, name, mobile, consent, notif })
+    }
+    for (let i = 0; i < femaleCount; i++) {
+      const name = currentBooking.femaleMemberNames?.[i]?.trim() || `Female Member ${i + 1}`
+      const mobile = currentBooking.femaleMemberMobiles?.[i]?.trim() || ''
+      const consent = currentBooking.femaleMemberConsents?.[i] === true
+      const notif = currentBooking.attendeeNotifications?.find((an) => an.attendeeIndex === i && an.gender === 'Female') ||
+        currentBooking.attendeeNotifications?.find((an) => mobile && an.recipient === mobile)
+      list.push({ index: i, gender: 'Female', label: `Female Member ${i + 1}`, name, mobile, consent, notif })
+    }
+    return list
+  }, [currentBooking])
+
+  async function handleRetry(target = 'primary', attendeeIndex) {
     if (retrying || !currentBooking.reference) return
     setRetrying(true)
     setRetryResult(null)
     try {
-      const response = await retryWhatsAppNotification(currentBooking.reference)
+      const response = await retryWhatsAppNotification(currentBooking.reference, { target, attendeeIndex })
       const updated = response.booking ? { ...currentBooking, ...response.booking } : currentBooking
       if (response.notification) {
         updated.whatsappNotification = response.notification
+      }
+      if (response.attendeeNotifications) {
+        updated.attendeeNotifications = response.attendeeNotifications
+      }
+      if (response.adminNotification) {
+        updated.adminNotification = response.adminNotification
       }
       setCurrentBooking(updated)
       setRetryResult({
         tone: response.result?.alreadyDelivered || response.result?.uncertain
           ? 'neutral'
-          : response.result?.sent
+          : response.result?.sent || response.result?.success
             ? 'success'
             : 'error',
         text: response.message,
@@ -203,17 +233,75 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Consent date</dt><dd>{formatBookingDate(currentBooking.whatsappConsentAt)}</dd></div>
           <div><dt>Opt-out date</dt><dd>{formatBookingDate(currentBooking.whatsappOptedOutAt)}</dd></div>
           <div><dt>Customer WhatsApp number</dt><dd>{currentBooking.mobile || '—'}</dd></div>
-          <div><dt>WhatsApp notification status</dt><dd><StatusBadge status={notification.status}>{formatWhatsAppStatus(notification.status, currentBooking.whatsappConsent)}</StatusBadge></dd></div>
-          <div><dt>Last attempt</dt><dd>{formatBookingDate(notification.lastAttemptAt)}</dd></div>
-          <div><dt>Sent at</dt><dd>{formatBookingDate(notification.sentAt)}</dd></div>
-          <div><dt>Delivered at</dt><dd>{formatBookingDate(notification.deliveredAt)}</dd></div>
-          <div><dt>Provider message ID</dt><dd>{notification.providerMessageId || '—'}</dd></div>
+          <div><dt>Primary WhatsApp status</dt><dd><StatusBadge status={notification.status}>{formatWhatsAppStatus(notification.status, currentBooking.whatsappConsent)}</StatusBadge></dd></div>
+          <div><dt>Primary message ID</dt><dd>{notification.providerMessageId || '—'}</dd></div>
+          <div><dt>Primary sent at</dt><dd>{formatBookingDate(notification.sentAt)}</dd></div>
+          <div><dt>Primary delivered at</dt><dd>{formatBookingDate(notification.deliveredAt)}</dd></div>
+
+          {/* Admin Alert Status */}
+          <div><dt>Admin WhatsApp alert</dt><dd><StatusBadge status={adminNotif?.status || 'not_available'}>{adminNotif?.status ? adminNotif.status.toUpperCase() : 'NOT CONFIGURED'}</StatusBadge></dd></div>
+          {adminNotif?.recipient && <div><dt>Admin phone</dt><dd>{adminNotif.recipient}</dd></div>}
+          {adminNotif?.providerMessageId && <div><dt>Admin alert message ID</dt><dd>{adminNotif.providerMessageId}</dd></div>}
         </dl>
         <AdminNotice tone="neutral">
           Ticket selection and charged pricing are locked after payment. Any change requires a separate payment or refund workflow.
         </AdminNotice>
         {notification.failureReason && <AdminNotice tone="error">{notification.failureReason}</AdminNotice>}
         {retryResult && <AdminNotice tone={retryResult.tone}>{retryResult.text}</AdminNotice>}
+
+        {/* Additional Attendee WhatsApp Status Table */}
+        {attendeesList.length > 0 && (
+          <div style={{ marginTop: '1.25rem' }}>
+            <h3>Additional Attendee Notifications</h3>
+            <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse', marginTop: '0.5rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', textAlign: 'left', color: '#c4b5fd' }}>
+                  <th style={{ padding: '0.4rem 0.5rem' }}>Attendee</th>
+                  <th style={{ padding: '0.4rem 0.5rem' }}>Mobile</th>
+                  <th style={{ padding: '0.4rem 0.5rem' }}>Consent</th>
+                  <th style={{ padding: '0.4rem 0.5rem' }}>WhatsApp Status</th>
+                  <th style={{ padding: '0.4rem 0.5rem' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attendeesList.map((att) => {
+                  const hasMobile = Boolean(att.mobile)
+                  const hasConsent = att.consent
+                  const notifStatus = att.notif?.status || (hasMobile ? (hasConsent ? 'pending' : 'no_consent') : 'no_mobile')
+                  const canResend = hasMobile && hasConsent && !['delivered', 'read'].includes(att.notif?.status)
+                  return (
+                    <tr key={`${att.gender}-${att.index}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '0.5rem' }}><strong>{att.name}</strong> ({att.label})</td>
+                      <td style={{ padding: '0.5rem' }}>{att.mobile || '—'}</td>
+                      <td style={{ padding: '0.5rem' }}>
+                        {hasConsent ? <span style={{ color: '#10b981' }}>✓ Granted</span> : <span style={{ color: '#9ca3af' }}>Not opted in</span>}
+                      </td>
+                      <td style={{ padding: '0.5rem' }}>
+                        <StatusBadge status={att.notif?.status || notifStatus}>
+                          {att.notif?.status ? att.notif.status.toUpperCase() : notifStatus.replace('_', ' ').toUpperCase()}
+                        </StatusBadge>
+                      </td>
+                      <td style={{ padding: '0.5rem' }}>
+                        {canResend && (
+                          <button
+                            type="button"
+                            className="admin-button admin-button--secondary"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            disabled={retrying}
+                            onClick={() => handleRetry('attendee', att.index)}
+                          >
+                            Resend
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <h3>WhatsApp notification history</h3>
         {notification.history?.length ? (
           <ul>
@@ -237,17 +325,27 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
               type="button"
               className="admin-button admin-button--primary"
               disabled={retrying || ['delivered', 'read'].includes(notification.status)}
-              onClick={handleRetryWhatsApp}
-              title={['delivered', 'read'].includes(notification.status) ? 'Message is already delivered' : 'Retry sending WhatsApp notification'}
+              onClick={() => handleRetry('primary')}
+              title={['delivered', 'read'].includes(notification.status) ? 'Message is already delivered' : 'Retry sending primary WhatsApp notification'}
             >
               <RefreshCw size={15} className={retrying ? 'admin-spin' : ''} aria-hidden="true" />
               {retrying
                 ? 'Retrying…'
                 : ['delivered', 'read'].includes(notification.status)
-                  ? 'Delivered (No Retry Needed)'
-                  : 'Retry WhatsApp Notification'}
+                  ? 'Primary Delivered'
+                  : 'Resend Primary WhatsApp'}
             </button>
           )}
+          <button
+            type="button"
+            className="admin-button admin-button--secondary"
+            disabled={retrying}
+            onClick={() => handleRetry('admin')}
+            title="Resend admin alert notification to configured admin number"
+          >
+            <RefreshCw size={15} className={retrying ? 'admin-spin' : ''} aria-hidden="true" />
+            {retrying ? 'Retrying…' : 'Resend Admin Alert'}
+          </button>
         </div>
       </div>
     </AdminDialog>
@@ -454,7 +552,12 @@ export default function ManageBookings() {
                     {formatAmount(booking.amount, booking.currency)}
                     {booking.diwaliOfferApplied && <span className="admin-table__secondary"><s>{formatAmount(booking.subtotal ?? booking.regularPrice, booking.currency)}</s> Diwali offer · saved {formatAmount(booking.discount ?? 0, booking.currency)}</span>}
                   </td>
-                  <td><StatusBadge status={booking.paymentStatus}>{formatPaymentStatus(booking.paymentStatus)}</StatusBadge></td>
+                  <td>
+                    <StatusBadge status={booking.paymentStatus}>{formatPaymentStatus(booking.paymentStatus)}</StatusBadge>
+                    <span className="admin-table__secondary" style={{ display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                      {booking.paymentProvider === 'cashfree' ? 'Cashfree' : booking.paymentProvider === 'razorpay' ? 'Razorpay' : booking.paymentProvider === 'upi' ? 'Direct UPI' : '—'}
+                    </span>
+                  </td>
                   <td><StatusBadge status={booking.status}>{formatBookingStatus(booking.status)}</StatusBadge></td>
                   <td><StatusBadge status={booking.whatsappNotification?.status ?? 'not_available'}>{formatWhatsAppStatus(booking.whatsappNotification?.status, booking.whatsappConsent)}</StatusBadge>{mobileDigits && <a className="admin-button admin-button--small" href={`https://wa.me/${mobileDigits}`} rel="noopener noreferrer" target="_blank"><MessageCircle size={15} aria-hidden="true" /> Contact</a>}</td>
                   <td><div className="admin-row-actions admin-row-actions--wrap">

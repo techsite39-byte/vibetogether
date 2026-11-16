@@ -5,7 +5,7 @@ export const categories = [
     description: 'Big choruses, familiar songs, and voices raised together.',
     eventCount: 'Explore',
     image:
-      'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=82',
+      'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=75',
     imageAlt: 'Singer sharing a song with the crowd',
   },
   {
@@ -14,7 +14,7 @@ export const categories = [
     description: 'Easy-going gatherings where new conversations begin.',
     eventCount: 'Explore',
     image:
-      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=900&q=82',
+      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=900&q=75',
     imageAlt: 'Friends meeting outdoors and enjoying each other’s company',
   },
   {
@@ -23,7 +23,7 @@ export const categories = [
     description: 'Take the long way round with a crew you just met.',
     eventCount: 'Explore',
     image:
-      'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=900&q=82',
+      'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=900&q=75',
     imageAlt: 'Mountain landscape ready to be explored',
   },
   {
@@ -32,7 +32,7 @@ export const categories = [
     description: 'A little friendly competition and a lot of shared laughs.',
     eventCount: 'Explore',
     image:
-      'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=900&q=82',
+      'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=900&q=75',
     imageAlt: 'Colorful tabletop game ready for friends',
   },
 ]

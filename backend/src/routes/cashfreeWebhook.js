@@ -67,7 +67,13 @@ export function createCashfreeWebhookRouter({
 
       if (result?.action === 'confirmed' && result.booking?.paymentStatus === 'paid' && result.booking.reference) {
         await notifyWithoutAffectingPayment(result.booking.requestId, 'booking_confirmation')
-      } else if (result?.action === 'failed' && result.booking?.paymentStatus === 'failed') {
+      } else if (
+        result?.action === 'failed' &&
+        result.booking?.paymentStatus === 'failed' &&
+        result.booking?.paymentFailureReason !== 'cancelled' &&
+        result.booking?.paymentFailureReason !== 'user_dropped' &&
+        payload?.type !== 'PAYMENT_USER_DROPPED_WEBHOOK'
+      ) {
         await notifyWithoutAffectingPayment(result.booking.requestId, 'payment_assistance')
       }
 

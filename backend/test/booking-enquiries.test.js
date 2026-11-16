@@ -336,83 +336,6 @@ test('does not send automatic WhatsApp messages before successful payment', asyn
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-
-  test('calculates ticket pricing on the server and ignores client-supplied amounts', async () => {
-    const { baseUrl, saved } = await startTestServer({
-      diwaliOfferService: {
-        async getPricing() {
-          return {
-            paymentAmount: 249,
-            paymentAmountPaise: 24_900,
-            regularPrice: 299,
-            offerPrice: 249,
-            diwaliOfferApplied: true,
-            offerActivationAt: new Date('2026-11-09T00:00:00.000Z'),
-            offerExpiresAt: new Date('2026-11-12T00:00:00.000Z'),
-          }
-        },
-      },
-    })
-    const request = {
-      requestId: crypto.randomUUID(),
-      name: 'Jordan Example',
-      mobile: '+91 98765 43210',
-      categoryId: 'fun-games',
-      gender: 'Female',
-      ticketType: 'general-admission',
-      ticketQuantity: 3,
-      pricePerTicket: 1,
-      subtotal: 1,
-      discount: 0,
-      finalAmount: 1,
-      paymentAmount: 1,
-      paymentAmountPaise: 100,
-    }
-    const response = await fetch(`${baseUrl}/api/booking-enquiries`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-    })
-    const payload = await response.json()
-
-    assert.equal(response.status, 201)
-    assert.equal(payload.booking.ticketType, 'general-admission')
-    assert.equal(payload.booking.ticketTypeName, 'General Admission')
-    assert.equal(payload.booking.ticketQuantity, 3)
-    assert.equal(payload.booking.pricePerTicket, 299)
-    assert.equal(payload.booking.subtotal, 897)
-    assert.equal(payload.booking.discount, 150)
-    assert.equal(payload.booking.finalAmount, 747)
-    assert.equal(payload.booking.paymentAmount, 747)
-    assert.equal(payload.booking.paymentAmountPaise, 74_700)
-    assert.equal(saved.get(request.requestId).paymentAmount, 747)
-  })
-
-  test('rejects invalid ticket quantities and unavailable ticket types', async () => {
-    const { baseUrl } = await startTestServer()
-    const request = {
-      requestId: crypto.randomUUID(),
-      name: 'Jordan Example',
-      mobile: '+91 98765 43210',
-      categoryId: 'fun-games',
-      gender: 'Female',
-      ticketType: 'general-admission',
-      ticketQuantity: 11,
-    }
-    const invalidQuantityResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-    })
-    assert.equal(invalidQuantityResponse.status, 400)
-
-    const invalidTypeResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...request, requestId: crypto.randomUUID(), ticketQuantity: 1, ticketType: 'vip' }),
-    })
-    assert.equal(invalidTypeResponse.status, 400)
-  })
   const firstPayload = await firstResponse.json()
   assert.equal(firstResponse.status, 201)
   assert.equal(firstPayload.booking.reference, '')
@@ -428,6 +351,84 @@ test('does not send automatic WhatsApp messages before successful payment', asyn
   })
   assert.equal(duplicateResponse.status, 200)
   assert.equal((await duplicateResponse.json()).booking.reference, '')
+})
+
+test('calculates ticket pricing on the server and ignores client-supplied amounts', async () => {
+  const { baseUrl, saved } = await startTestServer({
+    diwaliOfferService: {
+      async getPricing() {
+        return {
+          paymentAmount: 249,
+          paymentAmountPaise: 24_900,
+          regularPrice: 299,
+          offerPrice: 249,
+          diwaliOfferApplied: true,
+          offerActivationAt: new Date('2026-11-09T00:00:00.000Z'),
+          offerExpiresAt: new Date('2026-11-12T00:00:00.000Z'),
+        }
+      },
+    },
+  })
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    categoryId: 'fun-games',
+    gender: 'Female',
+    ticketType: 'general-admission',
+    ticketQuantity: 3,
+    femaleMemberNames: ['Jordan Example', 'Guest Two', 'Guest Three'],
+    pricePerTicket: 1,
+    subtotal: 1,
+    discount: 0,
+    finalAmount: 1,
+    paymentAmount: 1,
+    paymentAmountPaise: 100,
+  }
+  const response = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  const payload = await response.json()
+
+  assert.equal(response.status, 201)
+  assert.equal(payload.booking.ticketType, 'general-admission')
+  assert.equal(payload.booking.ticketTypeName, 'General Admission')
+  assert.equal(payload.booking.ticketQuantity, 3)
+  assert.equal(payload.booking.pricePerTicket, 299)
+  assert.equal(payload.booking.subtotal, 897)
+  assert.equal(payload.booking.discount, 150)
+  assert.equal(payload.booking.finalAmount, 747)
+  assert.equal(payload.booking.paymentAmount, 747)
+  assert.equal(payload.booking.paymentAmountPaise, 74_700)
+  assert.equal(saved.get(request.requestId).paymentAmount, 747)
+})
+
+test('rejects invalid ticket quantities and unavailable ticket types', async () => {
+  const { baseUrl } = await startTestServer()
+  const request = {
+    requestId: crypto.randomUUID(),
+    name: 'Jordan Example',
+    mobile: '+91 98765 43210',
+    categoryId: 'fun-games',
+    gender: 'Female',
+    ticketType: 'general-admission',
+    ticketQuantity: 11,
+  }
+  const invalidQuantityResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  assert.equal(invalidQuantityResponse.status, 400)
+
+  const invalidTypeResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...request, requestId: crypto.randomUUID(), ticketQuantity: 1, ticketType: 'vip' }),
+  })
+  assert.equal(invalidTypeResponse.status, 400)
 })
 
 test('keeps temporary booking data separate from WhatsApp send status', async () => {

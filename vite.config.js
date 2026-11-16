@@ -6,6 +6,18 @@ export default defineConfig({
   plugins: [react()],
   build: {
     assetsDir: 'build-assets',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons'
+          }
+          if (id.includes('node_modules/react-router')) {
+            return 'vendor-router'
+          }
+        },
+      },
+    },
   },
   server: {
     port: 5173,

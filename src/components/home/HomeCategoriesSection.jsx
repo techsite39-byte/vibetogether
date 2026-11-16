@@ -13,7 +13,7 @@ const baseExperiences = [
     category: 'Live Music',
     description: 'Big choruses, familiar songs, and voices raised together.',
     image:
-      'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/hero/h1-480-v1.webp',
     imageAlt: 'Microphone and singer under warm concert stage lights',
     link: '/sing-along',
@@ -24,7 +24,7 @@ const baseExperiences = [
     category: 'Community',
     description: 'Easy-going gatherings where new conversations begin.',
     image:
-      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/hero/h2-480-v1.webp',
     imageAlt: 'Friends meeting and enjoying each other’s company outdoors',
     link: '/strangers-meet',
@@ -35,7 +35,7 @@ const baseExperiences = [
     category: 'Getaway',
     description: 'Take the long way round with a crew you just met.',
     image:
-      'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/hero/h3-480-v1.webp',
     imageAlt: 'Scenic mountain lake and cabin in the hills',
     link: '/strangers-trip',
@@ -46,7 +46,7 @@ const baseExperiences = [
     category: 'Social Play',
     description: 'A little friendly competition and a lot of shared laughs.',
     image:
-      'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/hero/h4-480-v1.webp',
     imageAlt: 'People having fun under a colorful rainbow canopy outdoors',
     link: '/fun-games',
@@ -57,7 +57,7 @@ const baseExperiences = [
     category: 'Unplugged',
     description: 'Warm chords, soulful vocals, and candlelit sets.',
     image:
-      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/music-speakers-720-v1.webp',
     imageAlt: 'Acoustic guitar and musician in warm lighting',
     link: '/events',
@@ -68,7 +68,7 @@ const baseExperiences = [
     category: 'Dinner & Talks',
     description: 'Good food, honest talks, and chairs pulled close.',
     image:
-      'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/sub-480-v1.webp',
     imageAlt: 'Warmly lit dinner table ready for dinner and conversation',
     link: '/events',
@@ -79,7 +79,7 @@ const baseExperiences = [
     category: 'Starlit Skies',
     description: 'Crackling embers, midnight skies, and stories shared.',
     image:
-      'https://images.unsplash.com/photo-1517824806704-9040b037703b?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1517824806704-9040b037703b?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/outdoor-dj-festival-480-v1.webp',
     imageAlt: 'Bonfire outdoors with friends gathered under night sky',
     link: '/events',
@@ -90,7 +90,7 @@ const baseExperiences = [
     category: 'Sunrise Trek',
     description: 'Chasing morning light with an adventurous crew.',
     image:
-      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/image-480-v1.webp',
     imageAlt: 'Dramatic alpine mountain peaks under morning sun',
     link: '/events',
@@ -101,7 +101,7 @@ const baseExperiences = [
     category: 'Electric Vibe',
     description: 'Feel the bass, ride the rhythm, and lose track of time.',
     image:
-      'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/dj-party-650-v1.webp',
     imageAlt: 'Joyful festival crowd with warm golden lighting',
     link: '/events',
@@ -112,7 +112,7 @@ const baseExperiences = [
     category: 'Strategy Play',
     description: 'Roll the dice, plan your move, and share the win.',
     image:
-      'https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?auto=format&fit=crop&w=800&q=82',
+      'https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?auto=format&fit=crop&w=800&q=75',
     fallbackImage: '/assets/optimized/festival-crowd-480-v1.webp',
     imageAlt: 'Tabletop board game with dice and tokens',
     link: '/events',
@@ -565,11 +565,9 @@ export default function HomeCategoriesSection() {
 
         {/* Subtle Hint indicating hover auto-scroll & drag interaction */}
         <div className="experiences-arc__hint" aria-hidden="true">
-          <span className={`experiences-arc__hint-pill ${isHovered ? 'is-active' : ''}`}>
+          <span className="experiences-arc__hint-pill">
             <span className="experiences-arc__hint-dot" />
-            {isHovered
-              ? 'Auto-scrolling on hover'
-              : 'Hover to auto-scroll · Drag or swipe to rotate'}
+            Hover to auto-scroll · Drag or swipe to rotate
           </span>
         </div>
       </div>
