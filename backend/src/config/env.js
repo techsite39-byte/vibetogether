@@ -192,6 +192,10 @@ const whatsappFailureTemplateName = (
   process.env.WHATSAPP_FAILURE_TEMPLATE_NAME?.trim() ||
   'vibetogether_payment_failed'
 )
+const whatsappSuccessTicketParam = (
+  process.env.WHATSAPP_SUCCESS_TICKET_PARAM?.trim() ||
+  'type'
+).toLowerCase()
 if (whatsappApiVersion && !/^v\d+\.\d+$/.test(whatsappApiVersion)) {
   throw new Error('WHATSAPP_API_VERSION must use the format vNN.N.')
 }
@@ -248,5 +252,6 @@ export const config = Object.freeze({
   whatsappAppSecret,
   whatsappSuccessTemplateName,
   whatsappFailureTemplateName,
+  whatsappSuccessTicketParam,
   whatsappConfigured,
 })

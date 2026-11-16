@@ -258,6 +258,7 @@ export function templateBodyParameters(
   templateName = '',
   attendee = null,
   frontendUrl = 'https://www.vibetogether.show',
+  options = {},
 ) {
   const amountNumeric = String(booking.paymentAmount ?? booking.amount ?? 299)
   const amountWithSymbol = `₹${amountNumeric}`
@@ -273,15 +274,19 @@ export function templateBodyParameters(
     templateName.includes('payment_success')
   ) {
     const quantity = attendee ? '1' : String(booking.ticketQuantity ?? 1)
-    const yourTicket = attendee
-      ? `${attendee.name} (${ticketType})`
-      : ticketType
+    const ticketUrl = booking.reference
+      ? `${frontendUrl}/booking/confirmation/${booking.reference}`
+      : `${frontendUrl}/booking`
+    const useUrl = options?.ticketParamFormat === 'url' || process.env.WHATSAPP_SUCCESS_TICKET_PARAM === 'url'
+    const yourTicket = useUrl
+      ? ticketUrl
+      : (attendee ? `${attendee.name} (${ticketType})` : ticketType)
     return [
       customerName,   // {{1}} Hello {{1}},
       reference,      // {{2}} Booking ID: {{2}}
       quantity,       // {{3}} Number of Tickets: {{3}}
       amountNumeric,  // {{4}} Amount Paid: ₹{{4}}
-      yourTicket,     // {{5}} Your ticket: {{5}}
+      yourTicket,     // {{5}} Your ticket: {{5}} (Ticket Type or Ticket URL)
     ]
   }
 
@@ -398,6 +403,7 @@ export function createWhatsAppService({
   failureTemplateName = '',
   webhookVerifyToken = '',
   appSecret = '',
+  successTicketParam = (process.env.WHATSAPP_SUCCESS_TICKET_PARAM?.trim() || 'type').toLowerCase(),
   fetchImpl = globalThis.fetch,
   now = () => new Date(),
 } = {}) {
@@ -736,8 +742,14 @@ export function createWhatsAppService({
         language: { code: bookingTemplateLanguage },
         components: [{
           type: 'body',
-          parameters: templateBodyParameters(booking, isSuccess ? 'success' : 'failure', templateName)
-            .map((text) => ({ type: 'text', text: String(text) })),
+          parameters: templateBodyParameters(
+            booking,
+            isSuccess ? 'success' : 'failure',
+            templateName,
+            null,
+            undefined,
+            { ticketParamFormat: successTicketParam },
+          ).map((text) => ({ type: 'text', text: String(text) })),
         }],
       },
       biz_opaque_callback_data: idempotencyKey,
@@ -873,8 +885,14 @@ export function createWhatsAppService({
         language: { code: bookingTemplateLanguage },
         components: [{
           type: 'body',
-          parameters: templateBodyParameters(booking, 'success', templateName, attendee)
-            .map((text) => ({ type: 'text', text: String(text) })),
+          parameters: templateBodyParameters(
+            booking,
+            'success',
+            templateName,
+            attendee,
+            undefined,
+            { ticketParamFormat: successTicketParam },
+          ).map((text) => ({ type: 'text', text: String(text) })),
         }],
       },
       biz_opaque_callback_data: idempotencyKey,

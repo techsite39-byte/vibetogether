@@ -128,7 +128,18 @@ test('templateBodyParameters maps vibetogether_payment_success correctly (5 para
   assert.equal(params[1], 'VT-2026-9025')   // {{2}} Booking ID
   assert.equal(params[2], '3')              // {{3}} Number of Tickets
   assert.equal(params[3], '897')            // {{4}} Amount Paid (without ₹)
-  assert.equal(params[4], 'General Admission') // {{5}} Your ticket
+  assert.equal(params[4], 'General Admission') // {{5}} Your ticket (type format)
+})
+
+test('templateBodyParameters maps vibetogether_payment_success with URL for parameter {{5}} when configured', () => {
+  const b = makeBooking()
+  const params = templateBodyParameters(b, 'success', 'vibetogether_payment_success', null, 'https://www.vibetogether.show', { ticketParamFormat: 'url' })
+  assert.equal(params.length, 5)
+  assert.equal(params[0], 'Sanjay Kumar')
+  assert.equal(params[1], 'VT-2026-9025')
+  assert.equal(params[2], '3')
+  assert.equal(params[3], '897')
+  assert.equal(params[4], 'https://www.vibetogether.show/booking/confirmation/VT-2026-9025') // {{5}} Your ticket (URL format)
 })
 
 test('templateBodyParameters maps vibetogether_payment_failed correctly (4 parameters)', () => {

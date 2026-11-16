@@ -72,6 +72,7 @@ const whatsappNotifications = createWhatsAppNotificationService({
   failureTemplateName: config.whatsappFailureTemplateName,
   webhookVerifyToken: config.whatsappWebhookVerifyToken,
   appSecret: config.whatsappAppSecret,
+  successTicketParam: config.whatsappSuccessTicketParam,
 })
 
 const app = createApp({
