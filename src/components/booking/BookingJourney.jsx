@@ -421,8 +421,12 @@ export default function BookingJourney({ onClose }) {
         femaleMemberNames: form.femaleMemberNames,
         maleMemberMobiles: form.maleMemberMobiles,
         femaleMemberMobiles: form.femaleMemberMobiles,
-        maleMemberConsents: form.maleMemberConsents,
-        femaleMemberConsents: form.femaleMemberConsents,
+        maleMemberConsents: Array.from({ length: form.maleCount }, (_, i) =>
+          Boolean(form.maleMemberMobiles?.[i]?.trim()) && form.whatsappConsent
+        ),
+        femaleMemberConsents: Array.from({ length: form.femaleCount }, (_, i) =>
+          Boolean(form.femaleMemberMobiles?.[i]?.trim()) && form.whatsappConsent
+        ),
         ticketType: form.ticketType,
         ticketQuantity: form.ticketQuantity,
         whatsappConsent: form.whatsappConsent,
@@ -824,16 +828,6 @@ export default function BookingJourney({ onClose }) {
                             type="tel"
                             value={mobiles?.[index] ?? ''}
                           />
-                          {Boolean(mobiles?.[index]?.trim()) && (
-                            <label className="booking-member-field__consent">
-                              <input
-                                checked={consents?.[index] === true}
-                                onChange={(event) => updateMemberConsent(gender, index, event.target.checked)}
-                                type="checkbox"
-                              />
-                              <span>I confirm that this attendee has agreed to receive booking confirmation and important booking updates from Vibe Together on WhatsApp.</span>
-                            </label>
-                          )}
                           {memberErrors[`${gender}-${index}`] && (
                             <small className="booking-member-field__error" role="alert">
                               {memberErrors[`${gender}-${index}`]}
