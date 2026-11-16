@@ -232,11 +232,34 @@ export function templateBodyParameters(booking, kind, templateName = '', attende
 
 export function isValidWhatsAppWebhookSignature(rawBody, signature, appSecret) {
   if (!rawBody || !signature || !appSecret) return false
-  const expectedSignature = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`
-  const signatureBuffer = Buffer.from(signature)
-  const expectedBuffer = Buffer.from(expectedSignature)
+  const trimmedSignature = String(signature).trim().toLowerCase()
+  const expectedSignature = `sha256=${createHmac('sha256', appSecret)
+    .update(Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody), 'utf8'))
+    .digest('hex')}`
+  const signatureBuffer = Buffer.from(trimmedSignature, 'utf8')
+  const expectedBuffer = Buffer.from(expectedSignature, 'utf8')
   if (signatureBuffer.length !== expectedBuffer.length) return false
   return timingSafeEqual(signatureBuffer, expectedBuffer)
+}
+
+const processedWebhookEvents = new Map()
+const EVENT_TTL_MS = 24 * 60 * 60 * 1000
+
+function isDuplicateWebhookEvent(eventKey) {
+  if (!eventKey) return false
+  const nowMs = Date.now()
+  if (processedWebhookEvents.size > 10000) {
+    for (const [key, ts] of processedWebhookEvents.entries()) {
+      if (nowMs - ts > EVENT_TTL_MS) {
+        processedWebhookEvents.delete(key)
+      }
+    }
+  }
+  if (processedWebhookEvents.has(eventKey)) {
+    return true
+  }
+  processedWebhookEvents.set(eventKey, nowMs)
+  return false
 }
 
 export function createWhatsAppService({
@@ -1041,6 +1064,11 @@ export function createWhatsAppService({
       ).lean()
     }
 
+    const eventKey = `${messageId}:${status}:${timestamp ?? 'unknown'}`
+    if (isDuplicateWebhookEvent(eventKey)) {
+      return booking || null
+    }
+
     // Check attendee notifications match
     const attendeeBooking = await bookingEnquiryModel.findOne({
       'attendeeNotifications.providerMessageId': messageId,
@@ -1091,12 +1119,77 @@ export function createWhatsAppService({
     return null
   }
 
+  async function recordIncomingMessage({
+    messageId,
+    from,
+    timestamp,
+    type = 'text',
+    text = '',
+    button = '',
+    interactive = null,
+  }) {
+    if (!messageId || !from) return null
+    const eventKey = `${messageId}:incoming`
+    if (isDuplicateWebhookEvent(eventKey)) {
+      return null
+    }
+
+    const parsedTimestamp = timestamp ? new Date(Number(timestamp) * 1000) : now()
+    const at = Number.isFinite(parsedTimestamp.getTime()) ? parsedTimestamp : now()
+    const messageBody = String(text || button || (interactive?.button_reply?.title || interactive?.list_reply?.title || '')).trim()
+    const isOptOut = /^(stop|unsubscribe|cancel|optout|opt-out|quit|end)$/i.test(messageBody)
+
+    const rawDigits = from.replace(/\D/g, '')
+    const last10 = rawDigits.slice(-10)
+    if (!last10) return null
+
+    const matchRegex = new RegExp(`${last10}$`)
+    const booking = await bookingEnquiryModel.findOne({
+      $or: [
+        { mobile: { $regex: matchRegex } },
+        { maleMemberMobiles: { $regex: matchRegex } },
+        { femaleMemberMobiles: { $regex: matchRegex } },
+      ],
+    }).sort({ createdAt: -1 })
+
+    if (!booking) {
+      return null
+    }
+
+    const alreadyRecorded = booking.whatsappNotification?.history?.some((h) => h.eventKey === eventKey)
+    if (alreadyRecorded) {
+      return booking
+    }
+
+    const note = isOptOut
+      ? `Customer requested WhatsApp opt-out ("${messageBody}"). Communications paused.`
+      : messageBody
+        ? `Customer incoming message: "${messageBody.slice(0, 200)}"`
+        : `Customer sent incoming message (${type}).`
+
+    const update = {
+      $push: {
+        'whatsappNotification.history': historyEntry('received', 'customer', note, eventKey, at),
+      },
+    }
+
+    if (isOptOut) {
+      update.$set = {
+        whatsappConsent: false,
+        whatsappOptedOutAt: at,
+      }
+    }
+
+    return bookingEnquiryModel.findByIdAndUpdate(booking._id, update, { new: true }).lean()
+  }
+
   return {
     configured,
     getDiagnostics,
     notify,
     processRetries,
     recordWebhookStatus,
+    recordIncomingMessage,
     resendNotification,
     send,
     sendAdminAlert,

@@ -116,11 +116,11 @@ const bookingEnquirySchema = new mongoose.Schema(
         type: [{
           status: {
             type: String,
-            enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'skipped'],
+            enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'skipped', 'received'],
             required: true,
           },
           at: { type: Date, required: true },
-          source: { type: String, enum: ['system', 'admin', 'webhook'], required: true },
+          source: { type: String, enum: ['system', 'admin', 'webhook', 'customer'], required: true },
           note: { type: String, maxlength: 300, default: '' },
           eventKey: { type: String, maxlength: 200, default: '' },
         }],
