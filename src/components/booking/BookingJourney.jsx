@@ -107,6 +107,12 @@ export default function BookingJourney({ onClose }) {
     femaleMemberMobiles: Array.isArray(restoredDraft?.form?.femaleMemberMobiles)
       ? restoredDraft.form.femaleMemberMobiles.filter((mob) => typeof mob === 'string').slice(0, 10)
       : [],
+    maleMemberConsents: Array.isArray(restoredDraft?.form?.maleMemberConsents)
+      ? restoredDraft.form.maleMemberConsents.slice(0, 10)
+      : [],
+    femaleMemberConsents: Array.isArray(restoredDraft?.form?.femaleMemberConsents)
+      ? restoredDraft.form.femaleMemberConsents.slice(0, 10)
+      : [],
     whatsappConsent: restoredDraft?.form?.whatsappConsent === true,
   }))
   const [countryCode, setCountryCode] = useState(restoredDraft?.countryCode ?? '+91')
@@ -252,6 +258,8 @@ export default function BookingJourney({ onClose }) {
         femaleMemberNames: current.femaleMemberNames.slice(0, femaleCount),
         maleMemberMobiles: (current.maleMemberMobiles || []).slice(0, maleCount),
         femaleMemberMobiles: (current.femaleMemberMobiles || []).slice(0, femaleCount),
+        maleMemberConsents: (current.maleMemberConsents || []).slice(0, maleCount),
+        femaleMemberConsents: (current.femaleMemberConsents || []).slice(0, femaleCount),
       }
     })
     setFieldError('')
@@ -263,6 +271,7 @@ export default function BookingJourney({ onClose }) {
       const countKey = gender === 'Male' ? 'maleCount' : 'femaleCount'
       const namesKey = gender === 'Male' ? 'maleMemberNames' : 'femaleMemberNames'
       const mobilesKey = gender === 'Male' ? 'maleMemberMobiles' : 'femaleMemberMobiles'
+      const consentsKey = gender === 'Male' ? 'maleMemberConsents' : 'femaleMemberConsents'
       const otherCount = gender === 'Male' ? current.femaleCount : current.maleCount
       const count = Math.min(current.ticketQuantity - otherCount, Math.max(0, nextCount))
       return {
@@ -270,6 +279,7 @@ export default function BookingJourney({ onClose }) {
         [countKey]: count,
         [namesKey]: current[namesKey].slice(0, count),
         [mobilesKey]: (current[mobilesKey] || []).slice(0, count),
+        [consentsKey]: (current[consentsKey] || []).slice(0, count),
       }
     })
     setFieldError('')
@@ -298,6 +308,16 @@ export default function BookingJourney({ onClose }) {
       const mobiles = [...(current[mobilesKey] || [])]
       mobiles[index] = value
       return { ...current, [mobilesKey]: mobiles }
+    })
+  }
+
+  function updateMemberConsent(gender, index, value) {
+    resetRequestAfterEdit()
+    const consentsKey = gender === 'Male' ? 'maleMemberConsents' : 'femaleMemberConsents'
+    setForm((current) => {
+      const consents = [...(current[consentsKey] || [])]
+      consents[index] = Boolean(value)
+      return { ...current, [consentsKey]: consents }
     })
   }
 
@@ -401,6 +421,8 @@ export default function BookingJourney({ onClose }) {
         femaleMemberNames: form.femaleMemberNames,
         maleMemberMobiles: form.maleMemberMobiles,
         femaleMemberMobiles: form.femaleMemberMobiles,
+        maleMemberConsents: form.maleMemberConsents,
+        femaleMemberConsents: form.femaleMemberConsents,
         ticketType: form.ticketType,
         ticketQuantity: form.ticketQuantity,
         whatsappConsent: form.whatsappConsent,
@@ -774,9 +796,9 @@ export default function BookingJourney({ onClose }) {
                     })}
                   </fieldset>
                   {[
-                    ['Male', form.maleCount, form.maleMemberNames, form.maleMemberMobiles],
-                    ['Female', form.femaleCount, form.femaleMemberNames, form.femaleMemberMobiles],
-                  ].map(([gender, count, names, mobiles]) => count > 0 && (
+                    ['Male', form.maleCount, form.maleMemberNames, form.maleMemberMobiles, form.maleMemberConsents],
+                    ['Female', form.femaleCount, form.femaleMemberNames, form.femaleMemberMobiles, form.femaleMemberConsents],
+                  ].map(([gender, count, names, mobiles, consents]) => count > 0 && (
                     <fieldset className="booking-member-group" key={gender}>
                       <legend>{gender.toUpperCase()} MEMBERS</legend>
                       {Array.from({ length: count }, (_, index) => (
@@ -802,6 +824,16 @@ export default function BookingJourney({ onClose }) {
                             type="tel"
                             value={mobiles?.[index] ?? ''}
                           />
+                          {Boolean(mobiles?.[index]?.trim()) && (
+                            <label className="booking-member-field__consent">
+                              <input
+                                checked={consents?.[index] === true}
+                                onChange={(event) => updateMemberConsent(gender, index, event.target.checked)}
+                                type="checkbox"
+                              />
+                              <span>I confirm that this attendee has agreed to receive booking confirmation and important booking updates from Vibe Together on WhatsApp.</span>
+                            </label>
+                          )}
                           {memberErrors[`${gender}-${index}`] && (
                             <small className="booking-member-field__error" role="alert">
                               {memberErrors[`${gender}-${index}`]}
@@ -842,9 +874,7 @@ export default function BookingJourney({ onClose }) {
                   type="checkbox"
                 />
                 <span>
-                  I consent to receive WhatsApp booking updates and payment assistance
-                  from Vibe Together at the mobile number I provided. This is optional
-                  and I can opt out later.
+                  I agree to receive booking confirmations and important booking updates from Vibe Together on WhatsApp.
                 </span>
               </label>
             )}

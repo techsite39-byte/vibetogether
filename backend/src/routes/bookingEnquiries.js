@@ -204,6 +204,30 @@ async function validateBookingEnquiry(body, eventRepository) {
 
   const maleMemberMobiles = normalizeMemberMobiles(body.maleMemberMobiles, maleCount)
   const femaleMemberMobiles = normalizeMemberMobiles(body.femaleMemberMobiles, femaleCount)
+  const maleMemberConsents = Array.from({ length: maleCount }, (_, i) => body.maleMemberConsents?.[i] === true)
+  const femaleMemberConsents = Array.from({ length: femaleCount }, (_, i) => body.femaleMemberConsents?.[i] === true)
+  const nowTime = new Date()
+  const maleMemberConsentAts = maleMemberConsents.map((c) => (c ? nowTime : null))
+  const femaleMemberConsentAts = femaleMemberConsents.map((c) => (c ? nowTime : null))
+
+  const attendees = [
+    ...maleMemberNames.map((mName, i) => ({
+      name: mName,
+      gender: 'Male',
+      mobile: maleMemberMobiles[i] || '',
+      whatsappConsent: maleMemberConsents[i],
+      whatsappConsentAt: maleMemberConsentAts[i],
+      whatsappConsentSource: 'Website booking journey',
+    })),
+    ...femaleMemberNames.map((fName, i) => ({
+      name: fName,
+      gender: 'Female',
+      mobile: femaleMemberMobiles[i] || '',
+      whatsappConsent: femaleMemberConsents[i],
+      whatsappConsentAt: femaleMemberConsentAts[i],
+      whatsappConsentSource: 'Website booking journey',
+    })),
+  ]
 
   if (maleCount + femaleCount !== ticketQuantity) {
     return { error: 'Male and Female attendee counts must equal the selected ticket quantity.' }
@@ -293,10 +317,16 @@ async function validateBookingEnquiry(body, eventRepository) {
       femaleMemberNames,
       maleMemberMobiles,
       femaleMemberMobiles,
+      maleMemberConsents,
+      femaleMemberConsents,
+      maleMemberConsentAts,
+      femaleMemberConsentAts,
+      attendees,
       ticketType,
       ticketQuantity,
       whatsappConsent: body.whatsappConsent === true,
       whatsappConsentAt: body.whatsappConsent === true ? new Date() : null,
+      whatsappConsentSource: 'Website booking journey',
       createdAt: new Date(),
       source: 'Website booking journey',
       status: 'pending',
@@ -361,6 +391,11 @@ export function createBookingEnquiriesRouter({
       femaleMemberNames: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberNames?.[index] ?? ''),
       maleMemberMobiles: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberMobiles?.[index] ?? ''),
       femaleMemberMobiles: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberMobiles?.[index] ?? ''),
+      maleMemberConsents: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberConsents?.[index] === true),
+      femaleMemberConsents: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberConsents?.[index] === true),
+      attendees: enquiry.attendees ?? [],
+      attendeeNotifications: enquiry.attendeeNotifications ?? [],
+      adminNotification: enquiry.adminNotification ?? null,
       ticketType,
       ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ??
         BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)?.name ?? 'General Admission',

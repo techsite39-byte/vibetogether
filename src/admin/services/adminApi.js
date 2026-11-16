@@ -317,10 +317,12 @@ export async function signOutAdmin() {
 
 /**
  * Retries a failed WhatsApp notification for a booking safely without sending duplicates.
+ * Supports targeted resends: { target: 'primary' | 'attendee' | 'admin', attendeeIndex }
  */
-export async function retryWhatsAppNotification(reference) {
+export async function retryWhatsAppNotification(reference, options = {}) {
   return adminRequest(`/admin/bookings/${encodeURIComponent(reference)}/whatsapp/retry`, {
     method: 'POST',
+    body: JSON.stringify(options),
   })
 }
 

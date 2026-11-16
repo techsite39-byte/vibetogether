@@ -62,7 +62,12 @@ const razorpayPayments = createRazorpayPaymentService({
 const whatsappNotifications = createWhatsAppNotificationService({
   phoneNumberId: config.whatsappPhoneNumberId,
   accessToken: config.whatsappAccessToken,
+  businessAccountId: config.whatsappBusinessAccountId,
   apiVersion: config.whatsappApiVersion,
+  bookingTemplate: config.whatsappBookingTemplate,
+  bookingTemplateLanguage: config.whatsappBookingTemplateLanguage,
+  adminPhoneNumber: config.whatsappAdminPhoneNumber,
+  notificationsEnabled: config.whatsappNotificationsEnabled,
   successTemplateName: config.whatsappSuccessTemplateName,
   failureTemplateName: config.whatsappFailureTemplateName,
   webhookVerifyToken: config.whatsappWebhookVerifyToken,

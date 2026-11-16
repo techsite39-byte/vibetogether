@@ -39,6 +39,10 @@ const bookingEnquirySchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    whatsappConsentSource: {
+      type: String,
+      default: 'Website booking journey',
+    },
     whatsappOptedOutAt: {
       type: Date,
       default: null,
@@ -189,8 +193,36 @@ const bookingEnquirySchema = new mongoose.Schema(
       type: [{ type: String, trim: true, maxlength: 30 }],
       default: [],
     },
+    maleMemberConsents: {
+      type: [{ type: Boolean }],
+      default: [],
+    },
+    femaleMemberConsents: {
+      type: [{ type: Boolean }],
+      default: [],
+    },
+    maleMemberConsentAts: {
+      type: [{ type: Date }],
+      default: [],
+    },
+    femaleMemberConsentAts: {
+      type: [{ type: Date }],
+      default: [],
+    },
+    attendees: {
+      type: [{
+        name: { type: String, trim: true, maxlength: 80, default: '' },
+        gender: { type: String, enum: ['Male', 'Female', ''], default: '' },
+        mobile: { type: String, trim: true, maxlength: 30, default: '' },
+        whatsappConsent: { type: Boolean, default: false },
+        whatsappConsentAt: { type: Date, default: null },
+        whatsappConsentSource: { type: String, default: 'Website booking journey' },
+      }],
+      default: [],
+    },
     attendeeNotifications: {
       type: [{
+        attendeeIndex: { type: Number, default: 0 },
         name: { type: String, maxlength: 80, default: '' },
         recipient: { type: String, maxlength: 30, default: '' },
         gender: { type: String, enum: ['Male', 'Female', ''], default: '' },
@@ -202,8 +234,24 @@ const bookingEnquirySchema = new mongoose.Schema(
         providerMessageId: { type: String, maxlength: 200, default: '' },
         failureReason: { type: String, maxlength: 300, default: '' },
         sentAt: { type: Date, default: null },
+        deliveredAt: { type: Date, default: null },
+        readAt: { type: Date, default: null },
+        idempotencyKey: { type: String, maxlength: 160, default: '' },
       }],
       default: [],
+    },
+    adminNotification: {
+      recipient: { type: String, maxlength: 30, default: '' },
+      status: {
+        type: String,
+        enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'skipped'],
+        default: 'skipped',
+      },
+      providerMessageId: { type: String, maxlength: 200, default: '' },
+      failureReason: { type: String, maxlength: 300, default: '' },
+      sentAt: { type: Date, default: null },
+      deliveredAt: { type: Date, default: null },
+      idempotencyKey: { type: String, maxlength: 160, default: '' },
     },
     pricePerTicket: {
       type: Number,
@@ -443,6 +491,7 @@ bookingEnquirySchema.index({ reference: 1 }, { unique: true, sparse: true })
 bookingEnquirySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 bookingEnquirySchema.index({ 'whatsappNotification.providerMessageId': 1 }, { sparse: true })
 bookingEnquirySchema.index({ 'attendeeNotifications.providerMessageId': 1 }, { sparse: true })
+bookingEnquirySchema.index({ 'adminNotification.providerMessageId': 1 }, { sparse: true })
 bookingEnquirySchema.index({ 'upiPayments.utr': 1 }, { unique: true, sparse: true })
 
 export const BookingEnquiry =
