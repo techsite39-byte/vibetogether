@@ -755,9 +755,18 @@ export function createRazorpayPaymentService({
     }
     if (payment.status !== 'failed') return null
 
-    // A failed attempt can be followed by a successful retry on the same order.
-    // Only the checkout dismissal/status check may make the booking terminal.
-    return { booking: enquiry, pending: true }
+    if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+      return { duplicate: true, booking: enquiry, action: 'duplicate' }
+    }
+    if (enquiry.paymentStatus === 'failed' && enquiry.paymentId === payment.id) {
+      return { duplicate: true, booking: enquiry, action: 'duplicate' }
+    }
+
+    enquiry.paymentStatus = 'failed'
+    enquiry.paymentId = payment.id
+    enquiry.paymentFailureReason = payment.error_description || payment.error_reason || 'payment_failed'
+    await enquiry.save()
+    return { booking: enquiry, action: 'failed' }
   }
 
   return { createOrder, verifyPayment, checkStatus, recordFailure, handleWebhook }

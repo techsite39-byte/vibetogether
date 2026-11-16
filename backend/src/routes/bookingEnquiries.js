@@ -805,7 +805,7 @@ export function createBookingEnquiriesRouter({
       }
       if (result.booking.paymentStatus === 'paid') {
         await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed') {
+      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
         await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
@@ -834,7 +834,9 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found.' })
         return
       }
-      await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+      if (result.booking?.paymentStatus === 'failed' && outcome === 'failed') {
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+      }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
       response.json({
         recorded: true,
@@ -953,7 +955,7 @@ export function createBookingEnquiriesRouter({
       }
       if (result.booking.paymentStatus === 'paid') {
         await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed') {
+      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
         await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
@@ -1004,7 +1006,7 @@ export function createBookingEnquiriesRouter({
       }
       if (result.booking.paymentStatus === 'paid') {
         await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed') {
+      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
         await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)

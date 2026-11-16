@@ -453,3 +453,130 @@ test('Scenario 11: Duplicate recipient number in same booking — no duplicate n
   assert.equal(sentNumbers.length, 2)
   assert.deepEqual(sentNumbers, ['919025335720', '919876543222'])
 })
+
+// ---------------------------------------------------------------------------
+// 13. Duplicate failure webhook (idempotent, 1 message)
+// ---------------------------------------------------------------------------
+test('Duplicate failure webhook — idempotent, sends only 1 failure message', async () => {
+  const model = createBookingModel(makeBooking({
+    paymentStatus: 'failed',
+    paymentOrderId: 'order_fail_idemp_1',
+    paymentFailureReason: 'payment_failed',
+    reference: '',
+  }))
+  let callCount = 0
+  const service = createTestWhatsAppService(model, async () => {
+    callCount += 1
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.fail-1' }] }) }
+  })
+
+  // First failure trigger
+  const first = await service.send('req-session-456', 'payment_assistance')
+  assert.equal(first.sent, true)
+  assert.equal(callCount, 1)
+
+  // Second duplicate failure webhook
+  const second = await service.send('req-session-456', 'payment_assistance')
+  assert.equal(second.duplicate, true)
+  assert.equal(callCount, 1) // No duplicate message sent
+})
+
+// ---------------------------------------------------------------------------
+// 14. Failure followed by successful payment (success delivered, future failure suppressed)
+// ---------------------------------------------------------------------------
+test('Failure followed by successful payment — success delivered, future failure suppressed', async () => {
+  const model = createBookingModel(makeBooking({
+    paymentStatus: 'failed',
+    paymentOrderId: 'order_initial_failed',
+    paymentFailureReason: 'payment_failed',
+    reference: '',
+  }))
+  const sentTemplates = []
+  const service = createTestWhatsAppService(model, async (_url, options) => {
+    const payload = JSON.parse(options.body)
+    sentTemplates.push(payload.template.name)
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: `wamid.msg-${sentTemplates.length}` }] }) }
+  })
+
+  // 1. Initial failure sends failure template
+  const failureResult = await service.send('req-session-456', 'payment_assistance')
+  assert.equal(failureResult.sent, true)
+  assert.equal(sentTemplates.length, 1)
+  assert.equal(sentTemplates[0], 'vibetogether_payment_failed')
+
+  // 2. Customer retries and successfully pays
+  model.findOneAndUpdate(
+    { requestId: 'req-session-456' },
+    { $set: { paymentStatus: 'paid', reference: 'VT-2026-RETRY-SUCCESS', status: 'confirmed' } },
+  )
+
+  // 3. Success notification dispatched
+  const successResult = await service.send('req-session-456', 'booking_confirmation')
+  assert.equal(successResult.sent, true)
+  assert.ok(sentTemplates.includes('vibetogether_payment_success'))
+
+  // 4. Stale or delayed failure webhook arrives after success -> must be suppressed!
+  const delayedFailure = await service.send('req-session-456', 'payment_assistance')
+  assert.equal(delayedFailure.duplicate, true)
+  assert.equal(delayedFailure.alreadyPaid, true)
+  // Ensure no new failure template was sent
+  assert.equal(sentTemplates.filter((t) => t === 'vibetogether_payment_failed').length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// 15. Invalid WhatsApp recipient — fails gracefully without crashing payment
+// ---------------------------------------------------------------------------
+test('Invalid WhatsApp recipient — fails gracefully without throwing error or crashing booking', async () => {
+  const model = createBookingModel(makeBooking({
+    paymentStatus: 'failed',
+    mobile: '12345', // Invalid phone number (less than 7 digits)
+    reference: '',
+  }))
+  let apiCalled = false
+  const service = createTestWhatsAppService(model, async () => {
+    apiCalled = true
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.123' }] }) }
+  })
+
+  const result = await service.send('req-session-456', 'payment_assistance')
+
+  assert.equal(result.failed, true)
+  assert.equal(apiCalled, false) // Meta API was not called with garbage number
+  assert.equal(model.record.whatsappNotification.status, 'failed')
+  assert.match(model.record.whatsappNotification.failureReason, /not a valid WhatsApp recipient/)
+  // Booking state is intact
+  assert.equal(model.record.paymentStatus, 'failed')
+})
+
+// ---------------------------------------------------------------------------
+// 16. Meta template rejection — logged with details, booking unaffected
+// ---------------------------------------------------------------------------
+test('Meta template rejection — logged with details, booking unaffected', async () => {
+  const model = createBookingModel(makeBooking({
+    paymentStatus: 'failed',
+    reference: '',
+  }))
+  const service = createTestWhatsAppService(model, async () => {
+    return {
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          message: 'Template name does not exist in language en_US',
+          type: 'OAuthException',
+          code: 132001,
+          error_subcode: 2494011,
+          error_data: { details: 'Template vibetogether_payment_failed is not approved for en_US' },
+        },
+      }),
+    }
+  })
+
+  const result = await service.send('req-session-456', 'payment_assistance')
+
+  assert.equal(result.failed, true)
+  assert.equal(model.record.whatsappNotification.status, 'failed')
+  assert.match(model.record.whatsappNotification.failureReason, /Template name does not exist/)
+  // Booking state is completely preserved
+  assert.equal(model.record.paymentStatus, 'failed')
+})

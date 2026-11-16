@@ -22,6 +22,17 @@ export function normalizeWhatsAppRecipient(value, defaultCountry = 'IN') {
   return ''
 }
 
+export function maskPhone(value) {
+  if (typeof value !== 'string' || !value.trim()) return '—'
+  const trimmed = value.trim()
+  const digitsOnly = trimmed.replace(/\D/g, '')
+  if (digitsOnly.length <= 4) return '****'
+  const prefix = trimmed.startsWith('+') ? '+' : ''
+  const start = digitsOnly.slice(0, Math.min(3, Math.floor(digitsOnly.length / 3)))
+  const end = digitsOnly.slice(-Math.min(4, Math.floor(digitsOnly.length / 3)))
+  return `${prefix}${start}****${end}`
+}
+
 export function formatBookingDate(value) {
   const date = value ? new Date(value) : null
   if (!date || Number.isNaN(date.getTime())) return 'Not provided'
@@ -563,10 +574,20 @@ export function createWhatsAppService({
   }
 
   // Send to primary customer
-  async function sendPrimaryConfirmation(booking, { retry = false, force = false } = {}) {
+  async function sendPrimaryConfirmation(booking, { retry = false, force = false, targetType = null } = {}) {
     const requestId = booking.requestId
-    const isSuccess = ['paid', 'verified', 'demo_paid'].includes(booking.paymentStatus)
-    const type = isSuccess ? 'booking_confirmation' : 'payment_assistance'
+    const effectiveType = targetType || (['paid', 'verified', 'demo_paid'].includes(booking.paymentStatus) ? 'booking_confirmation' : 'payment_assistance')
+    const isSuccess = effectiveType === 'booking_confirmation'
+    const type = effectiveType
+
+    if (!isSuccess) {
+      if (['paid', 'verified'].includes(booking.paymentStatus) && Boolean(booking.reference)) {
+        return { booking, duplicate: true, alreadyPaid: true }
+      }
+      if (booking.paymentStatus !== 'failed') {
+        return { booking, pending: true }
+      }
+    }
 
     if (isSuccess && booking.paymentStatus === 'demo_paid') {
       const skipped = await bookingEnquiryModel.findOneAndUpdate(
@@ -593,10 +614,10 @@ export function createWhatsAppService({
     }
 
     if (isSuccess && !(booking.paymentStatus === 'paid' && booking.reference)) {
+      if (booking.paymentStatus === 'pending' || !booking.paymentStatus) {
+        return { booking, pending: true }
+      }
       return { booking, skipped: true }
-    }
-    if (!isSuccess && booking.paymentStatus !== 'failed') {
-      return { booking, pending: true }
     }
 
     const idempotencyKey = isSuccess
@@ -725,7 +746,14 @@ export function createWhatsAppService({
     let graphResult
     try {
       graphResult = await postWhatsAppGraph(payload)
-    } catch {
+    } catch (error) {
+      console.error('[WhatsApp API] Network timeout or connection error.', {
+        bookingId: booking.requestId,
+        bookingReference: booking.reference || '',
+        recipient: maskPhone(recipient),
+        template: templateName,
+        error: error instanceof Error ? error.message : String(error),
+      })
       const reason = 'WhatsApp provider response was uncertain; automatic retry was withheld to prevent duplicate messages.'
       const failed = await bookingEnquiryModel.findOneAndUpdate(
         { requestId, 'whatsappNotification.idempotencyKey': idempotencyKey },
@@ -747,6 +775,17 @@ export function createWhatsAppService({
 
     const { ok, status, body } = graphResult
     if (!ok || typeof body.messages?.[0]?.id !== 'string') {
+      console.error('[WhatsApp API] Message rejected by Meta.', {
+        status,
+        metaErrorCode: body?.error?.code,
+        metaErrorSubcode: body?.error?.error_subcode,
+        metaErrorMessage: body?.error?.message,
+        metaErrorDetails: body?.error?.error_data?.details || body?.error?.message,
+        bookingId: booking.requestId,
+        bookingReference: booking.reference || '',
+        recipient: maskPhone(recipient),
+        template: templateName,
+      })
       const retryable = retryableHttpStatuses.has(status)
       const attempts = claimed.whatsappNotification?.attemptCount ?? 1
       const delayMinutes = Math.min(60, 2 ** Math.min(attempts, 5))
@@ -773,6 +812,14 @@ export function createWhatsAppService({
     }
 
     const messageId = body.messages[0].id
+    console.info('[WhatsApp API] Message accepted by Meta.', {
+      status,
+      messageId,
+      bookingId: booking.requestId,
+      bookingReference: booking.reference || '',
+      recipient: maskPhone(recipient),
+      template: templateName,
+    })
     const sentAt = now()
     const sent = await bookingEnquiryModel.findOneAndUpdate(
       { requestId, 'whatsappNotification.idempotencyKey': idempotencyKey },
@@ -857,6 +904,29 @@ export function createWhatsAppService({
     const messageId = typeof body.messages?.[0]?.id === 'string' ? body.messages[0].id : ''
     const notificationStatus = ok && messageId ? 'sent' : 'failed'
     const failureReason = notificationStatus === 'failed' ? safeFailureReason(status, body, [accessToken]) : ''
+
+    if (ok && messageId) {
+      console.info('[WhatsApp API] Attendee message accepted by Meta.', {
+        status,
+        messageId,
+        bookingId: booking.requestId,
+        attendeeName: attendee.name,
+        recipient: maskPhone(attendee.mobile),
+        template: templateName,
+      })
+    } else {
+      console.error('[WhatsApp API] Attendee message rejected by Meta.', {
+        status,
+        metaErrorCode: body?.error?.code,
+        metaErrorSubcode: body?.error?.error_subcode,
+        metaErrorMessage: body?.error?.message,
+        metaErrorDetails: body?.error?.error_data?.details || body?.error?.message,
+        bookingId: booking.requestId,
+        attendeeName: attendee.name,
+        recipient: maskPhone(attendee.mobile),
+        template: templateName,
+      })
+    }
 
     const record = {
       attendeeIndex: attendee.index,
@@ -972,6 +1042,25 @@ export function createWhatsAppService({
     const notificationStatus = ok && messageId ? 'sent' : 'failed'
     const failureReason = notificationStatus === 'failed' ? safeFailureReason(status, body, [accessToken]) : ''
 
+    if (ok && messageId) {
+      console.info('[WhatsApp API] Admin alert accepted by Meta.', {
+        status,
+        messageId,
+        bookingId: booking.requestId,
+        recipient: maskPhone(adminRecipient),
+      })
+    } else {
+      console.error('[WhatsApp API] Admin alert rejected by Meta.', {
+        status,
+        metaErrorCode: body?.error?.code,
+        metaErrorSubcode: body?.error?.error_subcode,
+        metaErrorMessage: body?.error?.message,
+        metaErrorDetails: body?.error?.error_data?.details || body?.error?.message,
+        bookingId: booking.requestId,
+        recipient: maskPhone(adminRecipient),
+      })
+    }
+
     await bookingEnquiryModel.findOneAndUpdate(
       { requestId },
       {
@@ -997,11 +1086,11 @@ export function createWhatsAppService({
     const isSuccess = type === 'booking_confirmation'
     if (!isSuccess) {
       // Payment assistance / failure notifications go to primary contact only
-      return sendPrimaryConfirmation(booking, options)
+      return sendPrimaryConfirmation(booking, { ...options, targetType: type })
     }
 
     // 1. Send primary confirmation
-    const primaryResult = await sendPrimaryConfirmation(booking, options)
+    const primaryResult = await sendPrimaryConfirmation(booking, { ...options, targetType: type })
 
     // 2. If payment is paid and reference allocated, dispatch to consented attendees
     if (booking.paymentStatus === 'paid' && booking.reference && configured) {
@@ -1167,6 +1256,12 @@ export function createWhatsAppService({
         update.$set['whatsappNotification.failureReason'] = safeNote
         update.$set['whatsappNotification.retryable'] = false
         update.$set['whatsappNotification.nextRetryAt'] = null
+        console.error('[WhatsApp API Webhook] Asynchronous delivery failure recorded.', {
+          messageId,
+          bookingId: booking.requestId,
+          recipient: maskPhone(booking.whatsappNotification?.recipient),
+          error,
+        })
       }
       return bookingEnquiryModel.findOneAndUpdate(
         { requestId: booking.requestId, 'whatsappNotification.providerMessageId': messageId },
