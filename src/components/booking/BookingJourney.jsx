@@ -17,7 +17,7 @@ import { formatOfferExpiry, getDiwaliOffer, getOfferRemainingMs } from '../../se
 import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import './BookingJourney.css'
 
-const steps = ['Name', 'Mobile', 'Category', 'Gender & attendees', 'Payment']
+const steps = ['Name', 'WhatsApp', 'Category', 'Gender & attendees', 'Payment']
 const bookingCategories = categories.filter(({ id }) => id === 'sing-along')
 const draftStorageKey = 'vibe-together-booking-draft'
 const fallbackTicketTypes = [{ id: 'general-admission', name: 'General Admission' }]
@@ -100,6 +100,12 @@ export default function BookingJourney({ onClose }) {
       : [],
     femaleMemberNames: Array.isArray(restoredDraft?.form?.femaleMemberNames)
       ? restoredDraft.form.femaleMemberNames.filter((name) => typeof name === 'string').slice(0, 10)
+      : [],
+    maleMemberMobiles: Array.isArray(restoredDraft?.form?.maleMemberMobiles)
+      ? restoredDraft.form.maleMemberMobiles.filter((mob) => typeof mob === 'string').slice(0, 10)
+      : [],
+    femaleMemberMobiles: Array.isArray(restoredDraft?.form?.femaleMemberMobiles)
+      ? restoredDraft.form.femaleMemberMobiles.filter((mob) => typeof mob === 'string').slice(0, 10)
       : [],
     whatsappConsent: restoredDraft?.form?.whatsappConsent === true,
   }))
@@ -244,6 +250,8 @@ export default function BookingJourney({ onClose }) {
         femaleCount,
         maleMemberNames: current.maleMemberNames.slice(0, maleCount),
         femaleMemberNames: current.femaleMemberNames.slice(0, femaleCount),
+        maleMemberMobiles: (current.maleMemberMobiles || []).slice(0, maleCount),
+        femaleMemberMobiles: (current.femaleMemberMobiles || []).slice(0, femaleCount),
       }
     })
     setFieldError('')
@@ -254,12 +262,14 @@ export default function BookingJourney({ onClose }) {
     setForm((current) => {
       const countKey = gender === 'Male' ? 'maleCount' : 'femaleCount'
       const namesKey = gender === 'Male' ? 'maleMemberNames' : 'femaleMemberNames'
+      const mobilesKey = gender === 'Male' ? 'maleMemberMobiles' : 'femaleMemberMobiles'
       const otherCount = gender === 'Male' ? current.femaleCount : current.maleCount
       const count = Math.min(current.ticketQuantity - otherCount, Math.max(0, nextCount))
       return {
         ...current,
         [countKey]: count,
         [namesKey]: current[namesKey].slice(0, count),
+        [mobilesKey]: (current[mobilesKey] || []).slice(0, count),
       }
     })
     setFieldError('')
@@ -281,6 +291,16 @@ export default function BookingJourney({ onClose }) {
     setFieldError('')
   }
 
+  function updateMemberMobile(gender, index, value) {
+    resetRequestAfterEdit()
+    const mobilesKey = gender === 'Male' ? 'maleMemberMobiles' : 'femaleMemberMobiles'
+    setForm((current) => {
+      const mobiles = [...(current[mobilesKey] || [])]
+      mobiles[index] = value
+      return { ...current, [mobilesKey]: mobiles }
+    })
+  }
+
   function getMissingMemberNames() {
     return [
       ['Male', form.maleCount, form.maleMemberNames],
@@ -299,7 +319,7 @@ export default function BookingJourney({ onClose }) {
       return 'Enter a valid email address or leave it blank.'
     }
     if (step === 1 && !getNormalizedMobile(form.mobile, countryCode)) {
-      return 'Enter a valid mobile number with 7 to 15 digits.'
+      return 'Enter a valid WhatsApp number with 7 to 15 digits.'
     }
     if (step === 2 && !bookingCategories.some(({ id }) => id === form.categoryId)) {
       return 'Choose one category to continue.'
@@ -379,6 +399,8 @@ export default function BookingJourney({ onClose }) {
         femaleCount: form.femaleCount,
         maleMemberNames: form.maleMemberNames,
         femaleMemberNames: form.femaleMemberNames,
+        maleMemberMobiles: form.maleMemberMobiles,
+        femaleMemberMobiles: form.femaleMemberMobiles,
         ticketType: form.ticketType,
         ticketQuantity: form.ticketQuantity,
         whatsappConsent: form.whatsappConsent,
@@ -556,7 +578,7 @@ export default function BookingJourney({ onClose }) {
             >
               {[
                 'What’s your name?',
-                'What’s your mobile number?',
+                'What’s your WhatsApp number?',
                 'Pick a category',
                 'Who’s joining you?',
               ][step]}
@@ -564,7 +586,7 @@ export default function BookingJourney({ onClose }) {
             {step > 0 && step < 4 && (
               <p className="booking-journey__support">
                 {step === 1
-                  ? 'Enter your number so we can contact you about your enquiry.'
+                  ? 'Enter your WhatsApp number so we can contact you about your enquiry and send your booking details.'
                   : step === 2
                     ? 'Choose one category. Our team can match you with a suitable event.'
                     : 'Assign every ticket to Male or Female. Every attendee name is required.'}
@@ -619,7 +641,7 @@ export default function BookingJourney({ onClose }) {
                     ))}
                   </select>
                   <label className="booking-journey__visually-hidden" htmlFor="booking-mobile">
-                    Mobile number
+                    WhatsApp number
                   </label>
                   <input
                     autoComplete="tel-national"
@@ -629,7 +651,7 @@ export default function BookingJourney({ onClose }) {
                     maxLength={24}
                     name="mobile"
                     onChange={updateField}
-                    placeholder="Enter your mobile number"
+                    placeholder="Enter your WhatsApp number"
                     type="tel"
                     value={form.mobile}
                   />
@@ -752,14 +774,14 @@ export default function BookingJourney({ onClose }) {
                     })}
                   </fieldset>
                   {[
-                    ['Male', form.maleCount, form.maleMemberNames],
-                    ['Female', form.femaleCount, form.femaleMemberNames],
-                  ].map(([gender, count, names]) => count > 0 && (
+                    ['Male', form.maleCount, form.maleMemberNames, form.maleMemberMobiles],
+                    ['Female', form.femaleCount, form.femaleMemberNames, form.femaleMemberMobiles],
+                  ].map(([gender, count, names, mobiles]) => count > 0 && (
                     <fieldset className="booking-member-group" key={gender}>
                       <legend>{gender.toUpperCase()} MEMBERS</legend>
                       {Array.from({ length: count }, (_, index) => (
-                        <label className="booking-member-field" key={`${gender}-${index}`}>
-                          <span>{gender} Member {index + 1}</span>
+                        <div className="booking-member-field" key={`${gender}-${index}`}>
+                          <span className="booking-member-field__label">{gender} Member {index + 1}</span>
                           <input
                             autoComplete="off"
                             aria-invalid={Boolean(memberErrors[`${gender}-${index}`])}
@@ -770,12 +792,22 @@ export default function BookingJourney({ onClose }) {
                             type="text"
                             value={names[index] ?? ''}
                           />
+                          <input
+                            autoComplete="tel"
+                            className="booking-member-field__mobile"
+                            inputMode="tel"
+                            maxLength={24}
+                            onChange={(event) => updateMemberMobile(gender, index, event.target.value)}
+                            placeholder="WhatsApp number (optional)"
+                            type="tel"
+                            value={mobiles?.[index] ?? ''}
+                          />
                           {memberErrors[`${gender}-${index}`] && (
                             <small className="booking-member-field__error" role="alert">
                               {memberErrors[`${gender}-${index}`]}
                             </small>
                           )}
-                        </label>
+                        </div>
                       ))}
                     </fieldset>
                   ))}

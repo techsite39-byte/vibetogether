@@ -118,6 +118,30 @@ function normalizeMemberNames(value, count) {
   return [...names, ...Array(count - names.length).fill('')]
 }
 
+function normalizeMemberMobiles(value, count, defaultCountry = 'IN') {
+  if (value === undefined || !Array.isArray(value)) {
+    return Array(count).fill('')
+  }
+  const mobiles = value.slice(0, count).map((mobile) => {
+    if (typeof mobile !== 'string' || !mobile.trim()) {
+      return ''
+    }
+    const trimmed = mobile.trim()
+    const parsed = parsePhoneNumberFromString(trimmed, defaultCountry)
+    if (parsed?.isValid()) {
+      return parsed.number
+    }
+    if (!trimmed.startsWith('+')) {
+      const withPlus = parsePhoneNumberFromString(`+${trimmed}`, defaultCountry)
+      if (withPlus?.isValid()) {
+        return withPlus.number
+      }
+    }
+    return trimmed
+  })
+  return [...mobiles, ...Array(Math.max(0, count - mobiles.length)).fill('')]
+}
+
 async function validateBookingEnquiry(body, eventRepository) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'Please provide valid booking details.' }
@@ -161,8 +185,14 @@ async function validateBookingEnquiry(body, eventRepository) {
     return { error: 'Male and Female counts must equal the total ticket quantity.' }
   }
 
-  const maleMemberNames = normalizeMemberNames(body.maleMemberNames, maleCount)
-  const femaleMemberNames = normalizeMemberNames(body.femaleMemberNames, femaleCount)
+  let maleMemberNames = normalizeMemberNames(body.maleMemberNames, maleCount)
+  let femaleMemberNames = normalizeMemberNames(body.femaleMemberNames, femaleCount)
+
+  if (body.maleMemberNames === undefined && body.femaleMemberNames === undefined && ticketQuantity === 1) {
+    if (maleCount === 1) maleMemberNames = [name]
+    if (femaleCount === 1) femaleMemberNames = [name]
+  }
+
   if (
     !maleMemberNames ||
     !femaleMemberNames ||
@@ -171,6 +201,9 @@ async function validateBookingEnquiry(body, eventRepository) {
   ) {
     return { error: 'Every ticket must have a valid attendee name matching the selected ticket counts.' }
   }
+
+  const maleMemberMobiles = normalizeMemberMobiles(body.maleMemberMobiles, maleCount)
+  const femaleMemberMobiles = normalizeMemberMobiles(body.femaleMemberMobiles, femaleCount)
 
   if (maleCount + femaleCount !== ticketQuantity) {
     return { error: 'Male and Female attendee counts must equal the selected ticket quantity.' }
@@ -258,6 +291,8 @@ async function validateBookingEnquiry(body, eventRepository) {
       femaleCount,
       maleMemberNames,
       femaleMemberNames,
+      maleMemberMobiles,
+      femaleMemberMobiles,
       ticketType,
       ticketQuantity,
       whatsappConsent: body.whatsappConsent === true,
@@ -324,6 +359,8 @@ export function createBookingEnquiriesRouter({
       femaleCount,
       maleMemberNames: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberNames?.[index] ?? ''),
       femaleMemberNames: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberNames?.[index] ?? ''),
+      maleMemberMobiles: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberMobiles?.[index] ?? ''),
+      femaleMemberMobiles: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberMobiles?.[index] ?? ''),
       ticketType,
       ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ??
         BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)?.name ?? 'General Admission',

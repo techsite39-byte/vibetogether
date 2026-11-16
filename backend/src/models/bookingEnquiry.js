@@ -181,6 +181,30 @@ const bookingEnquirySchema = new mongoose.Schema(
       type: [{ type: String, trim: true, maxlength: 80 }],
       default: [],
     },
+    maleMemberMobiles: {
+      type: [{ type: String, trim: true, maxlength: 30 }],
+      default: [],
+    },
+    femaleMemberMobiles: {
+      type: [{ type: String, trim: true, maxlength: 30 }],
+      default: [],
+    },
+    attendeeNotifications: {
+      type: [{
+        name: { type: String, maxlength: 80, default: '' },
+        recipient: { type: String, maxlength: 30, default: '' },
+        gender: { type: String, enum: ['Male', 'Female', ''], default: '' },
+        status: {
+          type: String,
+          enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'skipped'],
+          default: 'pending',
+        },
+        providerMessageId: { type: String, maxlength: 200, default: '' },
+        failureReason: { type: String, maxlength: 300, default: '' },
+        sentAt: { type: Date, default: null },
+      }],
+      default: [],
+    },
     pricePerTicket: {
       type: Number,
       min: 0,
@@ -418,6 +442,7 @@ bookingEnquirySchema.index({ requestId: 1 }, { unique: true, sparse: true })
 bookingEnquirySchema.index({ reference: 1 }, { unique: true, sparse: true })
 bookingEnquirySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 bookingEnquirySchema.index({ 'whatsappNotification.providerMessageId': 1 }, { sparse: true })
+bookingEnquirySchema.index({ 'attendeeNotifications.providerMessageId': 1 }, { sparse: true })
 bookingEnquirySchema.index({ 'upiPayments.utr': 1 }, { unique: true, sparse: true })
 
 export const BookingEnquiry =

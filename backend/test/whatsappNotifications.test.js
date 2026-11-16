@@ -124,6 +124,35 @@ test('sends one approved confirmation template to the consented customer number'
   assert.equal(duplicate.duplicate, true)
 })
 
+test('sends confirmation templates to attendee members who provided an optional mobile number', async () => {
+  const model = createBookingModel(booking({
+    ticketQuantity: 2,
+    maleCount: 1,
+    femaleCount: 1,
+    maleMemberNames: ['Jordan Example'],
+    maleMemberMobiles: ['+919876543210'],
+    femaleMemberNames: ['Taylor Friend'],
+    femaleMemberMobiles: ['+919876543299'],
+  }))
+  const requests = []
+  const service = createService(model, async (url, options) => {
+    requests.push({ url, options, payload: JSON.parse(options.body) })
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: `wamid.msg-${requests.length}` }] }) }
+  })
+
+  await service.notify('session-1', 'booking_confirmation')
+
+  assert.equal(requests.length, 2)
+  assert.equal(requests[0].payload.to, '919876543210')
+  assert.equal(requests[1].payload.to, '919876543299')
+  assert.equal(requests[1].payload.template.components[0].parameters[0].text, 'Taylor Friend')
+  assert.equal(requests[1].payload.template.components[0].parameters[1].text, '10812026501')
+  assert.equal(model.record.attendeeNotifications?.length, 1)
+  assert.equal(model.record.attendeeNotifications[0].name, 'Taylor Friend')
+  assert.equal(model.record.attendeeNotifications[0].recipient, '+919876543299')
+  assert.equal(model.record.attendeeNotifications[0].status, 'sent')
+})
+
 test('sends failure assistance without a permanent reference and reports the applicable amount', async () => {
   const model = createBookingModel(booking({
     paymentStatus: 'failed',

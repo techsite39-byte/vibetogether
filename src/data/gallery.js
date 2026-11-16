@@ -1,7 +1,7 @@
 import { categories } from './categories.js'
 
 const imageUrl = (photoId, width = 1100) =>
-  `https://images.unsplash.com/${photoId}?auto=format&fit=crop&w=${width}&q=82`
+  `https://images.unsplash.com/${photoId}?auto=format&fit=crop&w=${width}&q=75`
 
 export const galleryCategories = categories.map(
   ({ id, title }) => ({ id, title }),

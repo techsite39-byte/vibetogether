@@ -28,7 +28,7 @@ const EventDetails = lazy(() => import('./pages/EventDetails.jsx'))
 const Events = lazy(() => import('./pages/Events.jsx'))
 const Gallery = lazy(() => import('./pages/Gallery.jsx'))
 const FunGames = lazy(() => import('./pages/FunGames.jsx'))
-const Home = lazy(() => import('./pages/Home.jsx'))
+import Home from './pages/Home.jsx'
 const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 const MyBookings = lazy(() => import('./pages/MyBookings.jsx'))
 const Services = lazy(() => import('./pages/Services.jsx'))

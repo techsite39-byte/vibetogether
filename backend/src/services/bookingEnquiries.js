@@ -24,8 +24,10 @@ function sameRequest(existing, enquiry) {
     existing.gender === enquiry.gender &&
     (existing.maleCount ?? (existing.gender === 'Male' ? (existing.ticketQuantity ?? 1) : 0)) === enquiry.maleCount &&
     (existing.femaleCount ?? (existing.gender === 'Female' ? (existing.ticketQuantity ?? 1) : 0)) === enquiry.femaleCount &&
-    JSON.stringify(existing.maleMemberNames ?? Array(existing.maleCount ?? 0).fill('')) === JSON.stringify(enquiry.maleMemberNames ?? []) &&
-    JSON.stringify(existing.femaleMemberNames ?? Array(existing.femaleCount ?? 0).fill('')) === JSON.stringify(enquiry.femaleMemberNames ?? [])
+    JSON.stringify(existing.maleMemberNames ?? Array(existing.maleCount ?? 0).fill('')) === JSON.stringify(enquiry.maleMemberNames ?? Array(enquiry.maleCount ?? 0).fill('')) &&
+    JSON.stringify(existing.femaleMemberNames ?? Array(existing.femaleCount ?? 0).fill('')) === JSON.stringify(enquiry.femaleMemberNames ?? Array(enquiry.femaleCount ?? 0).fill('')) &&
+    JSON.stringify(existing.maleMemberMobiles ?? Array(existing.maleCount ?? 0).fill('')) === JSON.stringify(enquiry.maleMemberMobiles ?? Array(enquiry.maleCount ?? 0).fill('')) &&
+    JSON.stringify(existing.femaleMemberMobiles ?? Array(existing.femaleCount ?? 0).fill('')) === JSON.stringify(enquiry.femaleMemberMobiles ?? Array(enquiry.femaleCount ?? 0).fill(''))
   )
 }
 

@@ -508,6 +508,105 @@ export function createWhatsAppNotificationService({
       },
       { new: true, runValidators: true },
     ).lean()
+
+    // Send personalized WhatsApp confirmation to each attendee member with an optional mobile number
+    if (isSuccess && configured) {
+      const maleCount = booking.maleCount ?? 0
+      const femaleCount = booking.femaleCount ?? 0
+      const attendeeList = []
+      for (let i = 0; i < maleCount; i++) {
+        const aName = (booking.maleMemberNames?.[i] || '').trim()
+        const aMobile = normalizeRecipient(booking.maleMemberMobiles?.[i] || '')
+        if (aName && aMobile) {
+          attendeeList.push({ name: aName, mobile: aMobile, gender: 'Male', index: i })
+        }
+      }
+      for (let i = 0; i < femaleCount; i++) {
+        const aName = (booking.femaleMemberNames?.[i] || '').trim()
+        const aMobile = normalizeRecipient(booking.femaleMemberMobiles?.[i] || '')
+        if (aName && aMobile) {
+          attendeeList.push({ name: aName, mobile: aMobile, gender: 'Female', index: i })
+        }
+      }
+
+      for (const attendee of attendeeList) {
+        // Skip if attendee is identical to primary contact who already received the message
+        if (
+          attendee.mobile === recipient &&
+          attendee.name.trim().toLowerCase() === (booking.name || '').trim().toLowerCase()
+        ) {
+          continue
+        }
+
+        const alreadySent = booking.attendeeNotifications?.some(
+          (an) => an.recipient === attendee.mobile && ['sent', 'delivered', 'read'].includes(an.status),
+        )
+        if (alreadySent) continue
+
+        const attendeePayload = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: attendee.mobile.slice(1),
+          type: 'template',
+          template: {
+            name: templateName,
+            language: { code: 'en_US' },
+            components: [{
+              type: 'body',
+              parameters: templateBodyParameters({
+                ...booking,
+                name: attendee.name,
+                mobile: attendee.mobile,
+                gender: attendee.gender,
+              }, 'success').map((text) => ({ type: 'text', text: String(text) })),
+            }],
+          },
+          biz_opaque_callback_data: `${idempotencyKey}:attendee:${attendee.gender}:${attendee.index}`,
+        }
+
+        try {
+          const aRes = await fetchImpl(
+            `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(attendeePayload),
+              signal: AbortSignal.timeout(15_000),
+            },
+          )
+          const aBody = await aRes.json().catch(() => ({}))
+          const aMsgId = typeof aBody.messages?.[0]?.id === 'string' ? aBody.messages[0].id : ''
+          const aStatus = aRes.ok && aMsgId ? 'sent' : 'failed'
+          const aReason = aStatus === 'failed' ? safeFailureReason(aRes.status, aBody, [accessToken]) : ''
+
+          try {
+            await bookingEnquiryModel.findOneAndUpdate(
+              { requestId },
+              {
+                $push: {
+                  attendeeNotifications: {
+                    name: attendee.name,
+                    recipient: attendee.mobile,
+                    gender: attendee.gender,
+                    status: aStatus,
+                    providerMessageId: aMsgId,
+                    failureReason: aReason,
+                    sentAt: aStatus === 'sent' ? now() : null,
+                  },
+                },
+              },
+              { new: true, runValidators: true },
+            )
+          } catch {}
+        } catch (err) {
+          console.error('Failed to dispatch WhatsApp notification to attendee', attendee.name, err)
+        }
+      }
+    }
+
     return { booking: sent ?? claimed, sent: true }
   }
 
@@ -536,10 +635,26 @@ export function createWhatsAppNotificationService({
 
   async function recordWebhookStatus({ messageId, status, timestamp, error = '' }) {
     if (!messageId || !['sent', 'delivered', 'read', 'failed'].includes(status)) return null
-    const booking = await bookingEnquiryModel.findOne({
+    let booking = await bookingEnquiryModel.findOne({
       'whatsappNotification.providerMessageId': messageId,
     }).lean()
-    if (!booking) return null
+    if (!booking) {
+      const attendeeBooking = await bookingEnquiryModel.findOne({
+        'attendeeNotifications.providerMessageId': messageId,
+      }).lean()
+      if (attendeeBooking) {
+        await bookingEnquiryModel.findOneAndUpdate(
+          { requestId: attendeeBooking.requestId, 'attendeeNotifications.providerMessageId': messageId },
+          {
+            $set: {
+              'attendeeNotifications.$.status': status,
+            },
+          },
+        ).catch(() => {})
+        return attendeeBooking
+      }
+      return null
+    }
     const previousStatus = booking.whatsappNotification?.status ?? 'pending'
     if (
       status === previousStatus ||

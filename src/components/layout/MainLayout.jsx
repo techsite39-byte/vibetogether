@@ -32,6 +32,7 @@ const revealSelector = [
 export default function MainLayout({ children }) {
   const location = useLocation()
   const mainRef = useRef(null)
+  const isHome = location.pathname === '/'
   useScrollReveal(mainRef, location.pathname, revealSelector)
 
   return (
@@ -40,7 +41,11 @@ export default function MainLayout({ children }) {
         Skip to content
       </a>
       <Navbar />
-      <main id="main-content" className="site-main" ref={mainRef}>
+      <main
+        id="main-content"
+        className={`site-main${isHome ? ' site-main--home' : ''}`}
+        ref={mainRef}
+      >
         <Suspense
           fallback={<Loader className="route-loader" label="Loading page..." />}
         >

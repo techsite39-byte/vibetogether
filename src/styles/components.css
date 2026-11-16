@@ -53,7 +53,7 @@
 }
 
 .route-loader {
-  min-height: 55vh;
+  min-height: calc(100svh - 5.5rem);
 }
 
 .app-error {

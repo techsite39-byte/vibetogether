@@ -18,11 +18,11 @@ const categoryDetails = {
     ],
     gallery: [
       {
-        src: 'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1200&q=75',
         alt: 'A singer connecting with a warmly lit audience',
       },
       {
-        src: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=1200&q=75',
         alt: 'Live music on stage under colorful lights',
       },
     ],
@@ -46,11 +46,11 @@ const categoryDetails = {
     ],
     gallery: [
       {
-        src: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=75',
         alt: 'Friends sharing an easy conversation outdoors',
       },
       {
-        src: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1200&q=75',
         alt: 'A welcoming table prepared for a community gathering',
       },
     ],
@@ -74,11 +74,11 @@ const categoryDetails = {
     ],
     gallery: [
       {
-        src: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=75',
         alt: 'A mountain path leading toward a dramatic peak',
       },
       {
-        src: 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1200&q=75',
         alt: 'A quiet alpine lake surrounded by mountains',
       },
     ],
@@ -102,11 +102,11 @@ const categoryDetails = {
     ],
     gallery: [
       {
-        src: 'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=1200&q=75',
         alt: 'A colorful tabletop game ready for friends',
       },
       {
-        src: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=82',
+        src: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=75',
         alt: 'A friendly gaming setup ready for a team challenge',
       },
     ],
@@ -181,7 +181,7 @@ const eventRecords = [
     seatsAvailable: 18,
     createdAt: '2026-10-28T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'A concert crowd sharing a live music moment',
   },
   {
@@ -200,7 +200,7 @@ const eventRecords = [
     seatsAvailable: 12,
     createdAt: '2026-10-12T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'A warmly lit table set for a shared gathering',
   },
   {
@@ -219,7 +219,7 @@ const eventRecords = [
     seatsAvailable: 9,
     createdAt: '2026-10-20T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'A scenic mountain lake surrounded by hills',
   },
   {
@@ -238,7 +238,7 @@ const eventRecords = [
     seatsAvailable: 24,
     createdAt: '2026-10-30T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'A colorful tabletop game ready for a friendly challenge',
   },
   {
@@ -257,7 +257,7 @@ const eventRecords = [
     seatsAvailable: 30,
     createdAt: '2026-11-02T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'A singer performing for a warmly lit audience',
   },
   {
@@ -276,7 +276,7 @@ const eventRecords = [
     seatsAvailable: 16,
     createdAt: '2026-11-03T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'Friends meeting outdoors and enjoying each other’s company',
   },
   {
@@ -295,7 +295,7 @@ const eventRecords = [
     seatsAvailable: 6,
     createdAt: '2026-11-01T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'A mountain trail winding toward a snowy peak',
   },
   {
@@ -314,7 +314,7 @@ const eventRecords = [
     seatsAvailable: 20,
     createdAt: '2026-11-04T10:00:00Z',
     image:
-      'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1000&q=82',
+      'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1000&q=75',
     imageAlt: 'A lively gaming setup ready for a friendly competition',
   },
 ]
