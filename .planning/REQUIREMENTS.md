@@ -14,9 +14,9 @@
 
 ### Critical Path and Main Thread
 
-- [ ] **PATH-01**: CSS and JavaScript requests responsible for the reported render-blocking delay are identified before any deferral, removal, or inlining change.
-- [ ] **ANIM-01**: The reported non-composited animations and long main-thread tasks are investigated; changes use trace evidence, preserve important motion, and respect `prefers-reduced-motion`.
-- [ ] **JS-01**: DOM size and unused JavaScript are investigated; code is removed, deferred, or split only after its use and effect on the measured page are confirmed.
+- [ ] **PATH-01**: CSS and JavaScript requests responsible for the reported render-blocking delay are identified; defer or remove non-critical requests only when evidence supports it, inline only genuinely critical CSS, and preserve fonts, appearance, and behavior.
+- [ ] **ANIM-01**: The reported non-composited animations and long main-thread tasks are investigated; optimize only measured causes, prefer transform/opacity where appropriate, reduce unnecessary mobile motion, preserve important animation, and respect `prefers-reduced-motion`.
+- [ ] **JS-01**: DOM size, unused JavaScript, and long tasks are investigated with profiling or trace evidence; remove, defer, or split code only after confirming its use and effect, and do not load unnecessary admin code on public pages.
 
 ### Regression Protection and Verification
 
