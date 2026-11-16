@@ -76,20 +76,20 @@ const allCustomPaymentMethods = [
   {
     id: 'gpay',
     name: 'Google Pay',
-    subtitle: 'One-Tap UPI Intent',
+    subtitle: 'One-Tap UPI & QR',
     badge: 'INSTANT',
     icon: Smartphone,
-    desc: 'Direct payment via your installed Google Pay application.',
-    platforms: ['android'],
+    desc: 'Direct payment via Google Pay app, QR code, or UPI ID.',
+    platforms: ['desktop', 'android', 'ios'],
   },
   {
     id: 'phonepe',
     name: 'PhonePe',
-    subtitle: 'One-Tap UPI Intent',
+    subtitle: 'One-Tap UPI & QR',
     badge: 'INSTANT',
     icon: Smartphone,
-    desc: 'Direct payment via your installed PhonePe application.',
-    platforms: ['android'],
+    desc: 'Direct payment via PhonePe app, QR code, or UPI ID.',
+    platforms: ['desktop', 'android', 'ios'],
   },
   {
     id: 'paytm',
@@ -97,8 +97,8 @@ const allCustomPaymentMethods = [
     subtitle: 'One-Tap UPI & Wallet',
     badge: 'INSTANT',
     icon: Smartphone,
-    desc: 'Direct payment via your installed Paytm application or account.',
-    platforms: ['android'],
+    desc: 'Direct payment via Paytm app, QR code, or Paytm UPI ID.',
+    platforms: ['desktop', 'android', 'ios'],
   },
   {
     id: 'card',
@@ -539,13 +539,13 @@ export default function BookingPayment() {
   }, [isCashfreeActive, bookingState.status, bookingState.booking?.paymentStatus, requestId, cashfreeOrder])
 
   // =========================================================================
-  // DYNAMIC UPI QR AUTO-POLLING (DESKTOP & MOBILE CONFIRMATION)
+  // DYNAMIC UPI AUTO-POLLING (DESKTOP & MOBILE CONFIRMATION)
   // =========================================================================
   useEffect(() => {
+    const isUpiMethod = ['upi_qr', 'gpay', 'phonepe', 'paytm'].includes(selectedMethod)
     if (
       !isCashfreeActive ||
-      selectedMethod !== 'upi_qr' ||
-      upiSubMode !== 'qr' ||
+      !isUpiMethod ||
       !cashfreeOrder?.order_id ||
       ['paid', 'demo_paid'].includes(bookingState.booking?.paymentStatus)
     ) {
@@ -562,7 +562,7 @@ export default function BookingPayment() {
     }, 3500)
 
     return () => clearInterval(intervalId)
-  }, [isCashfreeActive, selectedMethod, upiSubMode, cashfreeOrder?.order_id, bookingState.booking?.paymentStatus, requestId])
+  }, [isCashfreeActive, selectedMethod, cashfreeOrder?.order_id, bookingState.booking?.paymentStatus, requestId])
 
   // =========================================================================
   // CASHFREE WEB ELEMENTS LIFECYCLE & MOUNTING (BRANDED CUSTOM UI)
@@ -639,37 +639,112 @@ export default function BookingPayment() {
             }
           }
         } else if (selectedMethod === 'gpay') {
-          const gpaySlot = document.getElementById('vibetogether-cf-gpay')
-          if (gpaySlot) {
-            const gpay = cf.create('upiApp', {
-              values: { upiApp: 'gpay', buttonText: 'Pay via Google Pay', buttonIcon: true },
-            })
-            gpay.on('ready', () => active && setIsElementReady(true))
-            gpay.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'GPay intent not available.'))
-            gpay.mount('#vibetogether-cf-gpay')
-            activeComponentRef.current = gpay
+          if (device.isAndroid) {
+            const gpaySlot = document.getElementById('vibetogether-cf-gpay')
+            if (gpaySlot) {
+              const gpay = cf.create('upiApp', {
+                values: { upiApp: 'gpay', buttonText: 'Pay via Google Pay', buttonIcon: true },
+              })
+              gpay.on('ready', () => active && setIsElementReady(true))
+              gpay.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'GPay intent not available.'))
+              gpay.mount('#vibetogether-cf-gpay')
+              activeComponentRef.current = gpay
+            }
+          } else {
+            if (upiSubMode === 'qr') {
+              const qrSlot = document.getElementById('vibetogether-cf-upi-qr')
+              if (qrSlot) {
+                const qr = cf.create('upiQr', { values: { size: '200px' } })
+                qr.on('ready', () => active && setIsElementReady(true))
+                qr.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load QR.'))
+                qr.mount('#vibetogether-cf-upi-qr')
+                activeComponentRef.current = qr
+              }
+            } else {
+              const collectSlot = document.getElementById('vibetogether-cf-upi-collect')
+              if (collectSlot) {
+                const col = cf.create('upiCollect', {
+                  values: { placeholder: 'Enter Google Pay UPI ID (e.g. name@okhdfcbank)' },
+                  style: elementStyle,
+                })
+                col.on('ready', () => active && setIsElementReady(true))
+                col.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load UPI field.'))
+                col.mount('#vibetogether-cf-upi-collect')
+                activeComponentRef.current = col
+              }
+            }
           }
         } else if (selectedMethod === 'phonepe') {
-          const phonepeSlot = document.getElementById('vibetogether-cf-phonepe')
-          if (phonepeSlot) {
-            const phonepe = cf.create('upiApp', {
-              values: { upiApp: 'phonepe', buttonText: 'Pay via PhonePe', buttonIcon: true },
-            })
-            phonepe.on('ready', () => active && setIsElementReady(true))
-            phonepe.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'PhonePe intent not available.'))
-            phonepe.mount('#vibetogether-cf-phonepe')
-            activeComponentRef.current = phonepe
+          if (device.isAndroid) {
+            const phonepeSlot = document.getElementById('vibetogether-cf-phonepe')
+            if (phonepeSlot) {
+              const phonepe = cf.create('upiApp', {
+                values: { upiApp: 'phonepe', buttonText: 'Pay via PhonePe', buttonIcon: true },
+              })
+              phonepe.on('ready', () => active && setIsElementReady(true))
+              phonepe.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'PhonePe intent not available.'))
+              phonepe.mount('#vibetogether-cf-phonepe')
+              activeComponentRef.current = phonepe
+            }
+          } else {
+            if (upiSubMode === 'qr') {
+              const qrSlot = document.getElementById('vibetogether-cf-upi-qr')
+              if (qrSlot) {
+                const qr = cf.create('upiQr', { values: { size: '200px' } })
+                qr.on('ready', () => active && setIsElementReady(true))
+                qr.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load QR.'))
+                qr.mount('#vibetogether-cf-upi-qr')
+                activeComponentRef.current = qr
+              }
+            } else {
+              const collectSlot = document.getElementById('vibetogether-cf-upi-collect')
+              if (collectSlot) {
+                const col = cf.create('upiCollect', {
+                  values: { placeholder: 'Enter PhonePe UPI ID (e.g. mobile@ybl)' },
+                  style: elementStyle,
+                })
+                col.on('ready', () => active && setIsElementReady(true))
+                col.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load UPI field.'))
+                col.mount('#vibetogether-cf-upi-collect')
+                activeComponentRef.current = col
+              }
+            }
           }
         } else if (selectedMethod === 'paytm') {
-          const paytmSlot = document.getElementById('vibetogether-cf-paytm')
-          if (paytmSlot) {
-            const paytm = cf.create('upiApp', {
-              values: { upiApp: 'paytm', buttonText: 'Pay via Paytm', buttonIcon: true },
-            })
-            paytm.on('ready', () => active && setIsElementReady(true))
-            paytm.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Paytm intent not available.'))
-            paytm.mount('#vibetogether-cf-paytm')
-            activeComponentRef.current = paytm
+          if (device.isAndroid) {
+            const paytmSlot = document.getElementById('vibetogether-cf-paytm')
+            if (paytmSlot) {
+              const paytm = cf.create('upiApp', {
+                values: { upiApp: 'paytm', buttonText: 'Pay via Paytm', buttonIcon: true },
+              })
+              paytm.on('ready', () => active && setIsElementReady(true))
+              paytm.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Paytm intent not available.'))
+              paytm.mount('#vibetogether-cf-paytm')
+              activeComponentRef.current = paytm
+            }
+          } else {
+            if (upiSubMode === 'qr') {
+              const qrSlot = document.getElementById('vibetogether-cf-upi-qr')
+              if (qrSlot) {
+                const qr = cf.create('upiQr', { values: { size: '200px' } })
+                qr.on('ready', () => active && setIsElementReady(true))
+                qr.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load QR.'))
+                qr.mount('#vibetogether-cf-upi-qr')
+                activeComponentRef.current = qr
+              }
+            } else {
+              const collectSlot = document.getElementById('vibetogether-cf-upi-collect')
+              if (collectSlot) {
+                const col = cf.create('upiCollect', {
+                  values: { placeholder: 'Enter Paytm UPI ID (e.g. mobile@paytm)' },
+                  style: elementStyle,
+                })
+                col.on('ready', () => active && setIsElementReady(true))
+                col.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load UPI field.'))
+                col.mount('#vibetogether-cf-upi-collect')
+                activeComponentRef.current = col
+              }
+            }
           }
         } else if (selectedMethod === 'card') {
           const numSlot = document.getElementById('vibetogether-cf-card-number')
@@ -798,18 +873,19 @@ export default function BookingPayment() {
       }
 
       // 6. Start the correct payment flow based on selected method
-      if (selectedMethod === 'upi_qr') {
-        if (upiSubMode === 'qr') {
-          // Manual verify click on QR
+      if (['upi_qr', 'gpay', 'phonepe', 'paytm'].includes(selectedMethod)) {
+        if (upiSubMode === 'qr' || (!device.isAndroid && selectedMethod !== 'upi_qr')) {
+          // Manual verify click on QR (desktop, iOS, or QR submode)
           const res = await checkCashfreePaymentStatus(requestId)
           if (res?.booking?.paymentStatus === 'paid') {
             setBookingState({ requestId, status: 'ready', booking: res.booking, error: '' })
             return
           } else {
-            setPaymentError('Payment is awaiting confirmation from your UPI app. Please scan the QR code and approve on your phone.')
+            const appLabel = selectedMethod === 'gpay' ? 'Google Pay' : selectedMethod === 'phonepe' ? 'PhonePe' : selectedMethod === 'paytm' ? 'Paytm' : 'UPI'
+            setPaymentError(`Payment is awaiting confirmation from ${appLabel}. Please approve on your phone, then click verify.`)
             return
           }
-        } else {
+        } else if (upiSubMode === 'collect' || !device.isAndroid) {
           // UPI Collect flow
           const collectComponent = activeComponentRef.current
           if (!collectComponent) {
@@ -829,39 +905,33 @@ export default function BookingPayment() {
             await refreshPaymentStatus()
           }
           return
-        }
-      }
-
-      if (['gpay', 'phonepe', 'paytm'].includes(selectedMethod)) {
-        if (!device.isAndroid) {
-          setPaymentError('Direct UPI intent is only available on Android devices. Please select UPI QR to scan and pay.')
-          setSelectedMethod('upi_qr')
-          return
-        }
-        const appComponent = activeComponentRef.current
-        if (!appComponent) {
-          setPaymentError('Payment channel is initializing. Please tap again.')
-          return
-        }
-        const payResult = await cf.pay({
-          paymentMethod: appComponent,
-          paymentSessionId: sessionId,
-          returnUrl,
-          redirect: 'if_required',
-        })
-        if (payResult?.error) {
-          if (payResult.error.code === 'app_not_installed' || /not installed/i.test(payResult.error.message)) {
-            setPaymentError(`${selectedMethod.toUpperCase()} was not detected on this device. Please scan the UPI QR code or pay with card.`)
-          } else {
-            setPaymentError(payResult.error.message || 'Could not launch payment application.')
+        } else if (device.isAndroid) {
+          // One-tap Android app launch
+          const appComponent = activeComponentRef.current
+          if (!appComponent) {
+            setPaymentError('Payment channel is initializing. Please tap again.')
+            return
           }
-          await recordCashfreePaymentFailure(requestId, {
-            orderId: currentOrder.order_id,
-            outcome: 'failed',
-            reason: payResult.error.message,
-          }).catch(() => {})
+          const payResult = await cf.pay({
+            paymentMethod: appComponent,
+            paymentSessionId: sessionId,
+            returnUrl,
+            redirect: 'if_required',
+          })
+          if (payResult?.error) {
+            if (payResult.error.code === 'app_not_installed' || /not installed/i.test(payResult.error.message)) {
+              setPaymentError(`${selectedMethod.toUpperCase()} was not detected on this device. Please scan the UPI QR code or pay with card.`)
+            } else {
+              setPaymentError(payResult.error.message || 'Could not launch payment application.')
+            }
+            await recordCashfreePaymentFailure(requestId, {
+              orderId: currentOrder.order_id,
+              outcome: 'failed',
+              reason: payResult.error.message,
+            }).catch(() => {})
+          }
+          return
         }
-        return
       }
 
       if (selectedMethod === 'card') {
@@ -1902,38 +1972,133 @@ export default function BookingPayment() {
                       {selectedMethod === 'gpay' && (
                         <div className="booking-payment__cf-panel" role="tabpanel" aria-label="Google Pay">
                           <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap">
+                            <div className="booking-payment__intent-icon-wrap" style={{ background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.3), rgba(59, 130, 246, 0.2))', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
                               <Smartphone size={28} className="booking-payment__intent-icon" />
                             </div>
                             <div className="booking-payment__intent-copy">
                               <strong className="booking-payment__intent-name">Pay via Google Pay</strong>
                               <span className="booking-payment__intent-desc">
-                                One-tap instant payment. Launches your installed Google Pay application directly.
+                                {device.isAndroid
+                                  ? 'One-tap instant payment. Launches your installed Google Pay application directly.'
+                                  : 'Scan the live dynamic QR code with Google Pay on your phone, or enter your Google Pay UPI ID.'}
                               </span>
                             </div>
                           </div>
 
-                          <div id="vibetogether-cf-gpay" className="booking-payment__cf-app-mount" />
+                          {device.isAndroid ? (
+                            <>
+                              <div id="vibetogether-cf-gpay" className="booking-payment__cf-app-mount" />
 
-                          <button
-                            type="button"
-                            className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--gpay"
-                            disabled={isPaying}
-                            onClick={handleExecuteCustomPayment}
-                          >
-                            {isPaying ? (
-                              <>
-                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                <span>Launching Google Pay…</span>
-                              </>
-                            ) : (
-                              <>
-                                <LockKeyhole size={16} aria-hidden="true" />
-                                <span>PAY ₹{finalPayable} WITH GOOGLE PAY</span>
-                                <ArrowRight size={16} aria-hidden="true" />
-                              </>
-                            )}
-                          </button>
+                              <button
+                                type="button"
+                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--gpay"
+                                disabled={isPaying}
+                                onClick={handleExecuteCustomPayment}
+                              >
+                                {isPaying ? (
+                                  <>
+                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                    <span>Launching Google Pay…</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <LockKeyhole size={16} aria-hidden="true" />
+                                    <span>PAY ₹{finalPayable} WITH GOOGLE PAY</span>
+                                    <ArrowRight size={16} aria-hidden="true" />
+                                  </>
+                                )}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="booking-payment__upi-sub-switch">
+                                <button
+                                  type="button"
+                                  className={`booking-payment__upi-sub-btn${upiSubMode === 'qr' ? ' is-active' : ''}`}
+                                  onClick={() => setUpiSubMode('qr')}
+                                >
+                                  <QrCode size={14} aria-hidden="true" />
+                                  <span>Google Pay QR</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`booking-payment__upi-sub-btn${upiSubMode === 'collect' ? ' is-active' : ''}`}
+                                  onClick={() => setUpiSubMode('collect')}
+                                >
+                                  <Smartphone size={14} aria-hidden="true" />
+                                  <span>Google Pay UPI ID</span>
+                                </button>
+                              </div>
+
+                              {upiSubMode === 'qr' ? (
+                                <div className="booking-payment__cf-qr-block">
+                                  <div className="booking-payment__cf-qr-outer">
+                                    <div id="vibetogether-cf-upi-qr" className="booking-payment__cf-qr-mount" />
+                                  </div>
+                                  <div className="booking-payment__cf-qr-instructions">
+                                    <span className="booking-payment__cf-qr-caption">
+                                      Open <strong>Google Pay</strong> on your mobile phone and scan this QR code
+                                    </span>
+                                    <div className="booking-payment__cf-qr-beacons">
+                                      <span className="booking-payment__pulse-beacon" aria-hidden="true" />
+                                      <span>Dynamic order amount: ₹{finalPayable}</span>
+                                    </div>
+                                  </div>
+                                  <div className="booking-payment__cf-qr-actions">
+                                    <button
+                                      type="button"
+                                      className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--gpay"
+                                      disabled={isPaying}
+                                      onClick={handleExecuteCustomPayment}
+                                    >
+                                      {isPaying ? (
+                                        <>
+                                          <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                          <span>Verifying Google Pay…</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <RefreshCw size={16} aria-hidden="true" />
+                                          <span>I HAVE PAID WITH GPAY — VERIFY STATUS</span>
+                                          <ArrowRight size={16} aria-hidden="true" />
+                                        </>
+                                      )}
+                                    </button>
+                                    <span className="booking-payment__auto-poll-hint">
+                                      <Sparkles size={13} aria-hidden="true" />
+                                      Auto-checking for payment confirmation…
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="booking-payment__cf-collect-block">
+                                  <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect">
+                                    Google Pay UPI ID (VPA)
+                                  </label>
+                                  <div id="vibetogether-cf-upi-collect" className="booking-payment__cf-input-mount" />
+                                  <button
+                                    type="button"
+                                    className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--gpay"
+                                    disabled={isPaying || !isElementReady}
+                                    onClick={handleExecuteCustomPayment}
+                                  >
+                                    {isPaying ? (
+                                      <>
+                                        <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                        <span>Sending Google Pay Request…</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <LockKeyhole size={16} aria-hidden="true" />
+                                        <span>REQUEST ₹{finalPayable} ON GOOGLE PAY</span>
+                                        <ArrowRight size={16} aria-hidden="true" />
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
 
@@ -1943,38 +2108,133 @@ export default function BookingPayment() {
                       {selectedMethod === 'phonepe' && (
                         <div className="booking-payment__cf-panel" role="tabpanel" aria-label="PhonePe">
                           <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap">
+                            <div className="booking-payment__intent-icon-wrap" style={{ background: 'linear-gradient(135deg, rgba(91, 33, 182, 0.4), rgba(124, 58, 237, 0.3))', borderColor: 'rgba(139, 92, 246, 0.4)' }}>
                               <Smartphone size={28} className="booking-payment__intent-icon" />
                             </div>
                             <div className="booking-payment__intent-copy">
                               <strong className="booking-payment__intent-name">Pay via PhonePe</strong>
                               <span className="booking-payment__intent-desc">
-                                Seamless payment directly from your PhonePe balance or linked bank account.
+                                {device.isAndroid
+                                  ? 'Seamless payment directly from your PhonePe balance or linked bank account.'
+                                  : 'Scan the live dynamic QR code with PhonePe on your phone, or enter your PhonePe UPI ID.'}
                               </span>
                             </div>
                           </div>
 
-                          <div id="vibetogether-cf-phonepe" className="booking-payment__cf-app-mount" />
+                          {device.isAndroid ? (
+                            <>
+                              <div id="vibetogether-cf-phonepe" className="booking-payment__cf-app-mount" />
 
-                          <button
-                            type="button"
-                            className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--phonepe"
-                            disabled={isPaying}
-                            onClick={handleExecuteCustomPayment}
-                          >
-                            {isPaying ? (
-                              <>
-                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                <span>Launching PhonePe…</span>
-                              </>
-                            ) : (
-                              <>
-                                <LockKeyhole size={16} aria-hidden="true" />
-                                <span>PAY ₹{finalPayable} WITH PHONEPE</span>
-                                <ArrowRight size={16} aria-hidden="true" />
-                              </>
-                            )}
-                          </button>
+                              <button
+                                type="button"
+                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--phonepe"
+                                disabled={isPaying}
+                                onClick={handleExecuteCustomPayment}
+                              >
+                                {isPaying ? (
+                                  <>
+                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                    <span>Launching PhonePe…</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <LockKeyhole size={16} aria-hidden="true" />
+                                    <span>PAY ₹{finalPayable} WITH PHONEPE</span>
+                                    <ArrowRight size={16} aria-hidden="true" />
+                                  </>
+                                )}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="booking-payment__upi-sub-switch">
+                                <button
+                                  type="button"
+                                  className={`booking-payment__upi-sub-btn${upiSubMode === 'qr' ? ' is-active' : ''}`}
+                                  onClick={() => setUpiSubMode('qr')}
+                                >
+                                  <QrCode size={14} aria-hidden="true" />
+                                  <span>PhonePe QR</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`booking-payment__upi-sub-btn${upiSubMode === 'collect' ? ' is-active' : ''}`}
+                                  onClick={() => setUpiSubMode('collect')}
+                                >
+                                  <Smartphone size={14} aria-hidden="true" />
+                                  <span>PhonePe UPI ID</span>
+                                </button>
+                              </div>
+
+                              {upiSubMode === 'qr' ? (
+                                <div className="booking-payment__cf-qr-block">
+                                  <div className="booking-payment__cf-qr-outer">
+                                    <div id="vibetogether-cf-upi-qr" className="booking-payment__cf-qr-mount" />
+                                  </div>
+                                  <div className="booking-payment__cf-qr-instructions">
+                                    <span className="booking-payment__cf-qr-caption">
+                                      Open <strong>PhonePe</strong> on your phone and scan with the QR scanner at top-right
+                                    </span>
+                                    <div className="booking-payment__cf-qr-beacons">
+                                      <span className="booking-payment__pulse-beacon" aria-hidden="true" />
+                                      <span>Dynamic order amount: ₹{finalPayable}</span>
+                                    </div>
+                                  </div>
+                                  <div className="booking-payment__cf-qr-actions">
+                                    <button
+                                      type="button"
+                                      className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--phonepe"
+                                      disabled={isPaying}
+                                      onClick={handleExecuteCustomPayment}
+                                    >
+                                      {isPaying ? (
+                                        <>
+                                          <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                          <span>Verifying PhonePe…</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <RefreshCw size={16} aria-hidden="true" />
+                                          <span>I HAVE PAID WITH PHONEPE — VERIFY STATUS</span>
+                                          <ArrowRight size={16} aria-hidden="true" />
+                                        </>
+                                      )}
+                                    </button>
+                                    <span className="booking-payment__auto-poll-hint">
+                                      <Sparkles size={13} aria-hidden="true" />
+                                      Auto-checking for payment confirmation…
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="booking-payment__cf-collect-block">
+                                  <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect">
+                                    PhonePe UPI ID / Number
+                                  </label>
+                                  <div id="vibetogether-cf-upi-collect" className="booking-payment__cf-input-mount" />
+                                  <button
+                                    type="button"
+                                    className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--phonepe"
+                                    disabled={isPaying || !isElementReady}
+                                    onClick={handleExecuteCustomPayment}
+                                  >
+                                    {isPaying ? (
+                                      <>
+                                        <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                        <span>Sending PhonePe Request…</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <LockKeyhole size={16} aria-hidden="true" />
+                                        <span>REQUEST ₹{finalPayable} ON PHONEPE</span>
+                                        <ArrowRight size={16} aria-hidden="true" />
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
 
@@ -1984,38 +2244,133 @@ export default function BookingPayment() {
                       {selectedMethod === 'paytm' && (
                         <div className="booking-payment__cf-panel" role="tabpanel" aria-label="Paytm">
                           <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap">
+                            <div className="booking-payment__intent-icon-wrap" style={{ background: 'linear-gradient(135deg, rgba(3, 105, 161, 0.4), rgba(2, 132, 199, 0.3))', borderColor: 'rgba(0, 186, 242, 0.4)' }}>
                               <Smartphone size={28} className="booking-payment__intent-icon" />
                             </div>
                             <div className="booking-payment__intent-copy">
                               <strong className="booking-payment__intent-name">Pay via Paytm</strong>
                               <span className="booking-payment__intent-desc">
-                                Fast checkout using Paytm UPI, Postpaid or Wallet on your mobile device.
+                                {device.isAndroid
+                                  ? 'Fast checkout using Paytm UPI, Postpaid or Wallet on your mobile device.'
+                                  : 'Scan the live dynamic QR code with Paytm on your phone, or enter your Paytm UPI ID.'}
                               </span>
                             </div>
                           </div>
 
-                          <div id="vibetogether-cf-paytm" className="booking-payment__cf-app-mount" />
+                          {device.isAndroid ? (
+                            <>
+                              <div id="vibetogether-cf-paytm" className="booking-payment__cf-app-mount" />
 
-                          <button
-                            type="button"
-                            className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--paytm"
-                            disabled={isPaying}
-                            onClick={handleExecuteCustomPayment}
-                          >
-                            {isPaying ? (
-                              <>
-                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                <span>Launching Paytm…</span>
-                              </>
-                            ) : (
-                              <>
-                                <LockKeyhole size={16} aria-hidden="true" />
-                                <span>PAY ₹{finalPayable} WITH PAYTM</span>
-                                <ArrowRight size={16} aria-hidden="true" />
-                              </>
-                            )}
-                          </button>
+                              <button
+                                type="button"
+                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--paytm"
+                                disabled={isPaying}
+                                onClick={handleExecuteCustomPayment}
+                              >
+                                {isPaying ? (
+                                  <>
+                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                    <span>Launching Paytm…</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <LockKeyhole size={16} aria-hidden="true" />
+                                    <span>PAY ₹{finalPayable} WITH PAYTM</span>
+                                    <ArrowRight size={16} aria-hidden="true" />
+                                  </>
+                                )}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="booking-payment__upi-sub-switch">
+                                <button
+                                  type="button"
+                                  className={`booking-payment__upi-sub-btn${upiSubMode === 'qr' ? ' is-active' : ''}`}
+                                  onClick={() => setUpiSubMode('qr')}
+                                >
+                                  <QrCode size={14} aria-hidden="true" />
+                                  <span>Paytm QR</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`booking-payment__upi-sub-btn${upiSubMode === 'collect' ? ' is-active' : ''}`}
+                                  onClick={() => setUpiSubMode('collect')}
+                                >
+                                  <Smartphone size={14} aria-hidden="true" />
+                                  <span>Paytm UPI ID</span>
+                                </button>
+                              </div>
+
+                              {upiSubMode === 'qr' ? (
+                                <div className="booking-payment__cf-qr-block">
+                                  <div className="booking-payment__cf-qr-outer">
+                                    <div id="vibetogether-cf-upi-qr" className="booking-payment__cf-qr-mount" />
+                                  </div>
+                                  <div className="booking-payment__cf-qr-instructions">
+                                    <span className="booking-payment__cf-qr-caption">
+                                      Open <strong>Paytm</strong> on your phone and scan this QR code
+                                    </span>
+                                    <div className="booking-payment__cf-qr-beacons">
+                                      <span className="booking-payment__pulse-beacon" aria-hidden="true" />
+                                      <span>Dynamic order amount: ₹{finalPayable}</span>
+                                    </div>
+                                  </div>
+                                  <div className="booking-payment__cf-qr-actions">
+                                    <button
+                                      type="button"
+                                      className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--paytm"
+                                      disabled={isPaying}
+                                      onClick={handleExecuteCustomPayment}
+                                    >
+                                      {isPaying ? (
+                                        <>
+                                          <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                          <span>Verifying Paytm…</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <RefreshCw size={16} aria-hidden="true" />
+                                          <span>I HAVE PAID WITH PAYTM — VERIFY STATUS</span>
+                                          <ArrowRight size={16} aria-hidden="true" />
+                                        </>
+                                      )}
+                                    </button>
+                                    <span className="booking-payment__auto-poll-hint">
+                                      <Sparkles size={13} aria-hidden="true" />
+                                      Auto-checking for payment confirmation…
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="booking-payment__cf-collect-block">
+                                  <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect">
+                                    Paytm UPI ID (VPA)
+                                  </label>
+                                  <div id="vibetogether-cf-upi-collect" className="booking-payment__cf-input-mount" />
+                                  <button
+                                    type="button"
+                                    className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--paytm"
+                                    disabled={isPaying || !isElementReady}
+                                    onClick={handleExecuteCustomPayment}
+                                  >
+                                    {isPaying ? (
+                                      <>
+                                        <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                        <span>Sending Paytm Request…</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <LockKeyhole size={16} aria-hidden="true" />
+                                        <span>REQUEST ₹{finalPayable} ON PAYTM</span>
+                                        <ArrowRight size={16} aria-hidden="true" />
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
 
