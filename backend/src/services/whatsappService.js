@@ -77,7 +77,13 @@ function safeFailureReason(status, responseBody, secrets = []) {
   return `WhatsApp Cloud API returned HTTP ${status}${Number.isInteger(apiCode) ? ` (code ${apiCode})` : ''}${apiMessage ? `: ${apiMessage}` : '.'}`
 }
 
-export function buildWhatsAppMessage(booking, kind = 'success', attendee = null) {
+export function buildWhatsAppMessage(
+  booking,
+  kind = 'success',
+  attendee = null,
+  templateName = '',
+  frontendUrl = 'https://www.vibetogether.show',
+) {
   const customerName = attendee?.name || booking.name || booking.customer || 'Friend'
   const bookingCategory = categoryName(booking)
   const createdAt = booking.createdAt || new Date()
@@ -87,6 +93,68 @@ export function buildWhatsAppMessage(booking, kind = 'success', attendee = null)
   const applicableAmount = `₹${booking.paymentAmount ?? booking.amount ?? (booking.diwaliOfferApplied ? 249 : 299)}`
   const bookingStatus = booking.status === 'confirmed' ? 'Approved' : 'Pending Approval'
   const paymentStatus = booking.paymentFailureReason === 'cancelled' ? 'CANCELLED' : 'FAILED'
+  const reference = booking.reference || booking.requestId || '—'
+  const ticketType = booking.ticketTypeName || booking.ticketType || 'General Admission'
+  const quantity = attendee ? '1' : String(booking.ticketQuantity ?? 1)
+  const yourTicket = attendee ? `${attendee.name} (${ticketType})` : ticketType
+  const retryUrl = booking.paymentRetryUrl || (booking.requestId ? `${frontendUrl}/booking/payment/${booking.requestId}` : `${frontendUrl}/booking`)
+
+  if (templateName === 'vibetogether_payment_success') {
+    return [
+      '🎶 VIBE TOGETHER – MADURAI MUSICAL EVENING 🎶',
+      '',
+      `Hello ${customerName},`,
+      '',
+      '🎉 Great news! Your payment was successful and your booking is confirmed!',
+      '',
+      '🎤 EVENT DETAILS',
+      '',
+      '📅 Date: 22 November 2026 (Sunday)',
+      '📍 Venue: Royal Party Hall, KK Nagar, Madurai',
+      '',
+      `🎟️ Booking ID: ${reference}`,
+      `🎫 Number of Tickets: ${quantity}`,
+      `💰 Amount Paid: ₹${booking.paymentAmount ?? booking.amount ?? 299}`,
+      '',
+      `🎟️ Your ticket: ${yourTicket}`,
+      '',
+      'Thank you for choosing VibeTogether!',
+      '',
+      'We look forward to seeing you at the event. ❤️',
+      '',
+      '📞 For assistance: +91 87785 95810',
+    ].join('\n')
+  }
+
+  if (templateName === 'vibetogether_payment_failed') {
+    return [
+      '🎶 VIBE TOGETHER – MADURAI MUSICAL EVENING 🎶',
+      '',
+      `Hello ${customerName},`,
+      '',
+      'We’re sorry! Unfortunately, your payment for the event booking was unsuccessful.',
+      '',
+      '🎤 EVENT DETAILS',
+      '',
+      '📅 Date: 22 November 2026 (Sunday)',
+      '📍 Venue: Royal Party Hall, KK Nagar, Madurai',
+      '',
+      `🎟️ Booking ID: ${reference}`,
+      `💰 Payment Amount: ₹${booking.paymentAmount ?? booking.amount ?? 299}`,
+      '',
+      'You can try making the payment again using the link below:',
+      '',
+      `🔗 Retry Payment: ${retryUrl}`,
+      '',
+      'If the amount was deducted from your bank account, please contact us before making another payment.',
+      '',
+      'We sincerely apologise for the inconvenience.',
+      '',
+      '📞 Need help? Contact us: +91 87785 95810',
+      '',
+      '❤️ Team VibeTogether',
+    ].join('\n')
+  }
 
   if (kind === 'failure') {
     return [
@@ -173,26 +241,69 @@ export function buildAdminAlertMessage(booking) {
   ].join('\n')
 }
 
-export function templateBodyParameters(booking, kind, templateName = '', attendee = null) {
-  const amount = `₹${booking.paymentAmount ?? 299}`
+export function templateBodyParameters(
+  booking,
+  kind,
+  templateName = '',
+  attendee = null,
+  frontendUrl = 'https://www.vibetogether.show',
+) {
+  const amountNumeric = String(booking.paymentAmount ?? booking.amount ?? 299)
+  const amountWithSymbol = `₹${amountNumeric}`
   const customerName = attendee?.name || booking.name || 'Friend'
-  const reference = booking.reference || '—'
+  const reference = booking.reference || booking.requestId || '—'
   const eventName = categoryName(booking)
   const ticketType = booking.ticketTypeName || booking.ticketType || 'General Admission'
   const sessionDateTime = formatBookingDate(booking.createdAt)
 
-  // failure assistance
+  // 1. vibetogether_payment_success (5 parameters)
+  if (
+    templateName === 'vibetogether_payment_success' ||
+    templateName.includes('payment_success')
+  ) {
+    const quantity = attendee ? '1' : String(booking.ticketQuantity ?? 1)
+    const yourTicket = attendee
+      ? `${attendee.name} (${ticketType})`
+      : ticketType
+    return [
+      customerName,   // {{1}} Hello {{1}},
+      reference,      // {{2}} Booking ID: {{2}}
+      quantity,       // {{3}} Number of Tickets: {{3}}
+      amountNumeric,  // {{4}} Amount Paid: ₹{{4}}
+      yourTicket,     // {{5}} Your ticket: {{5}}
+    ]
+  }
+
+  // 2. vibetogether_payment_failed (4 parameters)
+  if (
+    templateName === 'vibetogether_payment_failed' ||
+    templateName.includes('payment_failed')
+  ) {
+    const retryUrl =
+      booking.paymentRetryUrl ||
+      (booking.requestId
+        ? `${frontendUrl}/booking/payment/${booking.requestId}`
+        : `${frontendUrl}/booking`)
+    return [
+      customerName,   // {{1}} Hello {{1}},
+      reference,      // {{2}} Booking ID: {{2}}
+      amountNumeric,  // {{3}} Payment Amount: ₹{{3}}
+      retryUrl,       // {{4}} Retry Payment: {{4}}
+    ]
+  }
+
+  // 3. failure assistance
   if (kind === 'payment_assistance' || templateName.includes('payment_assistance')) {
     return [
       customerName,
       attendee?.mobile || booking.mobile,
       eventName,
-      amount,
+      amountWithSymbol,
       booking.paymentFailureReason === 'cancelled' ? 'Cancelled' : 'Failed',
     ]
   }
 
-  // vibetogether_booking_confirmation (official 8 parameters)
+  // 4. vibetogether_booking_confirmation (official 8 parameters)
   if (templateName === 'vibetogether_booking_confirmation' || (!templateName.includes('vibe_booking_confirmation') && templateName !== 'vibe_booking_confirmation')) {
     const quantity = attendee ? `1 Ticket (of ${booking.ticketQuantity ?? 1})` : String(booking.ticketQuantity ?? 1)
     return [
@@ -201,17 +312,17 @@ export function templateBodyParameters(booking, kind, templateName = '', attende
       eventName,           // {{3}} Event / Category
       ticketType,          // {{4}} Ticket Type
       quantity,            // {{5}} Quantity
-      amount,              // {{6}} Amount Paid
+      amountWithSymbol,    // {{6}} Amount Paid
       'PAID',              // {{7}} Payment Status
       sessionDateTime,     // {{8}} Session Date & Time
     ]
   }
 
-  // vibe_booking_confirmation (legacy 11 parameters)
+  // 5. vibe_booking_confirmation (legacy 11 parameters)
   if (kind === 'success' || kind === 'booking_confirmation') {
     const priceLines = booking.diwaliOfferApplied
-      ? `Regular Price: ₹${booking.regularPrice}\nDiwali Offer Price: ₹${booking.offerPrice}\nAmount Paid: ${amount}`
-      : `Regular Price: ₹${booking.regularPrice}\nAmount Paid: ${amount}`
+      ? `Regular Price: ₹${booking.regularPrice}\nDiwali Offer Price: ₹${booking.offerPrice}\nAmount Paid: ${amountWithSymbol}`
+      : `Regular Price: ₹${booking.regularPrice}\nAmount Paid: ${amountWithSymbol}`
     return [
       customerName,
       reference,
@@ -227,7 +338,7 @@ export function templateBodyParameters(booking, kind, templateName = '', attende
     ]
   }
 
-  return [customerName, reference, eventName, ticketType, '1', amount, 'PAID', sessionDateTime]
+  return [customerName, reference, eventName, ticketType, '1', amountWithSymbol, 'PAID', sessionDateTime]
 }
 
 export function isValidWhatsAppWebhookSignature(rawBody, signature, appSecret) {
@@ -280,8 +391,8 @@ export function createWhatsAppService({
   now = () => new Date(),
 } = {}) {
   const effectiveApiVersion = apiVersion || 'v22.0'
-  const activeTemplateName = successTemplateName || bookingTemplate || 'vibetogether_booking_confirmation'
-  const activeFailureTemplateName = failureTemplateName || 'vibe_payment_assistance'
+  const activeTemplateName = successTemplateName || bookingTemplate || 'vibetogether_payment_success'
+  const activeFailureTemplateName = failureTemplateName || 'vibetogether_payment_failed'
 
   const missingNotificationConfiguration = [
     ['WHATSAPP_PHONE_NUMBER_ID', phoneNumberId],
@@ -419,9 +530,9 @@ export function createWhatsAppService({
     for (let i = 0; i < maleCount; i++) {
       const name = (booking.maleMemberNames?.[i] || '').trim()
       const rawMobile = (booking.maleMemberMobiles?.[i] || '').trim()
-      const consent = Array.isArray(booking.maleMemberConsents)
-        ? booking.maleMemberConsents[i] === true
-        : booking.whatsappConsent === true
+      const consent = Array.isArray(booking.maleMemberConsents) && typeof booking.maleMemberConsents[i] === 'boolean'
+        ? booking.maleMemberConsents[i]
+        : true
       const mobile = normalizeWhatsAppRecipient(rawMobile)
       attendees.push({
         index: i,
@@ -435,9 +546,9 @@ export function createWhatsAppService({
     for (let i = 0; i < femaleCount; i++) {
       const name = (booking.femaleMemberNames?.[i] || '').trim()
       const rawMobile = (booking.femaleMemberMobiles?.[i] || '').trim()
-      const consent = Array.isArray(booking.femaleMemberConsents)
-        ? booking.femaleMemberConsents[i] === true
-        : booking.whatsappConsent === true
+      const consent = Array.isArray(booking.femaleMemberConsents) && typeof booking.femaleMemberConsents[i] === 'boolean'
+        ? booking.femaleMemberConsents[i]
+        : true
       const mobile = normalizeWhatsAppRecipient(rawMobile)
       attendees.push({
         index: i,
@@ -689,7 +800,7 @@ export function createWhatsAppService({
   async function sendAttendeeConfirmation(booking, attendee, { force = false } = {}) {
     if (!configured) return { skipped: true, reason: 'unconfigured' }
     if (!attendee.mobile) return { skipped: true, reason: 'no_mobile' }
-    if (!attendee.whatsappConsent) return { skipped: true, reason: 'no_consent' }
+    if (attendee.whatsappConsent === false) return { skipped: true, reason: 'no_consent' }
 
     const requestId = booking.requestId
     const idempotencyKey = `${requestId}:booking_confirmation:${booking.reference}:attendee:${attendee.gender}:${attendee.index}:${attendee.mobile}`
@@ -899,8 +1010,8 @@ export function createWhatsAppService({
       const sentNumbers = new Set(primaryRecipient ? [primaryRecipient] : [])
 
       for (const attendee of attendees) {
-        // Must have valid mobile and consent
-        if (!attendee.mobile || !attendee.whatsappConsent) {
+        // Must have valid mobile and not opted out
+        if (!attendee.mobile || attendee.whatsappConsent === false) {
           continue
         }
         // If identical name and phone to primary, skip duplicate

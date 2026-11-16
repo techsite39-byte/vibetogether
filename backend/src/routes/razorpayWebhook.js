@@ -44,7 +44,10 @@ export function createRazorpayWebhookRouter({
       const result = await payments.handleWebhook(event, payment, order)
       if (result?.booking?.paymentStatus === 'paid' && result.booking.reference) {
         await notifyWithoutAffectingPayment(result.booking.requestId, 'booking_confirmation')
-      } else if (result?.booking?.paymentStatus === 'failed') {
+      } else if (
+        result?.booking?.paymentStatus === 'failed' &&
+        result.booking?.paymentFailureReason !== 'cancelled'
+      ) {
         await notifyWithoutAffectingPayment(result.booking.requestId, 'payment_assistance')
       }
       response.status(200).json({ received: true })

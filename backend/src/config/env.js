@@ -173,7 +173,7 @@ const whatsappApiVersion = (process.env.WHATSAPP_API_VERSION?.trim() || 'v22.0')
 const whatsappBookingTemplate = (
   process.env.WHATSAPP_BOOKING_TEMPLATE?.trim() ||
   process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ||
-  'vibetogether_booking_confirmation'
+  'vibetogether_payment_success'
 )
 const whatsappBookingTemplateLanguage = (
   process.env.WHATSAPP_BOOKING_TEMPLATE_LANGUAGE?.trim() ||
@@ -183,10 +183,14 @@ const whatsappAdminPhoneNumber = process.env.WHATSAPP_ADMIN_PHONE_NUMBER?.trim()
 const whatsappNotificationsEnabled = process.env.WHATSAPP_NOTIFICATIONS_ENABLED !== 'false'
 const whatsappWebhookVerifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim() ?? ''
 const whatsappAppSecret = process.env.WHATSAPP_APP_SECRET?.trim() ?? ''
-const whatsappSuccessTemplateName = whatsappBookingTemplate
+const whatsappSuccessTemplateName = (
+  process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ||
+  whatsappBookingTemplate ||
+  'vibetogether_payment_success'
+)
 const whatsappFailureTemplateName = (
   process.env.WHATSAPP_FAILURE_TEMPLATE_NAME?.trim() ||
-  'vibe_payment_assistance'
+  'vibetogether_payment_failed'
 )
 if (whatsappApiVersion && !/^v\d+\.\d+$/.test(whatsappApiVersion)) {
   throw new Error('WHATSAPP_API_VERSION must use the format vNN.N.')
