@@ -1073,7 +1073,8 @@
 }
 
 .booking-payment__cf-app-mount {
-  min-height: 10px;
+  width: 100%;
+  min-height: 44px;
 }
 
 /* Card Form */

@@ -47,18 +47,16 @@ import './BookingPayment.css'
 const paymentAttemptTimeoutMs = 2 * 60 * 1000
 const cashfreeScriptUrl = 'https://sdk.cashfree.com/js/v3/cashfree.js'
 const razorpayScriptUrl = 'https://checkout.razorpay.com/v1/razorpay.js'
-const mobileViewportQuery = '(max-width: 768px)'
 
 function getDeviceCapabilities() {
   if (typeof navigator === 'undefined') {
-    return { isAndroid: false, isAndroidWebView: false, isIOS: false, isMobile: false }
+    return { isAndroid: false, isAndroidWebView: false, isIOS: false }
   }
   const ua = navigator.userAgent || ''
   const isAndroid = /Android/i.test(ua)
   const isIOS = /iPhone|iPad|iPod/i.test(ua)
-  const isMobile = isAndroid || isIOS || (typeof window !== 'undefined' && window.matchMedia(mobileViewportQuery).matches)
   const isAndroidWebView = isAndroid && (/[;\s]wv\)/i.test(ua) || /Version\/\d+\.\d+.*Chrome\//i.test(ua))
-  return { isAndroid, isAndroidWebView, isIOS, isMobile }
+  return { isAndroid, isAndroidWebView, isIOS }
 }
 
 // These are the only website-owned Cashfree method choices. Hosted checkout is intentionally absent.
@@ -543,11 +541,11 @@ export default function BookingPayment() {
     unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
 
     const selectedUpiApp = cashfreeUpiApps[selectedMethod]
-    if (selectedUpiApp) {
+    if (selectedUpiApp && (device.isAndroidWebView || (!device.isAndroid && !device.isIOS))) {
       setElementLoadError(
         device.isAndroidWebView
-          ? `${selectedUpiApp.name} is not supported inside an Android WebView. Choose Other UPI · QR to stay on this page.`
-          : `${selectedUpiApp.name} requires an external UPI-app handoff and is unavailable in the requested no-redirect mode. Choose Other UPI · QR to stay on this page.`,
+          ? `${selectedUpiApp.name} app handoff is not supported inside this Android WebView. Use Other UPI · QR instead.`
+          : `${selectedUpiApp.name} app handoff is only available on a supported mobile browser. Use Other UPI · QR on this device.`,
       )
       return () => {
         active = false
@@ -601,8 +599,20 @@ export default function BookingPayment() {
             {
               values: {
                 upiApp: selectedUpiApp.id,
-                buttonText: `Pay with ${selectedUpiApp.name}`,
+                buttonText: selectedUpiApp.name,
                 buttonIcon: true,
+              },
+              style: {
+                base: {
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(199, 125, 255, 0.35)',
+                  borderRadius: '12px',
+                  color: '#ffffff',
+                  fontFamily: 'inherit',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  padding: '12px 16px',
+                },
               },
             },
             `#${selectedUpiApp.selector}`,
@@ -629,12 +639,11 @@ export default function BookingPayment() {
       active = false
       unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
     }
-  }, [cashfreeOrder?.environment, cashfreeOrder?.payment_session_id, device.isAndroidWebView, device.isMobile, isCashfreeActive, selectedMethod])
+  }, [cashfreeOrder?.environment, cashfreeOrder?.payment_session_id, device.isAndroid, device.isAndroidWebView, device.isIOS, isCashfreeActive, selectedMethod])
 
   // =========================================================================
   // CASHFREE PAYMENT HANDLER
-  // QR and Cards use the documented custom Elements pay() contract.
-  // UPI app intent is intentionally unavailable in the requested no-redirect mode.
+  // QR, UPI app intent, and Cards use the documented custom Elements pay() contract.
   // =========================================================================
   function getCashfreeReturnUrl() {
     return window.location.protocol === 'https:'
@@ -1703,25 +1712,46 @@ export default function BookingPayment() {
                             <div className="booking-payment__intent-copy">
                               <strong className="booking-payment__intent-name">Pay via {selectedUpiApp.name}</strong>
                               <span className="booking-payment__intent-desc">
-                                Cashfree&apos;s documented <code>upiApp</code> flow requires an external UPI-app handoff.
+                                Cashfree will open {selectedUpiApp.name} so you can authorize this payment.
                               </span>
                             </div>
                           </div>
 
-                          <div className="booking-payment__cf-inline-warning" role="note">
-                            <Info size={16} aria-hidden="true" />
-                            <span>
-                              {selectedUpiApp.name} is not available in the requested no-redirect mode. Choose Other UPI · QR to complete payment on this page.
-                            </span>
-                          </div>
+                          <div id={selectedUpiApp.selector} className="booking-payment__cf-app-mount" />
 
                           <button
                             type="button"
-                            className="booking-payment__cf-submit-btn"
-                            disabled
+                            className={`booking-payment__cf-submit-btn booking-payment__cf-submit-btn--${selectedMethod}`}
+                            disabled={isPaying || !isElementReady || paymentUncertain}
+                            onClick={handleExecuteCustomPayment}
                           >
+                            {isPaying ? (
+                              <>
+                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                <span>Opening {selectedUpiApp.name}…</span>
+                              </>
+                            ) : (
+                              <>
+                                <Smartphone size={16} aria-hidden="true" />
+                                <span>PAY ₹{finalPayable} VIA {selectedUpiApp.name.toUpperCase()}</span>
+                                <ArrowRight size={16} aria-hidden="true" />
+                              </>
+                            )}
+                          </button>
+
+                          <div className="booking-payment__cf-inline-warning" role="note">
                             <Info size={16} aria-hidden="true" />
-                            <span>APP HANDOFF REQUIRED — CHOOSE UPI QR</span>
+                            <span>
+                              If {selectedUpiApp.name} is unavailable or the handoff does not start, use Other UPI · QR. Payment is confirmed only after server verification.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="booking-payment__cf-alt-link"
+                            disabled={isPaying || paymentUncertain}
+                            onClick={() => setSelectedMethod('upiQr')}
+                          >
+                            Use Other UPI · QR instead
                           </button>
                         </div>
                       )}
