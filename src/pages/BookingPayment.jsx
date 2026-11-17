@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -12,7 +12,6 @@ import {
   Download,
   ExternalLink,
   Info,
-  Landmark,
   LoaderCircle,
   LockKeyhole,
   Mail,
@@ -27,7 +26,6 @@ import {
   Ticket,
   User,
   Users,
-  WalletCards,
   XCircle,
 } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -53,20 +51,21 @@ const mobileViewportQuery = '(max-width: 768px)'
 
 function getDeviceCapabilities() {
   if (typeof navigator === 'undefined') {
-    return { isAndroid: false, isIOS: false, isMobile: false }
+    return { isAndroid: false, isAndroidWebView: false, isIOS: false, isMobile: false }
   }
   const ua = navigator.userAgent || ''
   const isAndroid = /Android/i.test(ua)
   const isIOS = /iPhone|iPad|iPod/i.test(ua)
   const isMobile = isAndroid || isIOS || (typeof window !== 'undefined' && window.matchMedia(mobileViewportQuery).matches)
-  return { isAndroid, isIOS, isMobile }
+  const isAndroidWebView = isAndroid && (/[;\s]wv\)/i.test(ua) || /Version\/\d+\.\d+.*Chrome\//i.test(ua))
+  return { isAndroid, isAndroidWebView, isIOS, isMobile }
 }
 
-// Payment method chips shown in the selector (for display only — Cashfree modal handles all actual payment)
+// These are the only website-owned Cashfree method choices. Hosted checkout is intentionally absent.
 const allCustomPaymentMethods = [
   {
-    id: 'upi_qr',
-    name: 'UPI / Dynamic QR',
+    id: 'upiQr',
+    name: 'Other UPI · QR',
     subtitle: 'Scan QR with any UPI app',
     badge: 'POPULAR · 0% FEE',
     icon: QrCode,
@@ -74,61 +73,74 @@ const allCustomPaymentMethods = [
     platforms: ['desktop', 'android', 'ios'],
   },
   {
-    id: 'modal',
-    name: 'PhonePe · GPay · Paytm',
-    subtitle: 'UPI · Cards · Net Banking · Wallets',
-    badge: 'ALL METHODS',
+    id: 'phonepe',
+    name: 'PhonePe',
+    subtitle: 'Mobile app handoff',
+    badge: 'MOBILE ONLY',
     icon: Smartphone,
-    desc: 'Pay via PhonePe, Google Pay, Paytm, credit/debit cards, net banking or wallets.',
+    desc: 'Requires the PhonePe app and an external UPI intent handoff.',
+    platforms: ['desktop', 'android', 'ios'],
+  },
+  {
+    id: 'gpay',
+    name: 'Google Pay',
+    subtitle: 'Mobile app handoff',
+    badge: 'MOBILE ONLY',
+    icon: Smartphone,
+    desc: 'Requires the Google Pay app and an external UPI intent handoff.',
+    platforms: ['desktop', 'android', 'ios'],
+  },
+  {
+    id: 'paytm',
+    name: 'Paytm',
+    subtitle: 'Mobile app handoff',
+    badge: 'MOBILE ONLY',
+    icon: Smartphone,
+    desc: 'Requires the Paytm app and an external UPI intent handoff.',
     platforms: ['desktop', 'android', 'ios'],
   },
   {
     id: 'card',
     name: 'Credit & Debit Cards',
     subtitle: 'Visa · MasterCard · RuPay · Maestro',
-    badge: 'ALL CARDS',
+    badge: 'CASHFREE ELEMENTS',
     icon: CreditCard,
-    desc: 'Pay securely with any credit or debit card.',
-    platforms: ['desktop', 'android', 'ios'],
-  },
-  {
-    id: 'netbanking',
-    name: 'Net Banking',
-    subtitle: 'HDFC, SBI, ICICI, Axis, Kotak & more',
-    badge: 'DIRECT DEBIT',
-    icon: Landmark,
-    desc: 'Direct bank debit via your internet banking portal.',
+    desc: 'Pay securely with Cashfree-hosted card fields on this page.',
     platforms: ['desktop', 'android', 'ios'],
   },
 ]
 
-const popularBanks = [
-  { code: 'HDFC', name: 'HDFC Bank', short: 'HDFC' },
-  { code: 'SBIN', name: 'State Bank of India', short: 'SBI' },
-  { code: 'ICIC', name: 'ICICI Bank', short: 'ICICI' },
-  { code: 'UTIB', name: 'Axis Bank', short: 'Axis' },
-  { code: 'KKBK', name: 'Kotak Mahindra Bank', short: 'Kotak' },
-  { code: 'PUNB', name: 'Punjab National Bank', short: 'PNB' },
-]
-
-const popularWallets = [
-  { code: 'mobikwik', name: 'MobiKwik' },
-  { code: 'freecharge', name: 'Freecharge' },
-  { code: 'airtelmoney', name: 'Airtel Money' },
-]
-
-function subscribeToMobileViewport(onChange) {
-  const mediaQuery = window.matchMedia(mobileViewportQuery)
-  mediaQuery.addEventListener('change', onChange)
-  return () => mediaQuery.removeEventListener('change', onChange)
+const cashfreeUpiApps = {
+  phonepe: { id: 'phonepe', name: 'PhonePe', selector: 'vibetogether-cf-phonepe' },
+  gpay: { id: 'gpay', name: 'Google Pay', selector: 'vibetogether-cf-gpay' },
+  paytm: { id: 'paytm', name: 'Paytm', selector: 'vibetogether-cf-paytm' },
 }
 
-function getMobileViewportSnapshot() {
-  return window.matchMedia(mobileViewportQuery).matches
+function unmountCashfreeComponents(componentRef, selectedComponentRef, instanceRef) {
+  Object.values(componentRef.current).forEach((component) => {
+    if (typeof component?.unmount === 'function') {
+      try { component.unmount() } catch {}
+    }
+  })
+  componentRef.current = {}
+  selectedComponentRef.current = null
+  instanceRef.current = null
 }
 
-function getServerMobileViewportSnapshot() {
-  return false
+function requestCashfreeOrderOnce(requestRef, requestId, returnUrl) {
+  const pendingRequest = requestRef.current
+  if (pendingRequest?.requestId === requestId) {
+    return pendingRequest.promise
+  }
+
+  const request = { requestId, promise: null }
+  request.promise = createCashfreeOrder(requestId, returnUrl).finally(() => {
+    if (requestRef.current === request) {
+      requestRef.current = null
+    }
+  })
+  requestRef.current = request
+  return request.promise
 }
 
 function loadCashfreeSdk() {
@@ -243,25 +255,22 @@ export default function BookingPayment() {
   const [ticketQrUrl, setTicketQrUrl] = useState('')
 
   // Custom Checkout state
-  const [selectedMethod, setSelectedMethod] = useState('upi_qr')
+  const [selectedMethod, setSelectedMethod] = useState('upiQr')
   const [cashfreeOrder, setCashfreeOrder] = useState(null)
   const [isOrderLoading, setIsOrderLoading] = useState(false)
   const [isElementReady, setIsElementReady] = useState(false)
   const [elementLoadError, setElementLoadError] = useState('')
 
-  // Sub-method state (net banking bank selector, wallet selector, UPI collect notice)
-  const [selectedBank, setSelectedBank] = useState('HDFC')
-  const [selectedWallet, setSelectedWallet] = useState('mobikwik')
-  const [collectNotice, setCollectNotice] = useState('')
-
-  // Active Cashfree instances & elements (UPI QR only)
+  // Active Cashfree instances & elements for the currently selected method.
   const cashfreeInstanceRef = useRef(null)
-  const activeComponentRef = useRef(null)
+  const activeComponentsRef = useRef({})
+  const selectedPaymentComponentRef = useRef(null)
+  const cashfreeOrderRequestRef = useRef(null)
+  const cashfreeRetryingRef = useRef(false)
   const paying = useRef(false)
 
   // Device capability detection (Android / iOS / Desktop)
   const device = useMemo(() => getDeviceCapabilities(), [])
-  // All chips displayed for every device — Cashfree modal handles method routing internally
   const customPaymentMethods = allCustomPaymentMethods
 
   // Razorpay fallback state (preserved)
@@ -273,12 +282,6 @@ export default function BookingPayment() {
   const paymentOutcomeHandled = useRef(false)
   const paymentFallbackTimer = useRef(null)
   const customCheckout = useRef(null)
-
-  const isMobileCheckout = useSyncExternalStore(
-    subscribeToMobileViewport,
-    getMobileViewportSnapshot,
-    getServerMobileViewportSnapshot,
-  )
 
   const bookingReady = bookingState.status
   const bookingPaymentStatus = bookingState.booking?.paymentStatus
@@ -468,7 +471,7 @@ export default function BookingPayment() {
       ? `${window.location.origin}/booking/payment/${encodeURIComponent(requestId)}?order_id={order_id}`
       : ''
 
-    createCashfreeOrder(requestId, returnUrl)
+    requestCashfreeOrderOnce(cashfreeOrderRequestRef, requestId, returnUrl)
       .then((order) => {
         if (!active) return
         if (order.alreadyPaid) {
@@ -476,6 +479,7 @@ export default function BookingPayment() {
           return
         }
         setCashfreeOrder(order)
+        setPaymentError('')
         setBookingState((current) => ({
           ...current,
           booking: {
@@ -502,12 +506,12 @@ export default function BookingPayment() {
 
 
   // =========================================================================
-  // DYNAMIC UPI AUTO-POLLING (QR CONFIRMATION ONLY)
+  // DYNAMIC UPI AUTO-POLLING (QR CONFIRMATION)
   // =========================================================================
   useEffect(() => {
     if (
       !isCashfreeActive ||
-      selectedMethod !== 'upi_qr' ||
+      selectedMethod !== 'upiQr' ||
       !cashfreeOrder?.order_id ||
       ['paid', 'demo_paid'].includes(bookingState.booking?.paymentStatus)
     ) {
@@ -527,18 +531,28 @@ export default function BookingPayment() {
   }, [isCashfreeActive, selectedMethod, cashfreeOrder?.order_id, bookingState.booking?.paymentStatus, requestId])
 
   // =========================================================================
-  // CASHFREE UPI QR ELEMENT MOUNTING (inline QR — all other methods use modal)
+  // CASHFREE ELEMENT MOUNTING
+  // Only the selected method is mounted. Cards require all four secure fields.
   // =========================================================================
   useEffect(() => {
-    if (!cashfreeOrder?.payment_session_id || !isCashfreeActive || selectedMethod !== 'upi_qr') return
+    if (!cashfreeOrder?.payment_session_id || !isCashfreeActive) return undefined
 
     let active = true
     setIsElementReady(false)
     setElementLoadError('')
+    unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
 
-    if (activeComponentRef.current?.unmount) {
-      try { activeComponentRef.current.unmount() } catch {}
-      activeComponentRef.current = null
+    const selectedUpiApp = cashfreeUpiApps[selectedMethod]
+    if (selectedUpiApp) {
+      setElementLoadError(
+        device.isAndroidWebView
+          ? `${selectedUpiApp.name} is not supported inside an Android WebView. Choose Other UPI · QR to stay on this page.`
+          : `${selectedUpiApp.name} requires an external UPI-app handoff and is unavailable in the requested no-redirect mode. Choose Other UPI · QR to stay on this page.`,
+      )
+      return () => {
+        active = false
+        unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
+      }
     }
 
     loadCashfreeSdk().then((loaded) => {
@@ -551,37 +565,129 @@ export default function BookingPayment() {
         const cf = window.Cashfree({ mode })
         cashfreeInstanceRef.current = cf
 
-        const qrSlot = document.getElementById('vibetogether-cf-upi-qr')
-        if (qrSlot) {
-          const qr = cf.create('upiQr', { values: { size: '200px' } })
-          qr.on('ready', () => active && setIsElementReady(true))
-          qr.on('loaderror', (e) => active && setElementLoadError(e?.error?.message || 'Failed to load QR. Use the Pay Now button instead.'))
-          qr.mount('#vibetogether-cf-upi-qr')
-          activeComponentRef.current = qr
+        const readyComponents = new Set()
+        const requiredComponents = selectedMethod === 'card'
+          ? ['cardNumber', 'cardExpiry', 'cardCvv', 'cardHolder']
+          : [selectedUpiApp ? 'upiApp' : selectedMethod]
+
+        const mountComponent = (componentName, options, selector) => {
+          const component = cf.create(componentName, options)
+          activeComponentsRef.current[componentName] = component
+          component.on('ready', () => {
+            if (!active) return
+            readyComponents.add(componentName)
+            if (requiredComponents.every((name) => readyComponents.has(name))) {
+              setIsElementReady(true)
+            }
+          })
+          component.on('loaderror', (event) => {
+            if (!active) return
+            setIsElementReady(false)
+            setElementLoadError(event?.error?.message || `Failed to load ${componentName}.`)
+          })
+          component.mount(selector)
+          return component
+        }
+
+        if (selectedMethod === 'upiQr') {
+          selectedPaymentComponentRef.current = mountComponent(
+            'upiQr',
+            { values: { size: '220px' } },
+            '#vibetogether-cf-upi-qr',
+          )
+        } else if (selectedUpiApp) {
+          selectedPaymentComponentRef.current = mountComponent(
+            'upiApp',
+            {
+              values: {
+                upiApp: selectedUpiApp.id,
+                buttonText: `Pay with ${selectedUpiApp.name}`,
+                buttonIcon: true,
+              },
+            },
+            `#${selectedUpiApp.selector}`,
+          )
+        } else if (selectedMethod === 'card') {
+          selectedPaymentComponentRef.current = mountComponent(
+            'cardNumber',
+            { values: { placeholder: 'Enter card number' } },
+            '#vibetogether-cf-card-number',
+          )
+          mountComponent('cardExpiry', {}, '#vibetogether-cf-card-expiry')
+          mountComponent('cardCvv', {}, '#vibetogether-cf-card-cvv')
+          mountComponent('cardHolder', {}, '#vibetogether-cf-card-holder')
         }
       } catch (err) {
         if (active) {
-          console.error('[Cashfree QR Mount Exception]', err)
-          setElementLoadError(err instanceof Error ? err.message : 'Could not load QR code.')
+          console.error('[Cashfree Element Mount Exception]', err)
+          setElementLoadError(err instanceof Error ? err.message : 'Could not load the payment element.')
         }
       }
     })
 
     return () => {
       active = false
-      if (activeComponentRef.current?.unmount) {
-        try { activeComponentRef.current.unmount() } catch {}
-      }
+      unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
     }
-  }, [cashfreeOrder?.payment_session_id, isCashfreeActive, selectedMethod])
+  }, [cashfreeOrder?.environment, cashfreeOrder?.payment_session_id, device.isAndroidWebView, device.isMobile, isCashfreeActive, selectedMethod])
 
   // =========================================================================
   // CASHFREE PAYMENT HANDLER
-  // UPI QR → inline verify. All other methods (PhonePe, GPay, Paytm, Cards,
-  // NetBanking, Wallets) → Cashfree modal popup (redirectTarget: '_modal').
-  // The modal is an overlay popup; the VibeTogether URL never changes.
-  // On Android, PhonePe/GPay/Paytm trigger native app intent from inside modal.
+  // QR and Cards use the documented custom Elements pay() contract.
+  // UPI app intent is intentionally unavailable in the requested no-redirect mode.
   // =========================================================================
+  function getCashfreeReturnUrl() {
+    return window.location.protocol === 'https:'
+      ? `${window.location.origin}/booking/payment/${encodeURIComponent(requestId)}?order_id={order_id}`
+      : ''
+  }
+
+  async function reconcileCashfreeSdkError(sdkError, orderId) {
+    const errorCode = sdkError?.code || sdkError?.type || ''
+    const wasCancelled = ['USER_DROPPED', 'CHECKOUT_CANCELLED', 'PAYMENT_CANCELLED'].includes(errorCode)
+    let reconciledBooking = null
+
+    try {
+      const statusResult = await checkCashfreePaymentStatus(requestId)
+      reconciledBooking = statusResult?.booking || null
+      if (reconciledBooking) {
+        setBookingState({ requestId, status: 'ready', booking: reconciledBooking, error: '' })
+        setPaymentUncertain(Boolean(statusResult.pending) || isRecentProcessing(reconciledBooking))
+      }
+    } catch {
+      setPaymentUncertain(true)
+    }
+
+    if (['paid', 'demo_paid'].includes(reconciledBooking?.paymentStatus)) {
+      return
+    }
+
+    if (reconciledBooking?.paymentStatus === 'failed') {
+      if (!wasCancelled) {
+        try {
+          const failureResult = await recordCashfreePaymentFailure(requestId, {
+            orderId,
+            outcome: 'failed',
+          })
+          if (failureResult?.booking) {
+            setBookingState({ requestId, status: 'ready', booking: failureResult.booking, error: '' })
+          }
+        } catch {
+          // The reconciled provider state remains authoritative if recording fails.
+        }
+      }
+      setPaymentUncertain(false)
+      setPaymentError(wasCancelled
+        ? 'Payment was cancelled. Your booking is still safe; choose another payment method.'
+        : 'Payment was not completed. Please try again or choose another payment method.')
+      return
+    }
+
+    setPaymentError(wasCancelled
+      ? 'Payment cancellation is being checked. Please wait for Cashfree confirmation before trying again.'
+      : 'Payment confirmation is pending. Please wait or recheck status before trying again.')
+  }
+
   async function handleCashfreePay() {
     if (!requestId) {
       setPaymentError('Invalid booking identifier. Please return to the booking steps.')
@@ -593,31 +699,19 @@ export default function BookingPayment() {
     setPaymentError('')
 
     try {
-      // UPI QR: verify existing QR payment (element already shows QR inline)
-      if (selectedMethod === 'upi_qr') {
-        const res = await checkCashfreePaymentStatus(requestId)
-        if (res?.booking?.paymentStatus === 'paid') {
-          setBookingState({ requestId, status: 'ready', booking: res.booking, error: '' })
-        } else {
-          setPaymentError('Payment is awaiting confirmation from your UPI app. Please scan the QR code and approve on your phone.')
-        }
-        return
-      }
-
-      // All other methods: open Cashfree modal popup (stays on vibetogether.show)
       const sdkLoaded = await loadCashfreeSdk()
       if (!sdkLoaded || typeof window.Cashfree !== 'function') {
         throw new Error('Payment gateway could not be loaded. Please check your internet connection and try again.')
       }
 
       let currentOrder = cashfreeOrder
-      const returnUrl = window.location.protocol === 'https:'
-        ? `${window.location.origin}/booking/payment/${encodeURIComponent(requestId)}?order_id={order_id}`
-        : ''
+      const returnUrl = getCashfreeReturnUrl()
 
       if (!currentOrder?.payment_session_id) {
-        currentOrder = await createCashfreeOrder(requestId, returnUrl)
+        currentOrder = await requestCashfreeOrderOnce(cashfreeOrderRequestRef, requestId, returnUrl)
         setCashfreeOrder(currentOrder)
+        setPaymentError('Your secure payment session is ready. Press Pay again to continue.')
+        return
       }
 
       if (currentOrder.alreadyPaid) {
@@ -625,43 +719,46 @@ export default function BookingPayment() {
         return
       }
 
+      const paymentMethod = selectedPaymentComponentRef.current
+      if (!paymentMethod || !isElementReady) {
+        throw new Error('The selected Cashfree payment element is still loading. Please wait and try again.')
+      }
+
+      if (selectedMethod === 'card') {
+        const requiredCardComponents = ['cardNumber', 'cardExpiry', 'cardCvv', 'cardHolder']
+        const incompleteCardComponent = requiredCardComponents.find((name) => {
+          const component = activeComponentsRef.current[name]
+          return !component || typeof component.isComplete !== 'function' || !component.isComplete()
+        })
+        if (incompleteCardComponent) {
+          throw new Error('Complete all card fields before pressing Pay.')
+        }
+      } else if (typeof paymentMethod.isComplete === 'function' && !paymentMethod.isComplete()) {
+        throw new Error('Complete the selected Cashfree payment element before pressing Pay.')
+      }
+
       const mode = currentOrder.environment === 'production' ? 'production' : 'sandbox'
       const cf = cashfreeInstanceRef.current || window.Cashfree({ mode })
       cashfreeInstanceRef.current = cf
-
-      // Open Cashfree modal popup — customer stays on vibetogether.show.
-      // PhonePe, Google Pay, Paytm, Cards, NetBanking, Wallets are all inside the modal.
-      // On Android, UPI app intents (PhonePe/GPay/Paytm) work from within the modal.
-      const checkoutResult = await cf.checkout({
+      const paymentOptions = {
+        paymentMethod,
         paymentSessionId: currentOrder.payment_session_id,
-        redirectTarget: '_modal',
-        returnUrl,
-      })
+        redirect: 'if_required',
+      }
+      if (returnUrl) paymentOptions.returnUrl = returnUrl
 
-      // User dismissed the modal — do not record as failure, allow retry
-      if (checkoutResult?.error) {
-        const code = checkoutResult.error.code
-        if (code === 'USER_DROPPED' || code === 'CHECKOUT_CANCELLED') {
-          return
-        }
+      const paymentResult = await cf.pay(paymentOptions)
+      if (paymentResult?.error) {
+        await reconcileCashfreeSdkError(paymentResult.error, currentOrder.order_id)
+        return
       }
 
-      // Always verify server-side regardless of frontend callback
+      // SDK results are provisional. Only the existing backend verification can mark the booking paid.
       const verifyResult = await verifyCashfreePayment(requestId, { order_id: currentOrder.order_id })
       setBookingState({ requestId, status: 'ready', booking: verifyResult.booking, error: '' })
-
-      if (verifyResult.booking?.paymentStatus !== 'paid' && checkoutResult?.error) {
-        const outcome = checkoutResult.error.code === 'USER_DROPPED' ? 'cancelled' : 'failed'
-        if (outcome === 'failed') {
-          try {
-            await recordCashfreePaymentFailure(requestId, {
-              orderId: currentOrder.order_id,
-              outcome,
-              reason: checkoutResult.error.message,
-            })
-          } catch {}
-          setPaymentError('Payment was not completed. Please try again or choose a different payment method.')
-        }
+      setPaymentUncertain(Boolean(verifyResult.pending) || isRecentProcessing(verifyResult.booking))
+      if (verifyResult.pending || !['paid', 'demo_paid'].includes(verifyResult.booking?.paymentStatus)) {
+        setPaymentError('Payment was submitted. Cashfree is still confirming the result; please wait or recheck status.')
       }
     } catch (error) {
       console.error('[Cashfree Pay Error]', error)
@@ -673,9 +770,64 @@ export default function BookingPayment() {
     }
   }
 
-  // Aliases so existing JSX call sites continue to work without change
+  // Alias retained for the existing payment button call sites.
   async function handleExecuteCustomPayment() { return handleCashfreePay() }
-  async function handleOpenCashfreeModal() { return handleCashfreePay() }
+
+  async function prepareCashfreeRetry() {
+    if (cashfreeRetryingRef.current || isPaying || paying.current || paymentUncertain) return
+
+    cashfreeRetryingRef.current = true
+    setPaymentError('Rechecking Cashfree payment status before retrying…')
+
+    try {
+      const statusResult = await checkCashfreePaymentStatus(requestId)
+      const reconciledBooking = statusResult?.booking
+
+      if (!reconciledBooking) {
+        throw new Error('Payment status could not be verified. Check again before retrying.')
+      }
+
+      setBookingState({ requestId, status: 'ready', booking: reconciledBooking, error: '' })
+
+      if (['paid', 'demo_paid'].includes(reconciledBooking.paymentStatus)) {
+        setPaymentUncertain(false)
+        setPaymentError('')
+        return
+      }
+
+      const paymentPending = Boolean(statusResult.pending) ||
+        reconciledBooking.paymentStatus === 'processing' ||
+        isRecentProcessing(reconciledBooking)
+      if (paymentPending) {
+        setPaymentUncertain(true)
+        setPaymentError('Payment confirmation is still pending. Please recheck status before retrying.')
+        return
+      }
+
+      if (!['failed', 'unpaid'].includes(reconciledBooking.paymentStatus)) {
+        setPaymentUncertain(true)
+        setPaymentError('Payment status could not be safely reconciled. Please recheck before retrying.')
+        return
+      }
+
+      unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
+      setIsElementReady(false)
+      setElementLoadError('')
+      setPaymentUncertain(false)
+      setPaymentError('Preparing a new secure payment session…')
+      navigate(`/booking/payment/${encodeURIComponent(requestId)}?retry=1`, { replace: true })
+      setCashfreeOrder(null)
+    } catch (error) {
+      setPaymentUncertain(true)
+      setPaymentError(
+        error instanceof Error
+          ? error.message
+          : 'Payment status could not be verified. Check again before retrying.',
+      )
+    } finally {
+      cashfreeRetryingRef.current = false
+    }
+  }
 
 
   // =========================================================================
@@ -875,19 +1027,19 @@ export default function BookingPayment() {
 
   function handleTryPaymentAgain() {
     setPaymentError('')
+
+    if (isCashfreeActive) {
+      void prepareCashfreeRetry()
+      return
+    }
+
     setPaymentUncertain(false)
     navigate(`/booking/payment/${encodeURIComponent(requestId)}?retry=1`, { replace: true })
-    if (isCashfreeActive) {
-      setTimeout(() => {
-        void handleExecuteCustomPayment()
-      }, 100)
-    } else {
-      setIsInitializingCheckout(true)
-      setCheckoutRequested(true)
-      setPaymentMethods(null)
-      setRazorpayOrder(null)
-      setCheckoutInitRetry((attempt) => attempt + 1)
-    }
+    setIsInitializingCheckout(true)
+    setCheckoutRequested(true)
+    setPaymentMethods(null)
+    setRazorpayOrder(null)
+    setCheckoutInitRetry((attempt) => attempt + 1)
   }
 
   function handleCopyReference() {
@@ -919,12 +1071,12 @@ export default function BookingPayment() {
   // Pricing calculations
   const ticketQuantity = booking?.ticketQuantity ?? 1
   const ticketTypeName = booking?.ticketTypeName || 'General Admission'
-  const pricePerTicket = booking?.pricePerTicket ?? booking?.regularPrice ?? 299
-  const subtotal = booking?.subtotal ?? (pricePerTicket * ticketQuantity)
+  const finalPayable = booking?.paymentAmount ?? 199
+  const subtotal = booking?.subtotal ?? finalPayable
   const isDiwali = Boolean(booking?.diwaliOfferApplied)
-  const discount = booking?.discount ?? (isDiwali ? Math.max(0, subtotal - (booking?.paymentAmount ?? 249)) : 0)
-  const finalPayable = booking?.paymentAmount ?? (isDiwali ? 249 : 299)
+  const discount = booking?.discount ?? 0
   const memberDetails = getBookingMembers(booking)
+  const selectedUpiApp = cashfreeUpiApps[selectedMethod]
 
   return (
     <main className="booking-payment">
@@ -1125,7 +1277,7 @@ export default function BookingPayment() {
                   <div className="booking-payment__ticket-cell">
                     <span className="booking-payment__ticket-cell-label">Amount Paid</span>
                     <strong className="booking-payment__ticket-cell-val booking-payment__ticket-cell-val--gold">
-                      ₹{booking.paymentAmount}
+                      ₹{finalPayable}
                     </strong>
                   </div>
 
@@ -1168,7 +1320,7 @@ export default function BookingPayment() {
             </div>
 
             <div className="booking-payment__success-actions">
-              <Link className="booking-payment__btn booking-payment__btn--primary" to={`/booking/confirmation/${encodeURIComponent(booking.reference)}`}>
+              <Link className="booking-payment__btn booking-payment__btn--primary" to={`/booking/confirmation/${encodeURIComponent(requestId)}`}>
                 <Ticket size={18} aria-hidden="true" />
                 <span>View Full Ticket &amp; Confirmation</span>
                 <ArrowRight size={18} aria-hidden="true" />
@@ -1206,7 +1358,7 @@ export default function BookingPayment() {
               </div>
               <div className="booking-payment__held-row">
                 <span>Payable Amount:</span>
-                <strong className="booking-payment__held-amount">₹{booking.paymentAmount}</strong>
+                <strong className="booking-payment__held-amount">₹{finalPayable}</strong>
               </div>
             </div>
 
@@ -1217,7 +1369,7 @@ export default function BookingPayment() {
                 onClick={handleTryPaymentAgain}
               >
                 <RefreshCw size={18} aria-hidden="true" />
-                <span>TRY PAYMENT AGAIN · ₹{booking.paymentAmount}</span>
+                <span>TRY PAYMENT AGAIN · ₹{finalPayable}</span>
                 <ArrowRight size={18} aria-hidden="true" />
               </button>
               <div className="booking-payment__failure-sublinks">
@@ -1369,7 +1521,7 @@ export default function BookingPayment() {
                 {/* Price Ledger */}
                 <div className="booking-payment__pricing-ledger">
                   <div className="booking-payment__ledger-row">
-                    <span className="booking-payment__ledger-name">Admission ({ticketQuantity} × ₹{pricePerTicket})</span>
+                    <span className="booking-payment__ledger-name">Booking amount</span>
                     <span className="booking-payment__ledger-val">₹{subtotal}</span>
                   </div>
 
@@ -1496,9 +1648,9 @@ export default function BookingPayment() {
                       )}
 
                       {/* -------------------------------------------------------------
-                         1. UPI / QR METHOD (PURE QR CODE ONLY)
+                         1. OTHER UPI / QR METHOD
                          ------------------------------------------------------------- */}
-                      {selectedMethod === 'upi_qr' && (
+                      {selectedMethod === 'upiQr' && (
                         <div className="booking-payment__cf-panel" role="tabpanel" aria-label="UPI and QR">
                           <div className="booking-payment__cf-qr-block">
                             <div className="booking-payment__cf-qr-outer">
@@ -1517,286 +1669,60 @@ export default function BookingPayment() {
                               <button
                                 type="button"
                                 className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--verify"
-                                disabled={isPaying}
+                                disabled={isPaying || !isElementReady}
                                 onClick={handleExecuteCustomPayment}
                               >
                                 {isPaying ? (
                                   <>
                                     <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Verifying Payment…</span>
+                                    <span>Starting UPI QR…</span>
                                   </>
                                 ) : (
                                   <>
-                                    <RefreshCw size={16} aria-hidden="true" />
-                                    <span>I HAVE PAID — VERIFY STATUS</span>
+                                    <LockKeyhole size={16} aria-hidden="true" />
+                                    <span>PAY ₹{finalPayable} WITH UPI QR</span>
                                     <ArrowRight size={16} aria-hidden="true" />
                                   </>
                                 )}
                               </button>
                               <span className="booking-payment__auto-poll-hint">
                                 <Sparkles size={13} aria-hidden="true" />
-                                Auto-checking for payment confirmation…
+                                Scan the QR, approve in your UPI app, then wait for server confirmation.
                               </span>
                             </div>
                           </div>
                         </div>
                       )}
 
-                      {/* -------------------------------------------------------------
-                         2. GOOGLE PAY METHOD (DIRECT GPAY ONLY — NO QR)
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'gpay' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="Google Pay">
+                      {selectedUpiApp && (
+                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label={selectedUpiApp.name}>
                           <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap" style={{ background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.3), rgba(59, 130, 246, 0.2))', borderColor: 'rgba(59, 130, 246, 0.4)' }}>
+                            <div className="booking-payment__intent-icon-wrap">
                               <Smartphone size={28} className="booking-payment__intent-icon" />
                             </div>
                             <div className="booking-payment__intent-copy">
-                              <strong className="booking-payment__intent-name">Pay via Google Pay</strong>
+                              <strong className="booking-payment__intent-name">Pay via {selectedUpiApp.name}</strong>
                               <span className="booking-payment__intent-desc">
-                                {device.isAndroid
-                                  ? 'One-tap instant payment. Launches your installed Google Pay application directly.'
-                                  : 'Enter your Google Pay UPI ID to receive a payment request directly on your phone.'}
+                                Cashfree&apos;s documented <code>upiApp</code> flow requires an external UPI-app handoff.
                               </span>
                             </div>
                           </div>
 
-                          {device.isAndroid ? (
-                            <>
-                              <div id="vibetogether-cf-gpay" className="booking-payment__cf-app-mount" />
-
-                              <button
-                                type="button"
-                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--gpay"
-                                disabled={isPaying}
-                                onClick={handleExecuteCustomPayment}
-                              >
-                                {isPaying ? (
-                                  <>
-                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Launching Google Pay…</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <LockKeyhole size={16} aria-hidden="true" />
-                                    <span>PAY ₹{finalPayable} WITH GOOGLE PAY</span>
-                                    <ArrowRight size={16} aria-hidden="true" />
-                                  </>
-                                )}
-                              </button>
-                            </>
-                          ) : (
-                            <div className="booking-payment__cf-collect-block">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect-gpay">
-                                GOOGLE PAY UPI ID (VPA)
-                              </label>
-                              <div id="vibetogether-cf-upi-collect-gpay" className="booking-payment__cf-input-mount" />
-                              <button
-                                type="button"
-                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--gpay"
-                                disabled={isPaying}
-                                onClick={handleExecuteCustomPayment}
-                              >
-                                {isPaying ? (
-                                  <>
-                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Connecting Google Pay…</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <LockKeyhole size={16} aria-hidden="true" />
-                                    <span>REQUEST ₹{finalPayable} ON GOOGLE PAY</span>
-                                    <ArrowRight size={16} aria-hidden="true" />
-                                  </>
-                                )}
-                              </button>
-                              {collectNotice && selectedMethod === 'gpay' && (
-                                <div className="booking-payment__collect-notice" role="status">
-                                  <CheckCircle2 size={16} aria-hidden="true" />
-                                  <span>{collectNotice}</span>
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                className="booking-payment__cf-alt-link"
-                                onClick={handleOpenCashfreeModal}
-                              >
-                                Having trouble with UPI ID? Open direct payment window →
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* -------------------------------------------------------------
-                         3. PHONEPE METHOD (DIRECT PHONEPE ONLY — NO QR)
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'phonepe' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="PhonePe">
-                          <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap" style={{ background: 'linear-gradient(135deg, rgba(91, 33, 182, 0.4), rgba(124, 58, 237, 0.3))', borderColor: 'rgba(139, 92, 246, 0.4)' }}>
-                              <Smartphone size={28} className="booking-payment__intent-icon" />
-                            </div>
-                            <div className="booking-payment__intent-copy">
-                              <strong className="booking-payment__intent-name">Pay via PhonePe</strong>
-                              <span className="booking-payment__intent-desc">
-                                {device.isAndroid
-                                  ? 'Seamless payment directly from your PhonePe balance or linked bank account.'
-                                  : 'Enter your PhonePe UPI ID or linked mobile number to receive a payment request.'}
-                              </span>
-                            </div>
+                          <div className="booking-payment__cf-inline-warning" role="note">
+                            <Info size={16} aria-hidden="true" />
+                            <span>
+                              {selectedUpiApp.name} is not available in the requested no-redirect mode. Choose Other UPI · QR to complete payment on this page.
+                            </span>
                           </div>
 
-                          {device.isAndroid ? (
-                            <>
-                              <div id="vibetogether-cf-phonepe" className="booking-payment__cf-app-mount" />
-
-                              <button
-                                type="button"
-                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--phonepe"
-                                disabled={isPaying}
-                                onClick={handleExecuteCustomPayment}
-                              >
-                                {isPaying ? (
-                                  <>
-                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Launching PhonePe…</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <LockKeyhole size={16} aria-hidden="true" />
-                                    <span>PAY ₹{finalPayable} WITH PHONEPE</span>
-                                    <ArrowRight size={16} aria-hidden="true" />
-                                  </>
-                                )}
-                              </button>
-                            </>
-                          ) : (
-                            <div className="booking-payment__cf-collect-block">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect-phonepe">
-                                PHONEPE UPI ID / NUMBER
-                              </label>
-                              <div id="vibetogether-cf-upi-collect-phonepe" className="booking-payment__cf-input-mount" />
-                              <button
-                                type="button"
-                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--phonepe"
-                                disabled={isPaying}
-                                onClick={handleExecuteCustomPayment}
-                              >
-                                {isPaying ? (
-                                  <>
-                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Connecting PhonePe…</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <LockKeyhole size={16} aria-hidden="true" />
-                                    <span>REQUEST ₹{finalPayable} ON PHONEPE</span>
-                                    <ArrowRight size={16} aria-hidden="true" />
-                                  </>
-                                )}
-                              </button>
-                              {collectNotice && selectedMethod === 'phonepe' && (
-                                <div className="booking-payment__collect-notice" role="status">
-                                  <CheckCircle2 size={16} aria-hidden="true" />
-                                  <span>{collectNotice}</span>
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                className="booking-payment__cf-alt-link"
-                                onClick={handleOpenCashfreeModal}
-                              >
-                                Having trouble with UPI ID? Open direct payment window →
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* -------------------------------------------------------------
-                         4. PAYTM METHOD (DIRECT PAYTM ONLY — NO QR)
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'paytm' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="Paytm">
-                          <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap" style={{ background: 'linear-gradient(135deg, rgba(3, 105, 161, 0.4), rgba(2, 132, 199, 0.3))', borderColor: 'rgba(0, 186, 242, 0.4)' }}>
-                              <Smartphone size={28} className="booking-payment__intent-icon" />
-                            </div>
-                            <div className="booking-payment__intent-copy">
-                              <strong className="booking-payment__intent-name">Pay via Paytm</strong>
-                              <span className="booking-payment__intent-desc">
-                                {device.isAndroid
-                                  ? 'Fast checkout using Paytm UPI, Postpaid or Wallet on your mobile device.'
-                                  : 'Enter your Paytm UPI ID or linked mobile number to receive a payment request.'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {device.isAndroid ? (
-                            <>
-                              <div id="vibetogether-cf-paytm" className="booking-payment__cf-app-mount" />
-
-                              <button
-                                type="button"
-                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--paytm"
-                                disabled={isPaying}
-                                onClick={handleExecuteCustomPayment}
-                              >
-                                {isPaying ? (
-                                  <>
-                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Launching Paytm…</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <LockKeyhole size={16} aria-hidden="true" />
-                                    <span>PAY ₹{finalPayable} WITH PAYTM</span>
-                                    <ArrowRight size={16} aria-hidden="true" />
-                                  </>
-                                )}
-                              </button>
-                            </>
-                          ) : (
-                            <div className="booking-payment__cf-collect-block">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-upi-collect-paytm">
-                                PAYTM UPI ID / NUMBER
-                              </label>
-                              <div id="vibetogether-cf-upi-collect-paytm" className="booking-payment__cf-input-mount" />
-                              <button
-                                type="button"
-                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--paytm"
-                                disabled={isPaying}
-                                onClick={handleExecuteCustomPayment}
-                              >
-                                {isPaying ? (
-                                  <>
-                                    <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Connecting Paytm…</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <LockKeyhole size={16} aria-hidden="true" />
-                                    <span>REQUEST ₹{finalPayable} ON PAYTM</span>
-                                    <ArrowRight size={16} aria-hidden="true" />
-                                  </>
-                                )}
-                              </button>
-                              {collectNotice && selectedMethod === 'paytm' && (
-                                <div className="booking-payment__collect-notice" role="status">
-                                  <CheckCircle2 size={16} aria-hidden="true" />
-                                  <span>{collectNotice}</span>
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                className="booking-payment__cf-alt-link"
-                                onClick={handleOpenCashfreeModal}
-                              >
-                                Having trouble with UPI ID? Open direct payment window →
-                              </button>
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            className="booking-payment__cf-submit-btn"
+                            disabled
+                          >
+                            <Info size={16} aria-hidden="true" />
+                            <span>APP HANDOFF REQUIRED — CHOOSE UPI QR</span>
+                          </button>
                         </div>
                       )}
 
@@ -1842,10 +1768,15 @@ export default function BookingPayment() {
                               <span className="booking-payment__cf-brand-chip">Maestro</span>
                             </div>
 
+                            <div className="booking-payment__cf-inline-warning" role="note">
+                              <Info size={16} aria-hidden="true" />
+                              <span>Card details stay inside Cashfree Elements. Your issuer may require an external authentication step.</span>
+                            </div>
+
                             <button
                               type="button"
                               className="booking-payment__cf-submit-btn"
-                              disabled={isPaying}
+                              disabled={isPaying || !isElementReady}
                               onClick={handleExecuteCustomPayment}
                             >
                               {isPaying ? (
@@ -1856,151 +1787,15 @@ export default function BookingPayment() {
                               ) : (
                                 <>
                                   <LockKeyhole size={16} aria-hidden="true" />
-                                  <span>PAY ₹{finalPayable} NOW</span>
+                                  <span>PAY ₹{finalPayable} VIA CARD ELEMENTS</span>
                                   <ArrowRight size={16} aria-hidden="true" />
                                 </>
                               )}
                             </button>
-                            <div id="vibetogether-cf-inline-slot" className="booking-payment__cf-inline-slot" />
                           </div>
                         </div>
                       )}
 
-                      {/* -------------------------------------------------------------
-                         6. NET BANKING METHOD
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'netbanking' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="Net Banking">
-                          <label className="booking-payment__cf-label">Select Your Bank</label>
-                          <div className="booking-payment__cf-bank-grid" role="radiogroup" aria-label="Select Bank">
-                            {popularBanks.map((bank) => {
-                              const isBankSelected = selectedBank === bank.code
-                              return (
-                                <button
-                                  key={bank.code}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={isBankSelected}
-                                  className={`booking-payment__cf-bank-chip${isBankSelected ? ' is-selected' : ''}`}
-                                  onClick={() => setSelectedBank(bank.code)}
-                                >
-                                  <Landmark size={15} aria-hidden="true" />
-                                  <span>{bank.short}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-
-                          <div id="vibetogether-cf-netbanking" className="booking-payment__cf-app-mount" />
-
-                          <button
-                            type="button"
-                            className="booking-payment__cf-submit-btn"
-                            disabled={isPaying}
-                            onClick={handleExecuteCustomPayment}
-                          >
-                            {isPaying ? (
-                              <>
-                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                <span>Routing to Bank Portal…</span>
-                              </>
-                            ) : (
-                              <>
-                                <LockKeyhole size={16} aria-hidden="true" />
-                                <span>PAY ₹{finalPayable} VIA NET BANKING</span>
-                                <ArrowRight size={16} aria-hidden="true" />
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-
-                      {/* -------------------------------------------------------------
-                         7. DIGITAL WALLETS METHOD
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'wallet' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="Digital Wallets">
-                          <label className="booking-payment__cf-label">Choose Digital Wallet</label>
-                          <div className="booking-payment__cf-wallet-grid" role="radiogroup" aria-label="Select Wallet">
-                            {popularWallets.map((wallet) => {
-                              const isWalletSelected = selectedWallet === wallet.code
-                              return (
-                                <button
-                                  key={wallet.code}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={isWalletSelected}
-                                  className={`booking-payment__cf-wallet-chip${isWalletSelected ? ' is-selected' : ''}`}
-                                  onClick={() => setSelectedWallet(wallet.code)}
-                                >
-                                  <WalletCards size={15} aria-hidden="true" />
-                                  <span>{wallet.name}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-
-                          <div id="vibetogether-cf-wallet" className="booking-payment__cf-app-mount" />
-
-                          <button
-                            type="button"
-                            className="booking-payment__cf-submit-btn"
-                            disabled={isPaying}
-                            onClick={handleExecuteCustomPayment}
-                          >
-                            {isPaying ? (
-                              <>
-                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                <span>Connecting to Wallet…</span>
-                              </>
-                            ) : (
-                              <>
-                                <LockKeyhole size={16} aria-hidden="true" />
-                                <span>PAY ₹{finalPayable} VIA WALLET</span>
-                                <ArrowRight size={16} aria-hidden="true" />
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-
-                      {/* -------------------------------------------------------------
-                         8. MODAL / ALL METHODS — Opens Cashfree hosted modal popup
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'modal' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="All Payment Methods">
-                          <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(167, 139, 250, 0.3))', borderColor: 'rgba(167, 139, 250, 0.4)' }}>
-                              <Smartphone size={28} className="booking-payment__intent-icon" />
-                            </div>
-                            <div className="booking-payment__intent-copy">
-                              <strong className="booking-payment__intent-name">Pay via PhonePe · GPay · Paytm</strong>
-                              <span className="booking-payment__intent-desc">
-                                Pay using PhonePe, Google Pay, Paytm, credit/debit cards, net banking or digital wallets. All methods available inside the secure checkout.
-                              </span>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            className="booking-payment__cf-submit-btn"
-                            disabled={isPaying}
-                            onClick={handleOpenCashfreeModal}
-                          >
-                            {isPaying ? (
-                              <>
-                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                <span>Opening Secure Checkout…</span>
-                              </>
-                            ) : (
-                              <>
-                                <LockKeyhole size={16} aria-hidden="true" />
-                                <span>PAY ₹{finalPayable} NOW</span>
-                                <ArrowRight size={16} aria-hidden="true" />
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
                     </div>
 
                     {/* Trust Guarantees */}

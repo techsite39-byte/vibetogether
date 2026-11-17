@@ -46,12 +46,12 @@ export function createPublicSettingsRouter({
 
   router.get('/diwali-offer', async (_request, response, next) => {
     try {
-      if (!diwaliOfferService?.getOffer) {
+      if (!diwaliOfferService?.getPublicOffer) {
         response.status(503).json({ message: 'Offer pricing is temporarily unavailable.' })
         return
       }
       response.set('Cache-Control', 'no-store').json({
-        offer: await diwaliOfferService.getOffer(),
+        offer: await diwaliOfferService.getPublicOffer(),
       })
     } catch (error) {
       next(error)

@@ -1,0 +1,28 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": null,
+  "phases": [
+    {
+      "number": "1",
+      "name": "Mobile Baseline & Evidence Audit",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Evidence-Backed Performance Changes",
+      "status": "pending"
+    },
+    {
+      "number": "3",
+      "name": "Regression & Comparable Verification",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 2 of 3 · 14% · executing"
+  },
+  "updated_at": "2026-11-17T07:35:02.017Z"
+}

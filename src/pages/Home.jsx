@@ -19,6 +19,7 @@ import { useBookingEnquiry } from '../context/useBookingEnquiry.js'
 import usePublicEvents from '../hooks/usePublicEvents.js'
 import HomeCategoriesSection from '../components/home/HomeCategoriesSection.jsx'
 import HomeVideosSection from '../components/home/HomeVideosSection.jsx'
+import EventPosterModal from '../components/home/EventPosterModal.jsx'
 import './Home.css'
 
 const DotLottieReact = lazy(() =>
@@ -914,6 +915,7 @@ function Home() {
         </div>
       </section>
       <NewsletterSignup />
+      <EventPosterModal />
     </div>
   )
 }

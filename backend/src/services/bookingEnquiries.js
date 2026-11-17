@@ -1,12 +1,13 @@
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { randomUUID } from 'node:crypto'
 import { nextBookingReference } from './bookingReferences.js'
+import { FIXED_BOOKING_AMOUNT } from './diwaliOffer.js'
 
 const defaultPricing = {
-  paymentAmount: 299,
-  paymentAmountPaise: 29_900,
-  regularPrice: 299,
-  offerPrice: 249,
+  paymentAmount: FIXED_BOOKING_AMOUNT,
+  paymentAmountPaise: FIXED_BOOKING_AMOUNT * 100,
+  regularPrice: FIXED_BOOKING_AMOUNT,
+  offerPrice: FIXED_BOOKING_AMOUNT,
   diwaliOfferApplied: false,
   offerActivationAt: null,
   offerExpiresAt: null,

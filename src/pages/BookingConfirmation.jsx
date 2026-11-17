@@ -250,7 +250,10 @@ export default function BookingConfirmation() {
   const event = events.find((item) => item.id === booking.eventId)
   const eventInfo = booking.event ?? event
   const isCancelled = booking.status === 'cancelled'
-  const isPaid = booking.paymentStatus === 'paid' && isVerifiedPayment
+  const isPaid =
+    booking.paymentStatus === 'paid' &&
+    (isVerifiedPayment || Boolean(booking.paymentVerifiedAt))
+  const paidAmount = booking.paymentAmount ?? booking.total
 
   if (!eventInfo || !booking.attendee) {
     return <NotFound />
@@ -376,6 +379,12 @@ export default function BookingConfirmation() {
                     : 'Not required · free event'}
               </strong>
             </div>
+            {isPaid && Number.isFinite(paidAmount) && (
+              <div>
+                <span>Amount paid</span>
+                <strong>₹{paidAmount} {booking.currency ?? 'INR'}</strong>
+              </div>
+            )}
             <div>
               <span>Booking date</span>
               <strong>{formatBookingDate(booking.createdAt)}</strong>

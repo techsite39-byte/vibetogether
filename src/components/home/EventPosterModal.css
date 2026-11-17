@@ -1,0 +1,343 @@
+/* ==========================================================================
+   VIBETOGETHER PREMIUM RESPONSIVE EVENT POSTER POPUP
+   Cinematic glassmorphism, glowing neon borders, mobile safe-area aware
+   ========================================================================== */
+
+.event-poster-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 16px) + 12px)
+           calc(env(safe-area-inset-right, 16px) + 12px)
+           calc(env(safe-area-inset-bottom, 16px) + 12px)
+           calc(env(safe-area-inset-left, 16px) + 12px);
+  background: rgba(4, 3, 10, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  opacity: 0;
+  animation: posterBackdropFadeIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes posterBackdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.event-poster-dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: auto;
+  max-width: 100%;
+  margin: auto;
+  outline: none;
+  opacity: 0;
+  transform: scale(0.92) translateY(12px);
+  animation: posterCardZoomIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) 0.04s forwards;
+}
+
+@keyframes posterCardZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Ambient glow orb behind the poster */
+.event-poster-glow {
+  position: absolute;
+  inset: -20px;
+  border-radius: 36px;
+  background: radial-gradient(circle at 50% 50%, rgba(168, 43, 255, 0.32), rgba(209, 42, 255, 0.16), transparent 70%);
+  filter: blur(28px);
+  pointer-events: none;
+  z-index: 0;
+  animation: posterGlowPulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes posterGlowPulse {
+  0% {
+    opacity: 0.75;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+/* Poster container card */
+.event-poster-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(25, 18, 44, 0.95), rgba(12, 9, 22, 0.98));
+  border: 1.5px solid rgba(168, 43, 255, 0.55);
+  box-shadow:
+    0 0 24px rgba(168, 43, 255, 0.3),
+    0 0 55px rgba(209, 42, 255, 0.15),
+    0 24px 64px rgba(0, 0, 0, 0.85);
+  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
+}
+
+.event-poster-card:hover {
+  border-color: rgba(209, 42, 255, 0.85);
+  box-shadow:
+    0 0 32px rgba(168, 43, 255, 0.45),
+    0 0 75px rgba(209, 42, 255, 0.25),
+    0 28px 72px rgba(0, 0, 0, 0.9);
+}
+
+/* Header strip with badge and sequence tracker */
+.event-poster-header {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.event-poster-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(8, 6, 17, 0.82);
+  border: 1px solid rgba(168, 43, 255, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #f3e8ff;
+  font-family: var(--font-heading, 'Space Grotesk', sans-serif);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.event-poster-badge__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d12aff;
+  box-shadow: 0 0 8px #d12aff;
+}
+
+/* Circular Close Button */
+.event-poster-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(14, 10, 26, 0.86);
+  color: #ffffff;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.2s ease,
+              border-color 0.2s ease,
+              box-shadow 0.2s ease;
+  pointer-events: auto;
+}
+
+.event-poster-close-btn:hover {
+  transform: scale(1.08) rotate(90deg);
+  background: rgba(168, 43, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 20px rgba(168, 43, 255, 0.6), 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+
+.event-poster-close-btn:active {
+  transform: scale(0.96) rotate(90deg);
+}
+
+.event-poster-close-btn:focus-visible {
+  outline: 2px solid #d12aff;
+  outline-offset: 2px;
+}
+
+/* Poster Image Box */
+.event-poster-media-wrap {
+  position: relative;
+  display: block;
+  line-height: 0;
+  cursor: pointer;
+  background: #0d0918;
+}
+
+.event-poster-picture {
+  display: block;
+  line-height: 0;
+}
+
+.event-poster-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: transform 0.35s ease;
+}
+
+.event-poster-media-wrap:hover .event-poster-image {
+  transform: scale(1.015);
+}
+
+/* Desktop sizing: 1672 x 941 landscape image */
+@media (min-width: 769px) {
+  .event-poster-dialog {
+    max-width: min(88vw, 840px);
+  }
+
+  .event-poster-image {
+    max-height: calc(80vh - 80px);
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+  }
+}
+
+/* Mobile & Tablet sizing: 941 x 1672 portrait image */
+@media (max-width: 768px) {
+  .event-poster-dialog {
+    max-width: min(90vw, 400px);
+  }
+
+  .event-poster-card {
+    border-radius: 18px;
+  }
+
+  .event-poster-image {
+    max-height: calc(76vh - 72px);
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .event-poster-close-btn {
+    width: 34px;
+    height: 34px;
+    top: 10px;
+    right: 10px;
+  }
+}
+
+/* Glassmorphic Footer Action Bar */
+.event-poster-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background: rgba(10, 7, 20, 0.94);
+  border-top: 1px solid rgba(168, 43, 255, 0.25);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.event-poster-step-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.event-poster-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  transition: width 0.24s ease, background 0.24s ease, box-shadow 0.24s ease;
+}
+
+.event-poster-dot.is-active {
+  width: 22px;
+  background: linear-gradient(90deg, #a82bff, #d12aff);
+  box-shadow: 0 0 10px rgba(168, 43, 255, 0.7);
+}
+
+.event-poster-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(110deg, #773bff 0%, #a82bff 50%, #d12aff 100%);
+  color: #ffffff;
+  font-family: var(--font-heading, 'Space Grotesk', sans-serif);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(119, 59, 255, 0.4);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.2s ease,
+              filter 0.2s ease;
+}
+
+.event-poster-cta-btn:hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 6px 24px rgba(168, 43, 255, 0.65);
+  filter: brightness(1.08);
+}
+
+.event-poster-cta-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.event-poster-cta-btn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .event-poster-backdrop,
+  .event-poster-dialog,
+  .event-poster-glow,
+  .event-poster-close-btn,
+  .event-poster-card,
+  .event-poster-image,
+  .event-poster-cta-btn {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .event-poster-backdrop,
+  .event-poster-dialog {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -171,7 +171,7 @@ describe('Cashfree Payments Integration', () => {
             cf_order_id: 'cf_order_prod_999888',
             order_id: capturedBody.order_id,
             payment_session_id: 'session_token_prod_xyz123',
-            order_amount: 249,
+            order_amount: 199,
             order_currency: 'INR',
             order_status: 'ACTIVE',
           }),
@@ -210,8 +210,9 @@ describe('Cashfree Payments Integration', () => {
 
       assert.equal(result.cf_order_id, 'cf_order_prod_999888')
       assert.equal(result.payment_session_id, 'session_token_prod_xyz123')
-      assert.equal(result.amount, 249)
+      assert.equal(result.amount, 199)
       assert.equal(result.environment, 'production')
+      assert.equal(capturedBody.order_amount, 199)
 
       // Production endpoint must be called
       assert.equal(capturedUrl, 'https://api.cashfree.com/pg/orders')
@@ -231,6 +232,60 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(enquiry.paymentProvider, 'cashfree')
       assert.equal(enquiry.cfPaymentSessionId, 'session_token_prod_xyz123')
       assert.equal(enquiry.paymentOrderId.startsWith('VT_'), true)
+      assert.equal(enquiry.paymentAmount, 199)
+      assert.equal(enquiry.paymentOrderAmountPaise, 19_900)
+
+      const retry = await service.createOrder(enquiry.requestId)
+      assert.equal(retry.order_id, result.order_id)
+      assert.equal(retry.amount, 199)
+      assert.equal(enquiry.paymentOrders.length, 1)
+    })
+
+    it('reuses a pending legacy order at its recorded amount without creating another order', async () => {
+      const enquiry = createMockEnquiry({
+        paymentStatus: 'processing',
+        paymentOrderId: 'VT_legacy_order',
+        paymentOrderAmountPaise: 24_900,
+        paymentAmount: 249,
+        cfOrderId: 'cf_legacy_order',
+        cfPaymentSessionId: 'legacy-session',
+        paymentOrders: [{
+          orderId: 'VT_legacy_order',
+          amount: 249,
+          amountPaise: 24_900,
+          regularPrice: 299,
+          offerPrice: 249,
+          diwaliOfferApplied: true,
+          status: 'created',
+        }],
+      })
+      let createCalls = 0
+      const service = createCashfreePaymentService({
+        appId: testAppId,
+        secretKey: testSecretKey,
+        bookingEnquiryModel: {
+          async findOne() {
+            return enquiry
+          },
+        },
+        diwaliOfferService: {
+          async getPricing() {
+            throw new Error('Pending orders must keep their saved price.')
+          },
+        },
+        fetchFn: async () => {
+          createCalls += 1
+          throw new Error('A pending order must not create another provider order.')
+        },
+      })
+
+      const result = await service.createOrder(enquiry.requestId)
+
+      assert.equal(createCalls, 0)
+      assert.equal(result.order_id, 'VT_legacy_order')
+      assert.equal(result.payment_session_id, 'legacy-session')
+      assert.equal(result.amount, 249)
+      assert.equal(result.pricing.paymentAmountPaise, 24_900)
     })
   })
 
@@ -240,6 +295,16 @@ describe('Cashfree Payments Integration', () => {
         paymentOrderId: 'VT_order_test_123',
         cfOrderId: 'cf_order_123',
         paymentProvider: 'cashfree',
+        paymentAmount: 199,
+        paymentAmountPaise: 19_900,
+        paymentOrderAmountPaise: 19_900,
+        paymentOrders: [{
+          orderId: 'VT_order_test_123',
+          amount: 199,
+          amountPaise: 19_900,
+          finalAmount: 199,
+          status: 'created',
+        }],
       })
 
       let paymentsQueryCount = 0
@@ -252,7 +317,7 @@ describe('Cashfree Payments Integration', () => {
               {
                 cf_payment_id: 11223344,
                 payment_status: 'SUCCESS',
-                payment_amount: 249,
+                payment_amount: 199,
                 payment_currency: 'INR',
                 payment_method: { upi: { channel: 'gpay', upi_id: 'john@okaxis' } },
                 payment_completion_time: new Date().toISOString(),
@@ -297,6 +362,7 @@ describe('Cashfree Payments Integration', () => {
 
       assert.equal(result.verified, true)
       assert.equal(result.booking.paymentStatus, 'paid')
+      assert.equal(result.booking.paymentAmount, 199)
       assert.equal(result.booking.status, 'confirmed')
       assert.equal(result.booking.reference, 'VT-REF-2026-001')
       assert.equal(result.booking.cfPaymentId, '11223344')
@@ -351,7 +417,7 @@ describe('Cashfree Payments Integration', () => {
           payments: [{
             cf_payment_id: 99887766,
             payment_status: 'SUCCESS',
-            payment_amount: 249,
+            payment_amount: 199,
             payment_currency: 'INR',
           }],
         },
@@ -371,7 +437,7 @@ describe('Cashfree Payments Integration', () => {
           payments: [{
             cf_payment_id: 11223344,
             payment_status: 'SUCCESS',
-            payment_amount: 249,
+            payment_amount: 199,
             payment_currency: 'USD',
           }],
         },
@@ -381,17 +447,17 @@ describe('Cashfree Payments Integration', () => {
           payments: [{
             cf_payment_id: 11223344,
             payment_status: 'SUCCESS',
-            payment_amount: 249,
+            payment_amount: 199,
           }],
         },
         {
           name: 'amount differs from the recorded order amount',
           requestedPaymentId: '11223344',
-          recordedOrderAmount: 250,
+          recordedOrderAmount: 200,
           payments: [{
             cf_payment_id: 11223344,
             payment_status: 'SUCCESS',
-            payment_amount: 249,
+            payment_amount: 199,
             payment_currency: 'INR',
           }],
         },
@@ -405,7 +471,7 @@ describe('Cashfree Payments Integration', () => {
       for (const testCase of cases) {
         const enquiry = createMockEnquiry({
           paymentOrderId: 'VT_order_verification_bound',
-          paymentAmount: 249,
+          paymentAmount: 199,
           paymentOrders: testCase.recordedOrderAmount === undefined
             ? []
             : [{
@@ -433,7 +499,7 @@ describe('Cashfree Payments Integration', () => {
                 ok: true,
                 json: async () => ({
                   order_id: enquiry.paymentOrderId,
-                  order_amount: 249,
+                  order_amount: testCase.recordedOrderAmount ?? enquiry.paymentAmount,
                   order_currency: 'INR',
                   order_status: 'PAID',
                 }),
@@ -457,6 +523,9 @@ describe('Cashfree Payments Integration', () => {
         paymentOrderId: 'VT_order_test_456',
         cfOrderId: 'cf_order_456',
         paymentProvider: 'cashfree',
+        paymentAmount: 199,
+        paymentAmountPaise: 19_900,
+        paymentOrderAmountPaise: 19_900,
       })
 
       const mockModel = {
@@ -489,13 +558,13 @@ describe('Cashfree Payments Integration', () => {
         data: {
           order: {
             order_id: 'VT_order_test_456',
-            order_amount: 249,
+            order_amount: 199,
             order_currency: 'INR',
           },
           payment: {
             cf_payment_id: 55667788,
             payment_status: 'SUCCESS',
-            payment_amount: 249,
+            payment_amount: 199,
             payment_currency: 'INR',
             payment_method: { upi: { channel: 'phonepe' } },
           },
@@ -536,6 +605,9 @@ describe('Cashfree Payments Integration', () => {
       const enquiry = createMockEnquiry({
         paymentOrderId: 'VT_order_test_amount',
         paymentProvider: 'cashfree',
+        paymentAmount: 199,
+        paymentAmountPaise: 19_900,
+        paymentOrderAmountPaise: 19_900,
       })
       const service = createCashfreePaymentService({
         appId: testAppId,
@@ -554,7 +626,7 @@ describe('Cashfree Payments Integration', () => {
           payment: {
             cf_payment_id: 778899,
             payment_status: 'SUCCESS',
-            payment_amount: 1,
+            payment_amount: 198,
           },
         },
         type: 'PAYMENT_SUCCESS_WEBHOOK',

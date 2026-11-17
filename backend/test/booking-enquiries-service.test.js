@@ -85,6 +85,8 @@ test('initial booking save is temporary, unpaid, expiring, and reference-free', 
   assert.equal(result.duplicate, false)
   assert.equal(result.enquiry.reference, undefined)
   assert.equal(result.enquiry.paymentStatus, 'unpaid')
+  assert.equal(result.enquiry.paymentAmount, 199)
+  assert.equal(result.enquiry.paymentAmountPaise, 19_900)
   assert.equal(result.enquiry.email, 'jordan@example.com')
   assert.deepEqual(result.enquiry.maleMemberNames, ['Arun Example', ''])
   assert.deepEqual(result.enquiry.femaleMemberNames, ['Mira Example'])

@@ -1295,6 +1295,29 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
+.booking-payment__cf-inline-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 0.75rem;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.booking-payment__cf-inline-warning svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.booking-payment__cf-inline-warning code {
+  color: #ffffff;
+  font-size: 0.78rem;
+}
+
 .booking-payment__cf-alt-link {
   display: block;
   width: 100%;

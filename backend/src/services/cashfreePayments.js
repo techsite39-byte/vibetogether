@@ -3,8 +3,7 @@ import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { nextBookingReference } from './bookingReferences.js'
 import {
   DEFAULT_TICKET_TYPE,
-  DIWALI_OFFER_PRICE,
-  DIWALI_REGULAR_PRICE,
+  FIXED_BOOKING_AMOUNT,
   calculateTicketPricing,
 } from './diwaliOffer.js'
 
@@ -13,20 +12,20 @@ const PRODUCTION_URL = 'https://api.cashfree.com/pg'
 const DEFAULT_API_VERSION = '2023-08-01'
 
 const defaultPricing = {
-  paymentAmount: DIWALI_REGULAR_PRICE,
-  paymentAmountPaise: DIWALI_REGULAR_PRICE * 100,
-  regularPrice: DIWALI_REGULAR_PRICE,
-  offerPrice: DIWALI_OFFER_PRICE,
+  paymentAmount: FIXED_BOOKING_AMOUNT,
+  paymentAmountPaise: FIXED_BOOKING_AMOUNT * 100,
+  regularPrice: FIXED_BOOKING_AMOUNT,
+  offerPrice: FIXED_BOOKING_AMOUNT,
   diwaliOfferApplied: false,
   offerActivationAt: null,
   offerExpiresAt: null,
   ticketType: DEFAULT_TICKET_TYPE,
   ticketTypeName: 'General Admission',
   ticketQuantity: 1,
-  pricePerTicket: DIWALI_REGULAR_PRICE,
-  subtotal: DIWALI_REGULAR_PRICE,
+  pricePerTicket: FIXED_BOOKING_AMOUNT,
+  subtotal: FIXED_BOOKING_AMOUNT,
   discount: 0,
-  finalAmount: DIWALI_REGULAR_PRICE,
+  finalAmount: FIXED_BOOKING_AMOUNT,
 }
 
 function serviceError(status, message) {
@@ -167,6 +166,33 @@ export function createCashfreePaymentService({
     )
   }
 
+  function getOrderPricing(enquiry, orderEntry) {
+    const amount = Number(orderEntry?.amount ?? enquiry.paymentAmount ?? FIXED_BOOKING_AMOUNT)
+    return {
+      paymentAmount: amount,
+      paymentAmountPaise: Number(
+        orderEntry?.amountPaise ??
+        enquiry.paymentOrderAmountPaise ??
+        enquiry.paymentAmountPaise ??
+        amount * 100,
+      ),
+      regularPrice: orderEntry?.regularPrice ?? enquiry.regularPrice ?? amount,
+      offerPrice: orderEntry?.offerPrice ?? enquiry.offerPrice ?? amount,
+      diwaliOfferApplied: Boolean(
+        orderEntry?.diwaliOfferApplied ?? enquiry.diwaliOfferApplied,
+      ),
+      offerActivationAt: orderEntry?.offerActivationAt ?? enquiry.offerActivationAt ?? null,
+      offerExpiresAt: orderEntry?.offerExpiresAt ?? enquiry.offerExpiresAt ?? null,
+      ticketType: orderEntry?.ticketType ?? enquiry.ticketType ?? DEFAULT_TICKET_TYPE,
+      ticketTypeName: orderEntry?.ticketTypeName ?? enquiry.ticketTypeName ?? 'General Admission',
+      ticketQuantity: orderEntry?.ticketQuantity ?? enquiry.ticketQuantity ?? 1,
+      pricePerTicket: orderEntry?.pricePerTicket ?? enquiry.pricePerTicket ?? amount,
+      subtotal: orderEntry?.subtotal ?? enquiry.subtotal ?? amount,
+      discount: orderEntry?.discount ?? enquiry.discount ?? 0,
+      finalAmount: orderEntry?.finalAmount ?? enquiry.finalAmount ?? amount,
+    }
+  }
+
   function getCleanPhone(mobile) {
     if (!mobile) return '9999999999'
     const digits = mobile.replace(/\D/g, '')
@@ -190,6 +216,30 @@ export function createCashfreePaymentService({
         alreadyPaid: true,
         reference: enquiry.reference,
         booking: enquiry,
+      }
+    }
+    if (
+      enquiry.paymentOrderId &&
+      ['unpaid', 'processing'].includes(enquiry.paymentStatus)
+    ) {
+      const orderEntry = enquiry.paymentOrders?.find(
+        (order) => String(order.orderId) === String(enquiry.paymentOrderId),
+      )
+      if (orderEntry?.status !== 'failed') {
+        if (!enquiry.cfPaymentSessionId) {
+          throw serviceError(409, 'An existing Cashfree order is being processed. Refresh its payment status before retrying.')
+        }
+        const pricing = getOrderPricing(enquiry, orderEntry)
+        return {
+          order_id: enquiry.paymentOrderId,
+          cf_order_id: enquiry.cfOrderId ?? '',
+          payment_session_id: enquiry.cfPaymentSessionId,
+          amount: pricing.paymentAmount,
+          currency: 'INR',
+          environment: isProduction ? 'production' : 'sandbox',
+          pricing,
+          booking: enquiry,
+        }
       }
     }
 
@@ -244,6 +294,13 @@ export function createCashfreePaymentService({
       const msg = data.message || 'Cashfree could not initiate the payment order.'
       console.error('[Cashfree] Order creation failed:', data)
       throw serviceError(response.status >= 400 && response.status < 500 ? 400 : 502, msg)
+    }
+    if (
+      String(data.order_id ?? '') !== orderId ||
+      Number(data.order_amount) !== amount ||
+      data.order_currency !== 'INR'
+    ) {
+      throw serviceError(502, 'Cashfree returned an order with an unexpected ID, amount, or currency.')
     }
 
     // Update enquiry with Cashfree order details

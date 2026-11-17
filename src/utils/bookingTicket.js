@@ -3,6 +3,7 @@ function plainText(value) {
 }
 
 export function downloadBookingTicket(booking) {
+  const paidAmount = booking.paymentAmount ?? booking.total
   const contents = [
     'VIBE TOGETHER — BOOKING TICKET',
     `Booking reference: ${plainText(booking.reference)}`,
@@ -13,6 +14,9 @@ export function downloadBookingTicket(booking) {
     `Email: ${plainText(booking.attendee.email)}`,
     `Tickets: ${booking.ticketCount}`,
     `Payment status: ${plainText(booking.paymentStatus)}`,
+    ...(booking.paymentStatus === 'paid' && Number.isFinite(paidAmount)
+      ? [`Amount paid: ₹${paidAmount} ${plainText(booking.currency ?? 'INR')}`]
+      : []),
     `Booking status: ${plainText(booking.status)}`,
     `Booked on: ${plainText(booking.createdAt)}`,
     '',

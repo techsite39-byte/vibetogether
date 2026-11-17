@@ -178,3 +178,67 @@ This on-disk comparison is not a measurement of per-route transfer savings: the 
 No new image files were encoded or replaced in this follow-up. The previously documented WebP assets and lazy/responsive image behavior remain unchanged. During the local route sweep, API requests were aborted by full-page test navigations and protected admin requests returned 401; no repeatable backend/database bottleneck evidence was obtained, so no query changes were made.
 
 Validation: the production build passed; the focused event-cache tests passed (2/2); and lint exited successfully with six existing warnings in unrelated files. The full `npm test` run did not complete within 120 seconds and was stopped; its partial output showed 13 passing tests, so the complete suite remains unverified. No fresh Lighthouse audit or production deployment was performed; Lighthouse scores and new payload reductions are therefore not claimed for this follow-up.
+
+## Phase 1 mobile homepage evidence audit — 17 November 2026
+
+This is a new, audit-only capture. It does not change application code, configuration, payment/booking behavior, database state, or deployment. The live reference and local preview are separate datasets. Historical entries above and the values supplied on 16 November are not measurements from this audit.
+
+### Build and capture provenance
+
+- Source commit: `234be78cc806d7e33abc9dbdafd452c210c62f01` (`main`). At audit start the worktree was dirty only because the Phase 1 `STATE.md`, `ROADMAP.md`, and `01-PLAN.md` had already been reconciled; no application source/configuration file was changed for this audit.
+- `npm.cmd run build` succeeded with Vite 8.3.6 (2,213 modules transformed; existing >500 kB chunk advisory). Node `v24.19.0`; npm `11.17.0`; Chrome `157.0.8103.52`; existing Lighthouse CLI `13.6.0`. No package was installed or downloaded.
+- Build fingerprint: SHA-256 `9817357c211ada42c9f53d2f69425a7d2c118103ca235a211c93df1b54824eb7`, computed over sorted `dist/` relative paths and contents. Build ID: `234be78cc806-9817357c211ada42c9f53d2f69425a7d2c118103ca235a211c93df1b54824eb7`.
+- Local preview: `npm.cmd run preview -- --host 127.0.0.1 --strictPort`, at `http://127.0.0.1:4173/`.
+- All four captures used Lighthouse mobile form factor, viewport 412 × 915 CSS px, DPR 2.625, simulated throttling (`rttMs=150`, `throughputKbps=1638.4`, `cpuSlowdownMultiplier=4`; effective request latency 562.5 ms, download 1474.56 Kbps, upload 675 Kbps), and Lighthouse's emulated UA `moto g power (2022)` / Chrome 136.0.0.0. The installed browser itself was Chrome 157.0.8103.52. This is an approximate Moto G Power / Slow 4G match, not a physical-device or exact-version match. Lighthouse storage reset was enabled (`disableStorageReset=false`); no reduced-motion override was set.
+- Raw JSON, traces, and screenshot remain only in `C:\Users\user\AppData\Local\Temp\vibetogether-phase1-audit-2026-11-17\`. The live capture is `live-reference.json` with its paired `live-reference-0.trace.json` and `live-reference-0.devtoolslog.json`. The three sequential local captures are `local-run-{1,2,3}.json` with matching `-0.trace.json` and `-0.devtoolslog.json` files. No invalid attempt occurred.
+- The matched local baseline screenshot is `local-baseline-homepage.jpg`: viewport 412 × 915 CSS px, DPR 2.625, scroll position 0, first hero slide/headline visible. No interaction was performed. Use the same dimensions, page-top position, and first-slide state for a later paired screenshot.
+
+### Separate live production reference
+
+One fresh, read-only homepage navigation was captured at `2026-11-17T05:51:30Z` (`https://www.vibetogether.show/`). Lighthouse reported Performance 47, Accessibility 100, Best Practices 100, SEO 100; FCP 1.1 s, LCP 6.3 s, TBT 3,340 ms, CLS 0.007, Speed Index 3.6 s, and 946,520 bytes total transfer (displayed as 924 KiB). The live transfer summary included 562,686 image bytes. Lighthouse estimated 96 KiB image savings, 330 ms render-blocking savings, and 34 KiB unused JavaScript; these are estimates, not measured savings.
+
+The live LCP candidate was the eager, high-priority preloaded hero image `/assets/optimized/hero/h1-1672-v1.webp` (84,724 transferred bytes; 84,222 resource bytes). Its LCP insight identified the same homepage hero `<img>` selector as the local preview. The live LCP breakdown was TTFB 350.6 ms, resource-load delay 45.8 ms, resource-load duration 141.0 ms, and element-render delay 1,587.6 ms. The longest reported network chain was 2,220 ms. This result is a separate live reference, not pooled with local runs or historical results.
+
+The live browser log recorded 30 requests, all `GET`, including the homepage and public `GET` requests to `/api/events` and `/api/public-settings/social`. No non-GET request, transaction, or administrative action was observed.
+
+### Local production-preview sample
+
+All three runs were launched one at a time, in order, against the same built preview and source/build fingerprint. Each had storage reset enabled and completed a successful homepage navigation. The valid outlier (run 3) is retained; no retries or invalid runs occurred.
+
+| Sequential run (UTC) | Performance | FCP | Lighthouse LCP | TBT | CLS | Speed Index | Total transfer |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 — 2026-11-17 05:53:30.761 | 45 | 1.0 s | 6.5 s | 4,560 ms | 0.007 | 4.1 s | 1,017,560 bytes |
+| 2 — 2026-11-17 05:54:52.000 | 50 | 0.9 s | 5.0 s | 5,170 ms | 0.007 | 3.9 s | 1,017,602 bytes |
+| 3 — 2026-11-17 05:55:24.880 | 73 | 0.9 s | 3.0 s | 930 ms | 0.007 | 1.9 s | 1,017,644 bytes |
+| **Median** | **50** | **0.9 s** | **5.0 s** | **4,562 ms** | **0.0074** | **3.9 s** | **1,017,602 bytes** |
+| **Full range** | **45–73** | **0.9–1.0 s** | **3.0–6.5 s** | **930–5,170 ms** | **0.0074–0.0074** | **1.9–4.1 s** | **1,017,560–1,017,644 bytes** |
+
+Accessibility, Best Practices, and SEO scored 100 in each local run. These are guardrails from this capture set, not claims about other routes or environments.
+
+### Runtime LCP and request-path evidence
+
+All three local LCP insights selected `div.home-page > section.home-hero > div.home-hero__image > img`, resource `http://127.0.0.1:4173/assets/optimized/hero/h1-1672-v1.webp`. The source element advertises 1672 × 941 intrinsic dimensions; its measured bounding box was 412 × 830 CSS px (`top=90`, `bottom=920`). It was `loading=eager`, `fetchpriority=high`, and reported as a link-preloaded resource. The image transfer was 84,490 bytes (84,222 resource bytes) in each run, with High priority.
+
+| Run | Image request start–end after navigation | Request duration | Trace-observed LCP candidate | LCP subparts: TTFB / load delay / load / render delay |
+| --- | ---: | ---: | ---: | --- |
+| 1 | 71.6–229.1 ms | 157.5 ms | 1.874 s | 19.4 / 56.3 / 159.7 / 1,639.0 ms |
+| 2 | 48.0–148.5 ms | 100.5 ms | 2.125 s | 5.7 / 42.8 / 101.3 / 1,975.4 ms |
+| 3 | 28.9–49.6 ms | 20.7 ms | 1.061 s | 6.5 / 22.5 / 21.8 / 1,009.8 ms |
+
+The trace-candidate median was 1.874 s (range 1.061–2.125 s). Lighthouse's reported LCP median was 5.0 s (range 3.0–6.5 s). These are deliberately kept separate: this run used simulated throttling, and the trace-observed candidate/breakdown does not equal Lighthouse's reported simulated metric. The breakdown subparts sum to the corresponding trace candidate; they must not be substituted for the Lighthouse score metric.
+
+The local network-dependency insight's longest chain was 1.893 s, 2.182 s, and 1.625 s (median 1.893 s; range 1.625–2.182 s). Its main path was document → app entry script → public `/api/events` GET; public settings GETs also appeared. The hero image was independently discoverable from the initial document. The observed API chain is not evidence that the API delayed the hero image.
+
+### Other current diagnostics
+
+- **Images:** 11 image requests transferred 561,716 bytes in each local run. Lighthouse listed seven image opportunities and estimated 96 KiB savings; this is not observed savings. The hero itself transferred 84,490 bytes.
+- **Render blocking:** the stylesheet `build-assets/index-BNwNOMJ5.css` transferred 30,950 bytes. Lighthouse estimated 280–300 ms potential render-blocking savings (individual request estimates were 304–336 ms); actual savings were not measured.
+- **JavaScript:** six script requests transferred 183,648 bytes. Lighthouse estimated 53 KiB of unused JavaScript; that is an audit estimate, not proof that the bytes can be removed safely.
+- **Main-thread tasks:** Lighthouse listed 14, 10, and 11 long tasks (median 11; range 10–14). The longest entries were 3,276 ms and 4,428 ms unattributable tasks in runs 1 and 2, and a 521 ms document task in run 3; entry-script tasks of 611, 474, and 469 ms were also reported. The report did not provide usable function-level call-stack attribution, so no responsible function or dependency is confirmed.
+- **DOM:** 661 elements, maximum depth 15, and maximum 12 children were reported consistently.
+- **Animation:** no non-composited-animation entries were listed in these Lighthouse reports. Homepage CSS contains animation/transition declarations, but this audit did not establish a runtime animation bottleneck or prove that all motion is cost-free.
+- **Request safety:** each local browser log recorded 32 requests, all `GET`; no payment, booking submission, or other write request was observed. The live and local data remain separate.
+
+### Interpretation and Phase 2 evidence
+
+The 16 November supplied figures (including LCP 3.8 s, 241 KiB image savings, 340 ms render-blocking savings, 35 KiB unused JavaScript, 15 non-composited animations, and two long tasks) remain unverified leads. Earlier sections of this file are historical and non-comparable. In this fresh local sample Lighthouse consistently recognizes the hero image as eager, high priority, and discoverable; the trace breakdown's element-render delay is the largest LCP subpart in every run. TBT varies widely and long-task attribution is insufficient to identify a cause. The report therefore provides evidence for a later investigation of rendering delay and main-thread attribution, but confirms no single cause and prescribes or implements no change. Do not treat Lighthouse opportunity estimates as observed improvements or claim that performance targets were met.

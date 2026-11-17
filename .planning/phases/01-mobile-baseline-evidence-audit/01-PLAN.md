@@ -79,7 +79,7 @@ Output: One dated append to `docs/performance-baseline.md`; raw reports, traces,
 @src/App.jsx
 @src/config/api.js
 
-The roadmap's MVP label does not expand this brownfield audit-only phase: no tracer, scaffold, source edits, database work, deployment, code cleanup, or performance implementation. The worktree starts dirty on `restore-cashfree-checkout-9317`; preserve it and do not inspect, alter, stage, revert, or include the protected `src/pages/BookingPayment.jsx` and `src/pages/BookingPayment.css` work.
+The roadmap's MVP label does not expand this brownfield audit-only phase: no tracer, scaffold, source edits, database work, deployment, code cleanup, or performance implementation. Execution baseline verified 2026-11-17: branch `main`, HEAD `234be78cc806d7e33abc9dbdafd452c210c62f01`, and a clean worktree. This supersedes the earlier branch/worktree assumption. Do not change branches or inspect, alter, stage, revert, or include `src/pages/BookingPayment.jsx` or `src/pages/BookingPayment.css`.
 
 The user-supplied 2026-11-16 values (Lighthouse 13.6, Performance 86, FCP 1.4 s, LCP 3.8 s, TBT 20 ms, CLS 0, Speed Index 4.2 s, 241 KiB image estimate, 340 ms render-blocking estimate, 35 KiB unused JS, 15 non-composited animations, and two long tasks) are leads only. Older entries in the baseline document are historical, not current measurements.
 </context>

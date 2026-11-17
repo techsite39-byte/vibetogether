@@ -7,12 +7,13 @@ import {
   DEFAULT_TICKET_TYPE,
   DIWALI_OFFER_PRICE,
   DIWALI_REGULAR_PRICE,
+  FIXED_BOOKING_AMOUNT,
   calculateTicketPricing,
 } from '../services/diwaliOffer.js'
 
 const defaultOfferPricing = {
-  regularPrice: DIWALI_REGULAR_PRICE,
-  offerPrice: DIWALI_OFFER_PRICE,
+  regularPrice: FIXED_BOOKING_AMOUNT,
+  offerPrice: FIXED_BOOKING_AMOUNT,
   diwaliOfferApplied: false,
   offerActivationAt: null,
   offerExpiresAt: null,

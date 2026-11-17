@@ -3,28 +3,28 @@ import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { nextBookingReference } from './bookingReferences.js'
 import {
   DEFAULT_TICKET_TYPE,
-  DIWALI_OFFER_PRICE,
   DIWALI_REGULAR_PRICE,
+  FIXED_BOOKING_AMOUNT,
   calculateTicketPricing,
 } from './diwaliOffer.js'
 
 const currency = 'INR'
 const attemptLockMs = 2 * 60 * 1000
 const defaultPricing = {
-  paymentAmount: DIWALI_REGULAR_PRICE,
-  paymentAmountPaise: DIWALI_REGULAR_PRICE * 100,
-  regularPrice: DIWALI_REGULAR_PRICE,
-  offerPrice: DIWALI_OFFER_PRICE,
+  paymentAmount: FIXED_BOOKING_AMOUNT,
+  paymentAmountPaise: FIXED_BOOKING_AMOUNT * 100,
+  regularPrice: FIXED_BOOKING_AMOUNT,
+  offerPrice: FIXED_BOOKING_AMOUNT,
   diwaliOfferApplied: false,
   offerActivationAt: null,
   offerExpiresAt: null,
   ticketType: DEFAULT_TICKET_TYPE,
   ticketTypeName: 'General Admission',
   ticketQuantity: 1,
-  pricePerTicket: DIWALI_REGULAR_PRICE,
-  subtotal: DIWALI_REGULAR_PRICE,
+  pricePerTicket: FIXED_BOOKING_AMOUNT,
+  subtotal: FIXED_BOOKING_AMOUNT,
   discount: 0,
-  finalAmount: DIWALI_REGULAR_PRICE,
+  finalAmount: FIXED_BOOKING_AMOUNT,
 }
 
 function serviceError(status, message) {
@@ -436,6 +436,9 @@ export function createRazorpayPaymentService({
       })
       if (!order?.id) {
         throw serviceError(502, 'Razorpay did not return an order ID.')
+      }
+      if (order.amount !== pricing.paymentAmountPaise || order.currency !== currency) {
+        throw serviceError(502, 'Razorpay returned an order with an unexpected amount or currency.')
       }
 
       const saved = await bookingEnquiryModel.findOneAndUpdate(

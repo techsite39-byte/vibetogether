@@ -37,12 +37,16 @@ test('creates a persisted Diwali window of exactly 72 hours and does not reset i
   assert.equal(model.record.activationAt.getTime(), currentTime.getTime())
   assert.equal(firstExpiry.getTime() - model.record.activationAt.getTime(), DIWALI_OFFER_DURATION_MS)
   assert.equal(initial.active, true)
-  assert.equal((await service.getPricing()).paymentAmountPaise, 24900)
+  assert.equal((await service.getPricing()).paymentAmountPaise, 19900)
+  const publicOffer = await service.getPublicOffer()
+  assert.equal(publicOffer.paymentAmount, 199)
+  assert.equal(publicOffer.paymentAmountPaise, 19_900)
+  assert.equal(publicOffer.active, false)
 
   currentTime = new Date(currentTime.getTime() + DIWALI_OFFER_DURATION_MS)
   const expired = await service.getOffer()
   assert.equal(expired.status, 'expired')
-  assert.equal((await service.getPricing()).paymentAmount, 299)
+  assert.equal((await service.getPricing()).paymentAmount, 199)
   assert.equal(model.record.expiresAt.getTime(), firstExpiry.getTime())
 })
 
@@ -69,18 +73,18 @@ test('admin offer updates preserve the configured prices and exact 72-hour windo
     now: () => new Date('2026-11-10T10:00:00.000Z'),
   })
 
-  test('calculates multi-ticket totals and discounts from server pricing', () => {
+  test('keeps the fixed booking total independent of ticket quantity and offer settings', () => {
     const activeOffer = calculateTicketPricing({
       regularPrice: 299,
       offerPrice: 249,
       diwaliOfferApplied: true,
     }, 3, 'general-admission')
 
-    assert.equal(activeOffer.pricePerTicket, 299)
-    assert.equal(activeOffer.subtotal, 897)
-    assert.equal(activeOffer.discount, 150)
-    assert.equal(activeOffer.finalAmount, 747)
-    assert.equal(activeOffer.paymentAmountPaise, 74_700)
+    assert.equal(activeOffer.pricePerTicket, 199)
+    assert.equal(activeOffer.subtotal, 199)
+    assert.equal(activeOffer.discount, 0)
+    assert.equal(activeOffer.finalAmount, 199)
+    assert.equal(activeOffer.paymentAmountPaise, 19_900)
     assert.equal(activeOffer.ticketQuantity, 3)
 
     const regularPrice = calculateTicketPricing({
@@ -89,7 +93,7 @@ test('admin offer updates preserve the configured prices and exact 72-hour windo
       diwaliOfferApplied: false,
     }, 3, 'general-admission')
     assert.equal(regularPrice.discount, 0)
-    assert.equal(regularPrice.finalAmount, 897)
+    assert.equal(regularPrice.finalAmount, 199)
   })
 
   test('rejects unknown ticket types and quantities outside 1 to 10', () => {

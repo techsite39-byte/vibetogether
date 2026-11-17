@@ -42,8 +42,8 @@ async function startTestServer({
         ...enquiry,
         email: enquiry.email ?? '',
         paymentStatus: 'unpaid',
-        paymentAmount: enquiry.paymentAmount ?? 299,
-        paymentAmountPaise: enquiry.paymentAmountPaise ?? 29_900,
+        paymentAmount: enquiry.paymentAmount ?? 199,
+        paymentAmountPaise: enquiry.paymentAmountPaise ?? 19_900,
         paymentProvider: null,
         paymentReference: '',
         paidAt: null,
@@ -90,11 +90,11 @@ async function startTestServer({
       Object.assign(enquiry, {
         reference: String(nextReference++),
         paymentStatus: 'demo_paid',
-        paymentAmount: pricing?.finalAmount ?? enquiry.paymentAmount ?? 299,
-        paymentAmountPaise: pricing?.paymentAmountPaise ?? enquiry.paymentAmountPaise ?? 29_900,
-        finalAmount: pricing?.finalAmount ?? enquiry.finalAmount ?? enquiry.paymentAmount ?? 299,
-        pricePerTicket: pricing?.pricePerTicket ?? enquiry.pricePerTicket ?? 299,
-        subtotal: pricing?.subtotal ?? enquiry.subtotal ?? 299,
+        paymentAmount: pricing?.finalAmount ?? enquiry.paymentAmount ?? 199,
+        paymentAmountPaise: pricing?.paymentAmountPaise ?? enquiry.paymentAmountPaise ?? 19_900,
+        finalAmount: pricing?.finalAmount ?? enquiry.finalAmount ?? enquiry.paymentAmount ?? 199,
+        pricePerTicket: pricing?.pricePerTicket ?? enquiry.pricePerTicket ?? 199,
+        subtotal: pricing?.subtotal ?? enquiry.subtotal ?? 199,
         discount: pricing?.discount ?? enquiry.discount ?? 0,
         ticketType: pricing?.ticketType ?? enquiry.ticketType ?? 'general-admission',
         ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ?? 'General Admission',
@@ -237,7 +237,7 @@ test('reloads persisted booking and attendee details without requiring offer pri
   })
   assert.equal(createResponse.status, 201)
   const created = await createResponse.json()
-  assert.equal(created.booking.paymentAmount, 498)
+  assert.equal(created.booking.paymentAmount, 199)
 
   const refreshResponses = await Promise.all([
     fetch(`${baseUrl}/api/booking-enquiries/${request.requestId}`),
@@ -256,7 +256,7 @@ test('reloads persisted booking and attendee details without requiring offer pri
     assert.equal(booking.event, events[0].title)
     assert.equal(booking.ticketTypeName, 'General Admission')
     assert.equal(booking.ticketQuantity, 2)
-    assert.equal(booking.paymentAmount, 498)
+    assert.equal(booking.paymentAmount, 199)
     assert.deepEqual(booking.maleMemberNames, ['Jordan Example'])
     assert.deepEqual(booking.femaleMemberNames, ['Mira Example'])
     assert.equal(booking.paymentStatus, 'unpaid')
@@ -396,13 +396,13 @@ test('calculates ticket pricing on the server and ignores client-supplied amount
   assert.equal(payload.booking.ticketType, 'general-admission')
   assert.equal(payload.booking.ticketTypeName, 'General Admission')
   assert.equal(payload.booking.ticketQuantity, 3)
-  assert.equal(payload.booking.pricePerTicket, 299)
-  assert.equal(payload.booking.subtotal, 897)
-  assert.equal(payload.booking.discount, 150)
-  assert.equal(payload.booking.finalAmount, 747)
-  assert.equal(payload.booking.paymentAmount, 747)
-  assert.equal(payload.booking.paymentAmountPaise, 74_700)
-  assert.equal(saved.get(request.requestId).paymentAmount, 747)
+  assert.equal(payload.booking.pricePerTicket, 199)
+  assert.equal(payload.booking.subtotal, 199)
+  assert.equal(payload.booking.discount, 0)
+  assert.equal(payload.booking.finalAmount, 199)
+  assert.equal(payload.booking.paymentAmount, 199)
+  assert.equal(payload.booking.paymentAmountPaise, 19_900)
+  assert.equal(saved.get(request.requestId).paymentAmount, 199)
 })
 
 test('rejects invalid ticket quantities and unavailable ticket types', async () => {
@@ -470,7 +470,7 @@ test('keeps temporary booking data separate from WhatsApp send status', async ()
   assert.equal(saved.size, 2)
 })
 
-test('failed payment retry pricing returns to the current server price after offer expiry', async () => {
+test('failed payment retry uses the fixed server amount regardless of offer settings', async () => {
   let offerActive = true
   const diwaliOfferService = {
     async getPricing() {
@@ -499,8 +499,8 @@ test('failed payment retry pricing returns to the current server price after off
     body: JSON.stringify(request),
   })
   const created = await createResponse.json()
-  assert.equal(created.booking.paymentAmount, 249)
-  assert.equal(created.booking.diwaliOfferApplied, true)
+  assert.equal(created.booking.paymentAmount, 199)
+  assert.equal(created.booking.diwaliOfferApplied, false)
 
   Object.assign(saved.get(request.requestId), {
     paymentStatus: 'failed',
@@ -513,8 +513,8 @@ test('failed payment retry pricing returns to the current server price after off
   const retryResponse = await fetch(`${baseUrl}/api/booking-enquiries/${request.requestId}`)
   const retry = await retryResponse.json()
 
-  assert.equal(retry.booking.paymentAmount, 299)
-  assert.equal(retry.booking.paymentAmountPaise, 29900)
+  assert.equal(retry.booking.paymentAmount, 199)
+  assert.equal(retry.booking.paymentAmountPaise, 19_900)
   assert.equal(retry.booking.diwaliOfferApplied, false)
 })
 
@@ -659,7 +659,7 @@ test('loads enquiry details and records one idempotent demo payment', async () =
   assert.equal(firstPaymentPayload.booking.paymentStatus, 'demo_paid')
   assert.equal(firstPaymentPayload.booking.reference, '10812026501')
   assert.equal(firstPaymentPayload.booking.status, 'pending')
-  assert.equal(firstPaymentPayload.booking.paymentAmount, 299)
+  assert.equal(firstPaymentPayload.booking.paymentAmount, 199)
   assert.equal(firstPaymentPayload.booking.paymentProvider, 'razorpay_demo')
   assert.match(firstPaymentPayload.booking.paymentReference, /^demo_/)
   assert.ok(firstPaymentPayload.booking.paymentVerifiedAt)

@@ -1,4 +1,4 @@
-# Requirements: VibeTogether Mobile Performance Optimization
+# Requirements: VibeTogether Mobile Performance Optimization and Website Cashfree UI
 
 **Defined:** 2026-11-16
 **Core Value:** Make the mobile experience measurably faster while preserving the existing design and reliable event discovery, booking, payment, ticket, notification, and account flows.
@@ -18,6 +18,19 @@
 - [ ] **ANIM-01**: The reported non-composited animations and long main-thread tasks are investigated; optimize only measured causes, prefer transform/opacity where appropriate, reduce unnecessary mobile motion, preserve important animation, and respect `prefers-reduced-motion`.
 - [ ] **JS-01**: DOM size, unused JavaScript, and long tasks are investigated with profiling or trace evidence; remove, defer, or split code only after confirming its use and effect, and do not load unnecessary admin code on public pages.
 
+### Website Cashfree Checkout UI
+
+- [ ] **CFUI-01**: The website presents separate branded choices for PhonePe, Google Pay, Paytm, Other UPI (QR), and Cards. "Other UPI" uses Cashfree-supported UPI app/QR flows, not VPA collect.
+- [ ] **CFUI-02**: Existing Net Banking and Cashfree-supported wallet choices remain available as additional branded methods when Elements and the merchant account support them. If a method is unsupported, surface that limitation for review; do not silently remove it or fall back to hosted checkout.
+- [ ] **CFUI-03**: A user's selection mounts/starts the corresponding Cashfree Element in the VibeTogether page. No initial/default hosted checkout redirect or modal is used. A UPI-app, bank, or issuer handoff after explicit method selection is allowed when required; do not promise that all authentication remains embedded.
+
+### Secure Payment and Compatibility
+
+- [ ] **CFSEC-01**: Cashfree orders, payment sessions, and payable amounts continue to be created by the existing backend using the booking-bound, server-calculated amount; Cashfree secrets remain server-side.
+- [ ] **CFSEC-02**: The browser's Elements result is not treated as proof of payment. Payment confirmation continues through existing server-side Cashfree verification and the signature-verified webhook path, preserving idempotency and pending/failed handling.
+- [ ] **CFCOMP-01**: The existing booking/payment state, Cashfree backend contracts, MongoDB schema, and Razorpay fallback remain intact; no schema or unrelated payment-business-rule changes are introduced.
+- [ ] **CFPLAT-01**: Changes are limited to the website; native Android code remains unchanged. The website experience in Android browsers is in scope.
+
 ### Regression Protection and Verification
 
 - [ ] **REG-01**: Performance changes preserve existing routes and APIs, responsive design, booking and ticket generation, Cashfree and Razorpay payment flows and verification, payment webhooks, QR codes, WhatsApp notifications, login, and admin authentication.
@@ -34,16 +47,18 @@
 
 | Feature | Reason |
 |---------|--------|
-| Changes to payment logic, payment webhooks, booking rules, or database schemas | Transactional behavior and data integrity must not change during performance work. |
-| Redesign, feature removal, or route/API changes | The objective is to preserve the existing user experience and functionality. |
-| Broad refactoring, dependency removal, or code cleanup without measured evidence | Every change must address a verified performance issue. |
-| Production deployment | The requested work covers implementation and validation; deployment was not requested. |
+| Changes to backend payment business rules, booking rules, Cashfree webhook verification, MongoDB schemas, or Razorpay removal | The Phase 2 request is for the website UI; existing secure backend behavior and data integrity remain protected. |
+| Hosted Cashfree checkout as the initial/default method surface | The requested experience is a branded website UI; required post-selection app/bank/issuer authentication handoffs remain allowed. |
+| Redesign, unrelated feature removal, or route/API changes | Preserve the existing user experience and contracts. |
+| Broad refactoring, dependency removal, or code cleanup without measured evidence | Every performance change must address a verified bottleneck. |
+| Production deployment or implementation before separate explicit user authorization | This task prepares the plan only; deployment was not requested. |
 | Claims that a performance target has been met without a new comparable Lighthouse run | Score changes and target achievement must be backed by fresh measurements. |
 
 ## Definition of Done
 
 - The critical LCP element and material bottlenecks are documented from current evidence.
 - Only evidence-backed, in-scope changes are implemented.
+- The website uses the selected Cashfree Elements UI while keeping order creation and payment confirmation server-authoritative; Razorpay and native Android remain unchanged.
 - Build and relevant tests pass; viewport and protected-flow checks are recorded, including any environment-blocked checks.
 - A comparable Lighthouse run is recorded with actual results and no unsupported performance claims.
 - No payment logic or database schema changes are made.
@@ -59,6 +74,13 @@
 | PATH-01 | Phase 2 | Pending |
 | ANIM-01 | Phase 2 | Pending |
 | JS-01 | Phase 2 | Pending |
+| CFUI-01 | Phase 2 | Pending |
+| CFUI-02 | Phase 2 | Pending |
+| CFUI-03 | Phase 2 | Pending |
+| CFSEC-01 | Phase 2 | Pending |
+| CFSEC-02 | Phase 2 | Pending |
+| CFCOMP-01 | Phase 2 | Pending |
+| CFPLAT-01 | Phase 2 | Pending |
 | REG-01 | Phase 3 | Pending |
 | TEST-01 | Phase 3 | Pending |
 | VIEW-01 | Phase 3 | Pending |
@@ -66,10 +88,10 @@
 | LH-02 | Phase 3 | Pending |
 
 **Coverage:**
-- v1 requirements: 12 total
-- Mapped to phases: 12
+- v1 requirements: 19 total
+- Mapped to phases: 19
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-11-16*
-*Last updated: 2026-11-16 after roadmap creation*
+*Last updated: 2026-11-18 after Phase 2 scope clarification*

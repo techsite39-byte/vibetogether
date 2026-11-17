@@ -1,8 +1,8 @@
 ---
 phase: "01"
 slug: "mobile-baseline-evidence-audit"
-status: draft
-nyquist_compliant: false
+status: complete
+nyquist_compliant: true
 wave_0_complete: true
 created: "2026-11-16"
 ---
@@ -32,8 +32,8 @@ created: "2026-11-16"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 01-01 | 01 | 1 | LCP-01 | T-01-01 | Homepage-only, read-only capture; raw evidence stays local | build + browser evidence review | `npm.cmd run build` | Yes | pending |
-| 01-02 | 01 | 1 | LCP-01 | T-01-01 | No transactional endpoints or production writes | Lighthouse / trace review | Existing Lighthouse 13.6 CLI on the built local preview; sequential captures | Yes, locally installed | pending |
+| 01-01 | 01 | 1 | LCP-01 | T-01-01 | Homepage-only, read-only capture; raw evidence stays local | build + browser evidence review | `npm.cmd run build` | Yes | passed |
+| 01-02 | 01 | 1 | LCP-01 | T-01-01 | No transactional endpoints or production writes | Lighthouse / trace review | Existing Lighthouse 13.6 CLI on the built local preview; sequential captures | Yes, locally installed | passed |
 
 ## Wave 0 Requirements
 
@@ -52,11 +52,11 @@ created: "2026-11-16"
 
 ## Validation Sign-Off
 
-- [ ] Every plan task has an automated verify command or an explicit manual-evidence procedure.
-- [ ] Sampling continuity: three valid local mobile runs are captured sequentially; retain valid outliers and retry only invalid attempts.
+- [x] Every plan task has an automated verify command or an explicit manual-evidence procedure.
+- [x] Sampling continuity: three valid local mobile runs are captured sequentially; retain valid outliers and retry only invalid attempts.
 - [x] Wave 0 covers missing test infrastructure; no new test framework is needed.
 - [x] No watch-mode flags are used for validation commands.
-- [ ] Evidence includes run configuration, build/commit provenance, LCP details, and the live/local distinction.
-- [ ] `nyquist_compliant: true` set after validation evidence is complete.
+- [x] Evidence includes run configuration, build/commit provenance, LCP details, and the live/local distinction.
+- [x] `nyquist_compliant: true` set after validation evidence is complete.
 
-**Approval:** pending
+**Approval:** complete

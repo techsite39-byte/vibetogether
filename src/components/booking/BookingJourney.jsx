@@ -13,7 +13,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { categories } from '../../data/categories.js'
 import { submitBookingEnquiry } from '../../services/bookingEnquiry.js'
-import { formatOfferExpiry, getDiwaliOffer, getOfferRemainingMs } from '../../services/diwaliOffer.js'
+import { getDiwaliOffer } from '../../services/diwaliOffer.js'
 import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import './BookingJourney.css'
 
@@ -129,8 +129,6 @@ export default function BookingJourney({ onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [diwaliOffer, setDiwaliOffer] = useState(null)
-  const [offerClock, setOfferClock] = useState(Date.now())
-  const [offerClockOffset, setOfferClockOffset] = useState(0)
   const [offerError, setOfferError] = useState('')
   const journeyRef = useRef(null)
   const requestId = useRef(restoredDraft?.requestId ?? crypto.randomUUID())
@@ -189,22 +187,19 @@ export default function BookingJourney({ onClose }) {
     const controller = new AbortController()
     getDiwaliOffer(controller.signal)
       .then((offer) => {
-        const serverTime = new Date(offer.serverTime).getTime()
-        if (!Number.isFinite(serverTime)) {
+        if (
+          !Number.isSafeInteger(offer.paymentAmount) ||
+          offer.paymentAmount <= 0 ||
+          offer.paymentAmountPaise !== offer.paymentAmount * 100
+        ) {
           throw new Error('Current ticket pricing could not be verified.')
         }
         setDiwaliOffer(offer)
-        setOfferClockOffset(serverTime - Date.now())
       })
       .catch((error) => {
         if (error.name !== 'AbortError') setOfferError(error.message)
       })
     return () => controller.abort()
-  }, [])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setOfferClock(Date.now()), 1000)
-    return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -448,34 +443,9 @@ export default function BookingJourney({ onClose }) {
   const selectedCategory = bookingCategories.find(
     ({ id }) => id === form.categoryId,
   )
-  const serverClock = offerClock + offerClockOffset
-  const regularPrice = diwaliOffer?.regularPrice
-  const offerPrice = diwaliOffer?.offerPrice
-  const pricingAvailable =
-    Number.isSafeInteger(regularPrice) &&
-    regularPrice > 0 &&
-    Number.isSafeInteger(offerPrice) &&
-    offerPrice > 0
-  const activationAt = new Date(diwaliOffer?.activationAt).getTime()
-  const expiresAt = new Date(diwaliOffer?.expiresAt).getTime()
-  const offerActive =
-    pricingAvailable &&
-    Boolean(diwaliOffer?.enabled) &&
-    serverClock >= activationAt &&
-    serverClock < expiresAt
-  const offerRemaining = getOfferRemainingMs(diwaliOffer?.expiresAt, serverClock)
-  const countdown = [
-    Math.floor(offerRemaining / 86_400_000),
-    Math.floor((offerRemaining % 86_400_000) / 3_600_000),
-    Math.floor((offerRemaining % 3_600_000) / 60_000),
-    Math.floor((offerRemaining % 60_000) / 1000),
-  ].map((value) => String(value).padStart(2, '0')).join(':')
   const ticketQuantity = form.ticketQuantity
-  const subtotal = pricingAvailable ? regularPrice * ticketQuantity : 0
-  const discount = offerActive
-    ? (regularPrice - offerPrice) * ticketQuantity
-    : 0
-  const finalAmount = subtotal - discount
+  const finalAmount = diwaliOffer?.paymentAmount ?? 0
+  const pricingAvailable = Number.isSafeInteger(finalAmount) && finalAmount > 0
   const ticketPriceSummary = (
     <section className="booking-journey__ticket-summary" aria-live="polite">
       <div className="booking-journey__ticket-summary-heading">
@@ -486,20 +456,11 @@ export default function BookingJourney({ onClose }) {
         <>
           <dl>
             <div><dt>Number of tickets</dt><dd>{ticketQuantity}</dd></div>
-            <div>
-              <dt>Regular price per ticket</dt>
-              <dd>
-                {offerActive && <s>₹{regularPrice}</s>}
-                <strong>₹{offerActive ? offerPrice : regularPrice}</strong>
-              </dd>
-            </div>
-            <div><dt>Subtotal</dt><dd>₹{subtotal}</dd></div>
-            <div><dt>Diwali discount</dt><dd>−₹{discount}</dd></div>
+            <div><dt>Booking amount</dt><dd>₹{finalAmount}</dd></div>
             <div className="booking-journey__ticket-summary-total">
               <dt>Final payable amount</dt><dd>₹{finalAmount}</dd>
             </div>
           </dl>
-          {offerActive && <p>Save ₹{discount} with the Diwali offer</p>}
         </>
       ) : (
         <p className="booking-journey__offer-error" role="status">
@@ -556,24 +517,6 @@ export default function BookingJourney({ onClose }) {
       </header>
 
       <div className="booking-journey__body">
-          {step >= 2 && offerActive && (
-            <aside className="booking-journey__diwali-offer" aria-label="Diwali special offer">
-              <div className="booking-journey__diwali-copy">
-                <span>🪔 DIWALI SPECIAL OFFER</span>
-                <strong>Celebrate with Vibe Together!</strong>
-                <small>Limited-time offer – 3 days only!</small>
-              </div>
-              <div className="booking-journey__diwali-price">
-                <s>₹{diwaliOffer.regularPrice}</s>
-                <strong>₹{diwaliOffer.offerPrice}</strong>
-                <small>Save ₹{diwaliOffer.savings}</small>
-              </div>
-              <p>
-                Offer ends in <strong>{countdown}</strong>
-                <span> · IST · {formatOfferExpiry(diwaliOffer.expiresAt)}</span>
-              </p>
-            </aside>
-          )}
           <nav aria-label="Booking progress" className="booking-journey__progress">
             {steps.map((label, index) => (
               <div
@@ -849,9 +792,7 @@ export default function BookingJourney({ onClose }) {
             {step === 3 && (
               <p className="booking-journey__price-summary">
                 Booking amount for {ticketQuantity} {ticketQuantity === 1 ? 'ticket' : 'tickets'}:
-                {offerActive && <s>₹{subtotal}</s>}
                 <strong>₹{finalAmount}</strong>
-                {offerActive && <span>Save ₹{discount} with the Diwali offer</span>}
               </p>
             )}
             {step === 3 && (
