@@ -156,7 +156,11 @@ describe('Cashfree Payments Integration', () => {
 
   describe('Production Cashfree order creation & HTTPS return_url', () => {
     it('creates Production Cashfree order with HTTPS return_url and rejects localhost', async () => {
-      const enquiry = createMockEnquiry({ requestId: 'req_prod_booking_789' })
+      const enquiry = createMockEnquiry({
+        requestId: 'req_prod_booking_789',
+        categoryId: 'fun-games',
+        ticketQuantity: 3,
+      })
       let capturedUrl = ''
       let capturedHeaders = {}
       let capturedBody = null
@@ -171,7 +175,7 @@ describe('Cashfree Payments Integration', () => {
             cf_order_id: 'cf_order_prod_999888',
             order_id: capturedBody.order_id,
             payment_session_id: 'session_token_prod_xyz123',
-            order_amount: 199,
+            order_amount: 597,
             order_currency: 'INR',
             order_status: 'ACTIVE',
           }),
@@ -210,9 +214,9 @@ describe('Cashfree Payments Integration', () => {
 
       assert.equal(result.cf_order_id, 'cf_order_prod_999888')
       assert.equal(result.payment_session_id, 'session_token_prod_xyz123')
-      assert.equal(result.amount, 199)
+      assert.equal(result.amount, 597)
       assert.equal(result.environment, 'production')
-      assert.equal(capturedBody.order_amount, 199)
+      assert.equal(capturedBody.order_amount, 597)
 
       // Production endpoint must be called
       assert.equal(capturedUrl, 'https://api.cashfree.com/pg/orders')
@@ -232,12 +236,12 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(enquiry.paymentProvider, 'cashfree')
       assert.equal(enquiry.cfPaymentSessionId, 'session_token_prod_xyz123')
       assert.equal(enquiry.paymentOrderId.startsWith('VT_'), true)
-      assert.equal(enquiry.paymentAmount, 199)
-      assert.equal(enquiry.paymentOrderAmountPaise, 19_900)
+      assert.equal(enquiry.paymentAmount, 597)
+      assert.equal(enquiry.paymentOrderAmountPaise, 59_700)
 
       const retry = await service.createOrder(enquiry.requestId)
       assert.equal(retry.order_id, result.order_id)
-      assert.equal(retry.amount, 199)
+      assert.equal(retry.amount, 597)
       assert.equal(enquiry.paymentOrders.length, 1)
     })
 
@@ -247,6 +251,8 @@ describe('Cashfree Payments Integration', () => {
         paymentOrderId: 'VT_legacy_order',
         paymentOrderAmountPaise: 24_900,
         paymentAmount: 249,
+        categoryId: 'fun-games',
+        ticketQuantity: 3,
         cfOrderId: 'cf_legacy_order',
         cfPaymentSessionId: 'legacy-session',
         paymentOrders: [{
@@ -295,14 +301,22 @@ describe('Cashfree Payments Integration', () => {
         paymentOrderId: 'VT_order_test_123',
         cfOrderId: 'cf_order_123',
         paymentProvider: 'cashfree',
-        paymentAmount: 199,
-        paymentAmountPaise: 19_900,
-        paymentOrderAmountPaise: 19_900,
+        categoryId: 'fun-games',
+        ticketQuantity: 3,
+        pricePerTicket: 199,
+        subtotal: 597,
+        finalAmount: 597,
+        paymentAmount: 597,
+        paymentAmountPaise: 59_700,
+        paymentOrderAmountPaise: 59_700,
         paymentOrders: [{
           orderId: 'VT_order_test_123',
-          amount: 199,
-          amountPaise: 19_900,
-          finalAmount: 199,
+          amount: 597,
+          amountPaise: 59_700,
+          finalAmount: 597,
+          ticketQuantity: 3,
+          pricePerTicket: 199,
+          subtotal: 597,
           status: 'created',
         }],
       })
@@ -317,7 +331,7 @@ describe('Cashfree Payments Integration', () => {
               {
                 cf_payment_id: 11223344,
                 payment_status: 'SUCCESS',
-                payment_amount: 199,
+                payment_amount: 597,
                 payment_currency: 'INR',
                 payment_method: { upi: { channel: 'gpay', upi_id: 'john@okaxis' } },
                 payment_completion_time: new Date().toISOString(),
@@ -362,7 +376,10 @@ describe('Cashfree Payments Integration', () => {
 
       assert.equal(result.verified, true)
       assert.equal(result.booking.paymentStatus, 'paid')
-      assert.equal(result.booking.paymentAmount, 199)
+      assert.equal(result.booking.paymentAmount, 597)
+      assert.equal(result.booking.ticketQuantity, 3)
+      assert.equal(result.booking.pricePerTicket, 199)
+      assert.equal(result.booking.subtotal, 597)
       assert.equal(result.booking.status, 'confirmed')
       assert.equal(result.booking.reference, 'VT-REF-2026-001')
       assert.equal(result.booking.cfPaymentId, '11223344')
@@ -523,9 +540,14 @@ describe('Cashfree Payments Integration', () => {
         paymentOrderId: 'VT_order_test_456',
         cfOrderId: 'cf_order_456',
         paymentProvider: 'cashfree',
-        paymentAmount: 199,
-        paymentAmountPaise: 19_900,
-        paymentOrderAmountPaise: 19_900,
+        categoryId: 'fun-games',
+        ticketQuantity: 3,
+        pricePerTicket: 199,
+        subtotal: 597,
+        finalAmount: 597,
+        paymentAmount: 597,
+        paymentAmountPaise: 59_700,
+        paymentOrderAmountPaise: 59_700,
       })
 
       const mockModel = {
@@ -558,13 +580,13 @@ describe('Cashfree Payments Integration', () => {
         data: {
           order: {
             order_id: 'VT_order_test_456',
-            order_amount: 199,
+            order_amount: 597,
             order_currency: 'INR',
           },
           payment: {
             cf_payment_id: 55667788,
             payment_status: 'SUCCESS',
-            payment_amount: 199,
+            payment_amount: 597,
             payment_currency: 'INR',
             payment_method: { upi: { channel: 'phonepe' } },
           },
@@ -587,6 +609,7 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(webhookResult.received, true)
       assert.equal(webhookResult.action, 'confirmed')
       assert.equal(webhookResult.booking.paymentStatus, 'paid')
+      assert.equal(webhookResult.booking.paymentAmount, 597)
       assert.equal(webhookResult.booking.reference, 'VT-REF-HOOK-001')
       assert.equal(webhookResult.booking.cfPaymentId, '55667788')
       assert.equal(webhookResult.booking.paymentOrderId, 'VT_order_test_456')

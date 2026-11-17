@@ -41,6 +41,8 @@ test('creates a persisted Diwali window of exactly 72 hours and does not reset i
   const publicOffer = await service.getPublicOffer()
   assert.equal(publicOffer.paymentAmount, 199)
   assert.equal(publicOffer.paymentAmountPaise, 19_900)
+  assert.equal(publicOffer.pricePerTicket, 199)
+  assert.equal(publicOffer.pricePerTicketPaise, 19_900)
   assert.equal(publicOffer.active, false)
 
   currentTime = new Date(currentTime.getTime() + DIWALI_OFFER_DURATION_MS)
@@ -73,25 +75,28 @@ test('admin offer updates preserve the configured prices and exact 72-hour windo
     now: () => new Date('2026-11-10T10:00:00.000Z'),
   })
 
-  test('keeps the fixed booking total independent of ticket quantity and offer settings', () => {
-    const activeOffer = calculateTicketPricing({
-      regularPrice: 299,
-      offerPrice: 249,
-      diwaliOfferApplied: true,
-    }, 3, 'general-admission')
+  test('calculates guided booking totals per ticket and leaves event pricing unchanged', () => {
+    for (const [quantity, total] of [[1, 199], [2, 398], [3, 597], [4, 796], [5, 995]]) {
+      const pricing = calculateTicketPricing({
+        regularPrice: 299,
+        offerPrice: 249,
+        diwaliOfferApplied: true,
+      }, quantity, 'general-admission')
 
-    assert.equal(activeOffer.pricePerTicket, 199)
-    assert.equal(activeOffer.subtotal, 199)
-    assert.equal(activeOffer.discount, 0)
-    assert.equal(activeOffer.finalAmount, 199)
-    assert.equal(activeOffer.paymentAmountPaise, 19_900)
-    assert.equal(activeOffer.ticketQuantity, 3)
+      assert.equal(pricing.pricePerTicket, 199)
+      assert.equal(pricing.subtotal, total)
+      assert.equal(pricing.discount, 0)
+      assert.equal(pricing.finalAmount, total)
+      assert.equal(pricing.paymentAmount, total)
+      assert.equal(pricing.paymentAmountPaise, total * 100)
+      assert.equal(pricing.ticketQuantity, quantity)
+    }
 
     const regularPrice = calculateTicketPricing({
       regularPrice: 299,
       offerPrice: 249,
       diwaliOfferApplied: false,
-    }, 3, 'general-admission')
+    }, 3, 'general-admission', { perTicket: false })
     assert.equal(regularPrice.discount, 0)
     assert.equal(regularPrice.finalAmount, 199)
   })

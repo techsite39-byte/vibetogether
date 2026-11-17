@@ -73,14 +73,15 @@ function createBookingModel(requestId, overrides = {}) {
   }
 }
 
-test('creates a ₹199 Razorpay order independent of ticket quantity and offer settings', async () => {
+test('creates a Razorpay order at ₹199 per ticket and verifies the calculated total', async () => {
   const requestId = 'razorpay-multiple-ticket-session'
   const model = createBookingModel(requestId, {
+    categoryId: 'fun-games',
     ticketType: 'general-admission',
     ticketTypeName: 'General Admission',
     ticketQuantity: 3,
   })
-  const client = createClient({ paymentAmount: 19_900 })
+  const client = createClient({ paymentAmount: 59_700 })
   const service = createRazorpayPaymentService({
     client,
     keyId: 'rzp_test_public',
@@ -102,14 +103,14 @@ test('creates a ₹199 Razorpay order independent of ticket quantity and offer s
 
   const order = await service.createOrder(requestId)
 
-  assert.equal(order.amount, 19_900)
+  assert.equal(order.amount, 59_700)
   assert.equal(order.pricing.ticketQuantity, 3)
   assert.equal(order.pricing.pricePerTicket, 199)
-  assert.equal(order.pricing.subtotal, 199)
+  assert.equal(order.pricing.subtotal, 597)
   assert.equal(order.pricing.discount, 0)
-  assert.equal(order.pricing.finalAmount, 199)
-  assert.equal(model.record.paymentAmount, 199)
-  assert.equal(model.record.paymentOrders[0].amountPaise, 19_900)
+  assert.equal(order.pricing.finalAmount, 597)
+  assert.equal(model.record.paymentAmount, 597)
+  assert.equal(model.record.paymentOrders[0].amountPaise, 59_700)
 
   const result = await service.verifyPayment(requestId, {
     razorpay_order_id: order.order_id,
@@ -120,9 +121,9 @@ test('creates a ₹199 Razorpay order independent of ticket quantity and offer s
   assert.equal(result.booking.paymentStatus, 'paid')
   assert.equal(result.booking.ticketQuantity, 3)
   assert.equal(result.booking.pricePerTicket, 199)
-  assert.equal(result.booking.subtotal, 199)
+  assert.equal(result.booking.subtotal, 597)
   assert.equal(result.booking.discount, 0)
-  assert.equal(result.booking.finalAmount, 199)
+  assert.equal(result.booking.finalAmount, 597)
 })
 
 function signature(orderId, paymentId, secret) {
@@ -206,10 +207,12 @@ test('creates a fixed INR order once and reuses it for retries', async () => {
 test('reuses a pending legacy Razorpay order at its recorded amount', async () => {
   const requestId = 'razorpay-legacy-pending'
   const model = createBookingModel(requestId, {
+    categoryId: 'fun-games',
     paymentStatus: 'unpaid',
     paymentOrderId: 'order_legacy_249',
     paymentOrderAmountPaise: 24_900,
     paymentAmount: 249,
+    ticketQuantity: 3,
     paymentOrders: [{
       orderId: 'order_legacy_249',
       amount: 249,
@@ -236,10 +239,13 @@ test('reuses a pending legacy Razorpay order at its recorded amount', async () =
   assert.equal(client.createdOrders.length, 0)
 })
 
-test('rejects a captured Razorpay payment that does not match the fixed ₹199 amount', async () => {
+test('rejects a captured Razorpay payment that does not match the calculated ticket total', async () => {
   const requestId = 'razorpay-fixed-amount-mismatch'
-  const model = createBookingModel(requestId)
-  const client = createClient({ paymentAmount: 19_800 })
+  const model = createBookingModel(requestId, {
+    categoryId: 'fun-games',
+    ticketQuantity: 3,
+  })
+  const client = createClient({ paymentAmount: 59_600 })
   const service = createRazorpayPaymentService({
     client,
     keyId: 'rzp_test_public',
@@ -256,12 +262,27 @@ test('rejects a captured Razorpay payment that does not match the fixed ₹199 a
     }),
     { status: 400 },
   )
-  assert.equal(order.amount, 19_900)
+  assert.equal(order.amount, 59_700)
+  client.payments.fetch = async (paymentId) => ({
+    id: paymentId,
+    order_id: order.order_id,
+    amount: 59_700,
+    currency: 'USD',
+    status: 'captured',
+  })
+  await assert.rejects(
+    service.verifyPayment(requestId, {
+      razorpay_order_id: order.order_id,
+      razorpay_payment_id: 'pay_wrong_currency',
+      razorpay_signature: signature(order.order_id, 'pay_wrong_currency', 'test-secret'),
+    }),
+    { status: 400 },
+  )
   assert.equal(model.record.paymentStatus, 'unpaid')
   assert.equal(model.record.reference, undefined)
 })
 
-test('keeps new Razorpay retries at ₹199 after failed payment', async () => {
+test('keeps new Razorpay retries at ₹199 per ticket after failed payment', async () => {
   const requestId = 'razorpay-offer-session'
   const model = createBookingModel(requestId)
   const client = createClient()
@@ -347,7 +368,10 @@ test('valid HMAC and captured Razorpay status finalize one booking reference', a
 
 test('a signed captured-payment webhook finalizes once and accepts duplicate callbacks', async () => {
   const requestId = 'razorpay-webhook-session'
-  const model = createBookingModel(requestId)
+  const model = createBookingModel(requestId, {
+    categoryId: 'fun-games',
+    ticketQuantity: 3,
+  })
   const client = createClient()
   let references = 0
   const service = createRazorpayPaymentService({
@@ -364,7 +388,7 @@ test('a signed captured-payment webhook finalizes once and accepts duplicate cal
   const payment = {
     id: 'pay_webhook',
     order_id: 'order_test_1',
-    amount: 19900,
+    amount: 59_700,
     currency: 'INR',
     status: 'captured',
   }
@@ -373,6 +397,8 @@ test('a signed captured-payment webhook finalizes once and accepts duplicate cal
   const duplicate = await service.handleWebhook('payment.captured', payment)
 
   assert.equal(first.booking.reference, '10812026503')
+  assert.equal(first.booking.paymentAmount, 597)
+  assert.equal(first.booking.finalAmount, 597)
   assert.equal(duplicate.duplicate, true)
   assert.equal(references, 1)
 
@@ -383,9 +409,12 @@ test('a signed captured-payment webhook finalizes once and accepts duplicate cal
   assert.equal(isValidRazorpayWebhookSignature(rawBody, webhookSignature, 'incorrect-secret'), false)
 })
 
-test('rejects Razorpay webhooks whose captured amount differs from ₹199', async () => {
+test('rejects Razorpay webhooks whose captured amount differs from the calculated ticket total', async () => {
   const requestId = 'razorpay-webhook-amount-mismatch'
-  const model = createBookingModel(requestId)
+  const model = createBookingModel(requestId, {
+    categoryId: 'fun-games',
+    ticketQuantity: 3,
+  })
   const client = createClient()
   const service = createRazorpayPaymentService({
     client,
@@ -399,8 +428,18 @@ test('rejects Razorpay webhooks whose captured amount differs from ₹199', asyn
     service.handleWebhook('payment.captured', {
       id: 'pay_wrong_webhook_amount',
       order_id: order.order_id,
-      amount: 19_800,
+      amount: 59_600,
       currency: 'INR',
+      status: 'captured',
+    }),
+    { status: 400 },
+  )
+  await assert.rejects(
+    service.handleWebhook('payment.captured', {
+      id: 'pay_wrong_webhook_currency',
+      order_id: order.order_id,
+      amount: 59_700,
+      currency: 'USD',
       status: 'captured',
     }),
     { status: 400 },

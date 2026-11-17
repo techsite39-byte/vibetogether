@@ -10,7 +10,12 @@ export const BOOKING_TICKET_TYPES = Object.freeze([
   Object.freeze({ id: DEFAULT_TICKET_TYPE, name: 'General Admission' }),
 ])
 
-export function calculateTicketPricing(pricing, ticketQuantity = 1, ticketType = DEFAULT_TICKET_TYPE) {
+export function calculateTicketPricing(
+  pricing,
+  ticketQuantity = 1,
+  ticketType = DEFAULT_TICKET_TYPE,
+  { perTicket = true } = {},
+) {
   const selectedType = BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)
   if (
     !selectedType ||
@@ -21,7 +26,8 @@ export function calculateTicketPricing(pricing, ticketQuantity = 1, ticketType =
     throw offerError('Choose a valid ticket type and a quantity from 1 to 10.')
   }
 
-  const finalAmount = FIXED_BOOKING_AMOUNT
+  const subtotal = FIXED_BOOKING_AMOUNT * (perTicket ? ticketQuantity : 1)
+  const finalAmount = subtotal
 
   return {
     ...pricing,
@@ -34,7 +40,7 @@ export function calculateTicketPricing(pricing, ticketQuantity = 1, ticketType =
     ticketTypeName: selectedType.name,
     ticketQuantity,
     pricePerTicket: FIXED_BOOKING_AMOUNT,
-    subtotal: finalAmount,
+    subtotal,
     discount: 0,
     finalAmount,
     paymentAmount: finalAmount,
@@ -123,6 +129,8 @@ export function createDiwaliOfferService({
       serverTime: serverTime.toISOString(),
       paymentAmount: FIXED_BOOKING_AMOUNT,
       paymentAmountPaise: FIXED_BOOKING_AMOUNT * 100,
+      pricePerTicket: FIXED_BOOKING_AMOUNT,
+      pricePerTicketPaise: FIXED_BOOKING_AMOUNT * 100,
     }
   }
 
@@ -130,6 +138,8 @@ export function createDiwaliOfferService({
     return {
       paymentAmount: FIXED_BOOKING_AMOUNT,
       paymentAmountPaise: FIXED_BOOKING_AMOUNT * 100,
+      pricePerTicket: FIXED_BOOKING_AMOUNT,
+      pricePerTicketPaise: FIXED_BOOKING_AMOUNT * 100,
       regularPrice: FIXED_BOOKING_AMOUNT,
       offerPrice: FIXED_BOOKING_AMOUNT,
       diwaliOfferApplied: false,

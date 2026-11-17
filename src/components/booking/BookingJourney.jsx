@@ -187,14 +187,16 @@ export default function BookingJourney({ onClose }) {
     const controller = new AbortController()
     getDiwaliOffer(controller.signal)
       .then((offer) => {
+        const pricePerTicket = offer.pricePerTicket ?? offer.paymentAmount
+        const pricePerTicketPaise = offer.pricePerTicketPaise ?? offer.paymentAmountPaise
         if (
-          !Number.isSafeInteger(offer.paymentAmount) ||
-          offer.paymentAmount <= 0 ||
-          offer.paymentAmountPaise !== offer.paymentAmount * 100
+          !Number.isSafeInteger(pricePerTicket) ||
+          pricePerTicket <= 0 ||
+          pricePerTicketPaise !== pricePerTicket * 100
         ) {
           throw new Error('Current ticket pricing could not be verified.')
         }
-        setDiwaliOffer(offer)
+        setDiwaliOffer({ ...offer, pricePerTicket, pricePerTicketPaise })
       })
       .catch((error) => {
         if (error.name !== 'AbortError') setOfferError(error.message)
@@ -444,7 +446,7 @@ export default function BookingJourney({ onClose }) {
     ({ id }) => id === form.categoryId,
   )
   const ticketQuantity = form.ticketQuantity
-  const finalAmount = diwaliOffer?.paymentAmount ?? 0
+  const finalAmount = (diwaliOffer?.pricePerTicket ?? 0) * ticketQuantity
   const pricingAvailable = Number.isSafeInteger(finalAmount) && finalAmount > 0
   const ticketPriceSummary = (
     <section className="booking-journey__ticket-summary" aria-live="polite">

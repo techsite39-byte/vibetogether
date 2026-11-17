@@ -238,6 +238,8 @@ test('reloads persisted booking and attendee details without requiring offer pri
   assert.equal(createResponse.status, 201)
   const created = await createResponse.json()
   assert.equal(created.booking.paymentAmount, 199)
+  assert.equal(created.booking.paymentAmountPaise, 19_900)
+  assert.equal(created.booking.ticketQuantity, 2)
 
   const refreshResponses = await Promise.all([
     fetch(`${baseUrl}/api/booking-enquiries/${request.requestId}`),
@@ -397,12 +399,12 @@ test('calculates ticket pricing on the server and ignores client-supplied amount
   assert.equal(payload.booking.ticketTypeName, 'General Admission')
   assert.equal(payload.booking.ticketQuantity, 3)
   assert.equal(payload.booking.pricePerTicket, 199)
-  assert.equal(payload.booking.subtotal, 199)
+  assert.equal(payload.booking.subtotal, 597)
   assert.equal(payload.booking.discount, 0)
-  assert.equal(payload.booking.finalAmount, 199)
-  assert.equal(payload.booking.paymentAmount, 199)
-  assert.equal(payload.booking.paymentAmountPaise, 19_900)
-  assert.equal(saved.get(request.requestId).paymentAmount, 199)
+  assert.equal(payload.booking.finalAmount, 597)
+  assert.equal(payload.booking.paymentAmount, 597)
+  assert.equal(payload.booking.paymentAmountPaise, 59_700)
+  assert.equal(saved.get(request.requestId).paymentAmount, 597)
 })
 
 test('rejects invalid ticket quantities and unavailable ticket types', async () => {
@@ -470,7 +472,7 @@ test('keeps temporary booking data separate from WhatsApp send status', async ()
   assert.equal(saved.size, 2)
 })
 
-test('failed payment retry uses the fixed server amount regardless of offer settings', async () => {
+test('failed payment retry uses the fixed per-ticket server amount regardless of offer settings', async () => {
   let offerActive = true
   const diwaliOfferService = {
     async getPricing() {
