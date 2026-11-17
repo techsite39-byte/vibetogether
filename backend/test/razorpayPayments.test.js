@@ -387,6 +387,19 @@ test('payment.failed webhook leaves the order retryable for a later captured att
   assert.equal(model.record.paymentStatus, 'unpaid')
   assert.equal(model.record.reference ?? '', '')
   assert.equal(references, 0)
+
+  const captured = await service.handleWebhook('payment.captured', {
+    id: 'pay_captured_after_failure',
+    order_id: 'order_test_1',
+    amount: 29900,
+    currency: 'INR',
+    status: 'captured',
+  })
+
+  assert.equal(captured.booking.paymentStatus, 'paid')
+  assert.equal(captured.booking.reference, '10812026505')
+  assert.equal(model.record.paymentStatus, 'paid')
+  assert.equal(references, 1)
 })
 
 test('does not mark a payment failed while Razorpay reports an unresolved attempt', async () => {

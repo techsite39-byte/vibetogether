@@ -223,7 +223,6 @@ export function createCashfreePaymentService({
       order_meta: {
         return_url: resolvedReturnUrl,
         notify_url: notifyUrl || undefined,
-        payment_methods: 'upi,cc,dc,nb,app',
       },
       order_note: `Vibe Together - ${enquiry.event || 'Experience Reservation'}`,
     }
@@ -305,18 +304,32 @@ export function createCashfreePaymentService({
       throw serviceError(404, 'Booking enquiry not found.')
     }
 
-    // Idempotent check
+    const orderIdToVerify = order_id || enquiry.paymentOrderId
+    if (!orderIdToVerify) {
+      throw serviceError(400, 'No active Cashfree order found for this booking enquiry.')
+    }
+    const orderIdString = String(orderIdToVerify)
+    const matchesCurrentOrder = String(enquiry.paymentOrderId ?? '') === orderIdString
+    const orderEntry = enquiry.paymentOrders?.find(
+      (order) => String(order.orderId) === orderIdString,
+    )
+    if (!matchesCurrentOrder && !orderEntry) {
+      throw serviceError(400, 'Cashfree order does not match this booking enquiry.')
+    }
+
+    // An idempotent success is only valid for a payment already bound to this booking.
     if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+      if (
+        cf_payment_id &&
+        String(enquiry.cfPaymentId ?? '') !== String(cf_payment_id)
+      ) {
+        throw serviceError(400, 'Cashfree payment does not match this booking order.')
+      }
       return {
         verified: true,
         duplicate: true,
         booking: enquiry,
       }
-    }
-
-    const orderIdToVerify = order_id || enquiry.paymentOrderId
-    if (!orderIdToVerify) {
-      throw serviceError(400, 'No active Cashfree order found for this booking enquiry.')
     }
 
     // 1. Fetch payments for this order
@@ -353,17 +366,24 @@ export function createCashfreePaymentService({
     // Look for successful payment
     const successfulPayment = Array.isArray(payments)
       ? payments.find(
-          (p) =>
-            p.payment_status === 'SUCCESS' &&
-            (!cf_payment_id || String(p.cf_payment_id) === String(cf_payment_id)),
-        ) || payments.find((p) => p.payment_status === 'SUCCESS')
+          (payment) =>
+            payment.payment_status === 'SUCCESS' &&
+            (!cf_payment_id || String(payment.cf_payment_id) === String(cf_payment_id)),
+        )
       : null
+    const expectedAmount = Number(
+      orderEntry?.amount ?? (matchesCurrentOrder ? enquiry.paymentAmount : Number.NaN),
+    )
+    const paidAmount = Number(successfulPayment?.payment_amount)
+    const successfulPaymentMatches =
+      Boolean(successfulPayment?.cf_payment_id) &&
+      Number.isFinite(expectedAmount) &&
+      Number.isFinite(paidAmount) &&
+      Math.round(paidAmount * 100) === Math.round(expectedAmount * 100) &&
+      successfulPayment.payment_currency === 'INR'
 
-    const isPaid = Boolean(successfulPayment) || orderDetails?.order_status === 'PAID'
-
-    if (isPaid) {
-      const paymentRecord = successfulPayment || {}
-      const paidAmount = Number(paymentRecord.payment_amount ?? orderDetails?.order_amount ?? 0)
+    if (successfulPaymentMatches) {
+      const paymentRecord = successfulPayment
 
       // Confirm booking idempotently
       if (!enquiry.reference) {
@@ -384,7 +404,6 @@ export function createCashfreePaymentService({
       enquiry.paymentFailureReason = ''
 
       // Mark payment order paid
-      const orderEntry = enquiry.paymentOrders?.find((o) => o.orderId === orderIdToVerify)
       if (orderEntry) {
         orderEntry.status = 'paid'
         orderEntry.paymentId = enquiry.cfPaymentId
@@ -536,21 +555,26 @@ export function createCashfreePaymentService({
       eventType === 'PAYMENT_SUCCESS_WEBHOOK' && paymentStatus === 'SUCCESS'
 
     if (isSuccessfulPayment) {
-      if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
-        return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
-      }
-
       const receivedAmount = Number(paymentData?.payment_amount)
-      const expectedAmount = Number(orderEntry?.amount ?? enquiry.paymentAmount)
+      const expectedAmount = Number(
+        orderEntry?.amount ??
+          (String(enquiry.paymentOrderId ?? '') === orderIdString
+            ? enquiry.paymentAmount
+            : Number.NaN),
+      )
       const amountMatches =
         Number.isFinite(receivedAmount) &&
         Number.isFinite(expectedAmount) &&
         Math.round(receivedAmount * 100) === Math.round(expectedAmount * 100)
       const currencyMatches =
-        (!paymentData?.payment_currency || paymentData.payment_currency === 'INR') &&
-        (!orderData?.order_currency || orderData.order_currency === 'INR')
+        paymentData?.payment_currency === 'INR' &&
+        orderData?.order_currency === 'INR'
       if (!amountMatches || !currencyMatches || !paymentId) {
         return { received: true, ignored: true, reason: 'payment_confirmation_mismatch' }
+      }
+
+      if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+        return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
       }
 
       // Confirm booking idempotently

@@ -313,6 +313,145 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(allocatedCount, 1)
     })
 
+    it('rejects orders that are not recorded for the booking before returning duplicate success', async () => {
+      const enquiry = createMockEnquiry({
+        paymentStatus: 'paid',
+        status: 'confirmed',
+        reference: 'VT-REF-EXISTING',
+        paymentOrderId: 'VT_order_bound',
+        cfPaymentId: '11223344',
+      })
+      let fetchCount = 0
+      const service = createCashfreePaymentService({
+        appId: testAppId,
+        secretKey: testSecretKey,
+        bookingEnquiryModel: {
+          async findOne() {
+            return enquiry
+          },
+        },
+        fetchFn: async () => {
+          fetchCount += 1
+          return { ok: true, json: async () => [] }
+        },
+      })
+
+      await assert.rejects(
+        service.verifyPayment(enquiry.requestId, { order_id: 'VT_order_unrelated' }),
+        { status: 400 },
+      )
+      assert.equal(fetchCount, 0)
+    })
+
+    it('requires the exact requested Cashfree payment ID and matching amount and INR currency', async () => {
+      const cases = [
+        {
+          name: 'another successful payment ID',
+          requestedPaymentId: '11223344',
+          payments: [{
+            cf_payment_id: 99887766,
+            payment_status: 'SUCCESS',
+            payment_amount: 249,
+            payment_currency: 'INR',
+          }],
+        },
+        {
+          name: 'incorrect amount',
+          requestedPaymentId: '11223344',
+          payments: [{
+            cf_payment_id: 11223344,
+            payment_status: 'SUCCESS',
+            payment_amount: 1,
+            payment_currency: 'INR',
+          }],
+        },
+        {
+          name: 'non-INR payment currency',
+          requestedPaymentId: '11223344',
+          payments: [{
+            cf_payment_id: 11223344,
+            payment_status: 'SUCCESS',
+            payment_amount: 249,
+            payment_currency: 'USD',
+          }],
+        },
+        {
+          name: 'missing payment currency',
+          requestedPaymentId: '11223344',
+          payments: [{
+            cf_payment_id: 11223344,
+            payment_status: 'SUCCESS',
+            payment_amount: 249,
+          }],
+        },
+        {
+          name: 'amount differs from the recorded order amount',
+          requestedPaymentId: '11223344',
+          recordedOrderAmount: 250,
+          payments: [{
+            cf_payment_id: 11223344,
+            payment_status: 'SUCCESS',
+            payment_amount: 249,
+            payment_currency: 'INR',
+          }],
+        },
+        {
+          name: 'order marked paid without a successful payment',
+          requestedPaymentId: '',
+          payments: [],
+        },
+      ]
+
+      for (const testCase of cases) {
+        const enquiry = createMockEnquiry({
+          paymentOrderId: 'VT_order_verification_bound',
+          paymentAmount: 249,
+          paymentOrders: testCase.recordedOrderAmount === undefined
+            ? []
+            : [{
+                orderId: 'VT_order_verification_bound',
+                amount: testCase.recordedOrderAmount,
+              }],
+        })
+        let allocatedCount = 0
+        const service = createCashfreePaymentService({
+          appId: testAppId,
+          secretKey: testSecretKey,
+          environment: 'PRODUCTION',
+          bookingEnquiryModel: {
+            async findOne() {
+              return enquiry
+            },
+          },
+          allocateReference: async () => {
+            allocatedCount += 1
+            return 'VT-REF-INVALID'
+          },
+          fetchFn: async (url) => url.includes('/payments')
+            ? { ok: true, json: async () => testCase.payments }
+            : {
+                ok: true,
+                json: async () => ({
+                  order_id: enquiry.paymentOrderId,
+                  order_amount: 249,
+                  order_currency: 'INR',
+                  order_status: 'PAID',
+                }),
+              },
+        })
+
+        const result = await service.verifyPayment(enquiry.requestId, {
+          cf_payment_id: testCase.requestedPaymentId,
+          order_id: enquiry.paymentOrderId,
+        })
+
+        assert.equal(result.verified, false, testCase.name)
+        assert.equal(enquiry.paymentStatus, 'unpaid', testCase.name)
+        assert.equal(enquiry.reference, undefined, testCase.name)
+        assert.equal(allocatedCount, 0, testCase.name)
+      }
+    })
+
     it('handles Cashfree Webhook PAYMENT_SUCCESS_WEBHOOK with signature validation', async () => {
       const enquiry = createMockEnquiry({
         paymentOrderId: 'VT_order_test_456',
@@ -357,6 +496,7 @@ describe('Cashfree Payments Integration', () => {
             cf_payment_id: 55667788,
             payment_status: 'SUCCESS',
             payment_amount: 249,
+            payment_currency: 'INR',
             payment_method: { upi: { channel: 'phonepe' } },
           },
           customer_details: {
@@ -431,6 +571,82 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(result.reason, 'payment_confirmation_mismatch')
       assert.equal(enquiry.paymentStatus, 'unpaid')
       assert.equal(enquiry.reference, undefined)
+    })
+
+    it('rejects Cashfree success webhooks with missing or non-INR payment/order currency', async () => {
+      const invalidCurrencies = [
+        { label: 'missing payment currency', payment_currency: undefined, order_currency: 'INR' },
+        { label: 'non-INR payment currency', payment_currency: 'USD', order_currency: 'INR' },
+        { label: 'missing order currency', payment_currency: 'INR', order_currency: undefined },
+        { label: 'non-INR order currency', payment_currency: 'INR', order_currency: 'USD' },
+        {
+          label: 'invalid currency on an already-confirmed booking',
+          payment_currency: undefined,
+          order_currency: 'INR',
+          existingPaid: true,
+        },
+      ]
+
+      for (const [index, currencies] of invalidCurrencies.entries()) {
+        const enquiry = createMockEnquiry({
+          requestId: `req_currency_${index}`,
+          paymentOrderId: `VT_order_currency_${index}`,
+          paymentAmount: 249,
+          ...(currencies.existingPaid
+            ? { paymentStatus: 'paid', reference: 'VT-REF-ALREADY-PAID' }
+            : {}),
+        })
+        const service = createCashfreePaymentService({
+          appId: testAppId,
+          secretKey: testSecretKey,
+          bookingEnquiryModel: {
+            async findOne() {
+              return enquiry
+            },
+          },
+          allocateReference: async () => 'VT-REF-INVALID-CURRENCY',
+        })
+        const payload = {
+          data: {
+            order: {
+              order_id: enquiry.paymentOrderId,
+              order_amount: 249,
+              ...(currencies.order_currency === undefined
+                ? {}
+                : { order_currency: currencies.order_currency }),
+            },
+            payment: {
+              cf_payment_id: 334455 + index,
+              payment_status: 'SUCCESS',
+              payment_amount: 249,
+              ...(currencies.payment_currency === undefined
+                ? {}
+                : { payment_currency: currencies.payment_currency }),
+            },
+          },
+          type: 'PAYMENT_SUCCESS_WEBHOOK',
+        }
+        const rawBody = JSON.stringify(payload)
+        const timestamp = Math.floor(Date.now() / 1000).toString()
+        const signature = createHmac('sha256', testSecretKey)
+          .update(timestamp + rawBody)
+          .digest('base64')
+
+        const result = await service.handleWebhook(payload, signature, timestamp, rawBody)
+
+        assert.equal(result.ignored, true, currencies.label)
+        assert.equal(result.reason, 'payment_confirmation_mismatch', currencies.label)
+        assert.equal(
+          enquiry.paymentStatus,
+          currencies.existingPaid ? 'paid' : 'unpaid',
+          currencies.label,
+        )
+        assert.equal(
+          enquiry.reference,
+          currencies.existingPaid ? 'VT-REF-ALREADY-PAID' : undefined,
+          currencies.label,
+        )
+      }
     })
 
     it('records dropped and failed payment webhooks properly without marking paid', async () => {

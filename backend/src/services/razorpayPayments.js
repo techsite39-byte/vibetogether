@@ -758,15 +758,7 @@ export function createRazorpayPaymentService({
     if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
       return { duplicate: true, booking: enquiry, action: 'duplicate' }
     }
-    if (enquiry.paymentStatus === 'failed' && enquiry.paymentId === payment.id) {
-      return { duplicate: true, booking: enquiry, action: 'duplicate' }
-    }
-
-    enquiry.paymentStatus = 'failed'
-    enquiry.paymentId = payment.id
-    enquiry.paymentFailureReason = payment.error_description || payment.error_reason || 'payment_failed'
-    await enquiry.save()
-    return { booking: enquiry, action: 'failed' }
+    return { booking: enquiry, pending: true }
   }
 
   return { createOrder, verifyPayment, checkStatus, recordFailure, handleWebhook }
