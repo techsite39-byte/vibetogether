@@ -89,6 +89,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
   }
   const adminNotif = currentBooking.adminNotification
   const mobileDigits = String(currentBooking.mobile ?? '').replace(/\D/g, '')
+  const primaryBookingIdentifier = currentBooking.reference || currentBooking.requestId || currentBooking.id
   const isPaymentFinalized = ['demo_paid', 'paid', 'verified'].includes(currentBooking.paymentStatus)
   const whatsappPreview = getWhatsAppNotificationPreview(
     currentBooking,
@@ -119,11 +120,14 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
   }, [currentBooking])
 
   async function handleRetry(target = 'primary', attendeeIndex) {
-    if (retrying || !currentBooking.reference) return
+    const bookingIdentifier = target === 'primary'
+      ? primaryBookingIdentifier
+      : currentBooking.reference
+    if (retrying || !bookingIdentifier) return
     setRetrying(true)
     setRetryResult(null)
     try {
-      const response = await retryWhatsAppNotification(currentBooking.reference, { target, attendeeIndex })
+      const response = await retryWhatsAppNotification(bookingIdentifier, { target, attendeeIndex })
       const updated = response.booking ? { ...currentBooking, ...response.booking } : currentBooking
       if (response.notification) {
         updated.whatsappNotification = response.notification
@@ -324,9 +328,13 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
             <button
               type="button"
               className="admin-button admin-button--primary"
-              disabled={retrying || ['delivered', 'read'].includes(notification.status)}
+              disabled={retrying || !primaryBookingIdentifier || ['delivered', 'read'].includes(notification.status)}
               onClick={() => handleRetry('primary')}
-              title={['delivered', 'read'].includes(notification.status) ? 'Message is already delivered' : 'Retry sending primary WhatsApp notification'}
+              title={!primaryBookingIdentifier
+                ? 'Booking identifier is unavailable'
+                : ['delivered', 'read'].includes(notification.status)
+                  ? 'Message is already delivered'
+                  : 'Retry sending primary WhatsApp notification'}
             >
               <RefreshCw size={15} className={retrying ? 'admin-spin' : ''} aria-hidden="true" />
               {retrying
