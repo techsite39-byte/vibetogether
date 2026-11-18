@@ -529,7 +529,7 @@ function bookingFromEnquiry(enquiry) {
     offerActivationAt: enquiry.offerActivationAt ?? null,
     offerExpiresAt: enquiry.offerExpiresAt ?? null,
     currency: 'INR',
-    paymentStatus: enquiry.paymentStatus ?? 'unpaid',
+    paymentStatus: enquiry.paymentStatus,
     paymentProvider: enquiry.paymentProvider ?? '',
     paymentReference: enquiry.paymentReference ?? '',
     paymentOrderId: enquiry.paymentOrderId ?? '',
@@ -552,6 +552,146 @@ function bookingFromEnquiry(enquiry) {
       history: [],
     },
   }
+}
+
+const PAYMENT_EVIDENCE_KEY_PATTERN =
+  '(payment|paid|cashfree|razorpay|upi|gateway|provider|transaction|refund|settlement|verification|verified|attempt|order|utr|receipt|payout|financial|audit)'
+
+const bookingPaymentKeys = ['paymentStatus']
+const enquiryPaymentKeys = [
+  'paymentStatus',
+  'paymentAmount',
+  'paymentAmountPaise',
+  'paymentOrderAmountPaise',
+  'paymentOrders',
+  'upiPayments',
+  'paymentProvider',
+  'cfOrderId',
+  'cfPaymentId',
+  'cfPaymentSessionId',
+  'cfPaymentStatus',
+  'cfPaymentMethod',
+  'paymentReference',
+  'paymentOrderId',
+  'razorpayPaymentId',
+  'paymentOrderCreatedAt',
+  'paymentOrderAttemptNumber',
+  'paidAt',
+  'paymentVerifiedAt',
+  'paymentFailureReason',
+  'paymentAttemptId',
+  'paymentAttemptPricing',
+  'paymentAttemptedAt',
+]
+
+function hasPaymentEvidence(record, source) {
+  const expectedStatus = source === 'booking' ? 'not_required' : 'unpaid'
+  if (!record || record.paymentStatus !== expectedStatus) {
+    return true
+  }
+
+  const allowedKeys = new Set(source === 'booking' ? bookingPaymentKeys : enquiryPaymentKeys)
+  return Object.entries(record).some(([key, value]) => {
+    if (!new RegExp(PAYMENT_EVIDENCE_KEY_PATTERN, 'i').test(key)) {
+      return false
+    }
+    if (!allowedKeys.has(key)) {
+      return true
+    }
+    if (key === 'paymentStatus' || key === 'paymentAmount' || key === 'paymentAmountPaise') {
+      return false
+    }
+    if (key === 'paymentOrders' || key === 'upiPayments') {
+      return value != null && (!Array.isArray(value) || value.length > 0)
+    }
+    if (key === 'paymentOrderAmountPaise' || key === 'paymentOrderAttemptNumber') {
+      return value != null && value !== 0
+    }
+    return value != null && value !== ''
+  })
+}
+
+function emptyPaymentEvidenceFilter(source) {
+  const fields = source === 'booking'
+    ? []
+    : [
+      ['paymentOrders', [null, []]],
+      ['upiPayments', [null, []]],
+      ['paymentProvider', [null, '']],
+      ['cfOrderId', [null, '']],
+      ['cfPaymentId', [null, '']],
+      ['cfPaymentSessionId', [null, '']],
+      ['cfPaymentStatus', [null, '']],
+      ['cfPaymentMethod', [null, '']],
+      ['paymentReference', [null, '']],
+      ['paymentOrderId', [null, '']],
+      ['razorpayPaymentId', [null, '']],
+      ['paymentOrderCreatedAt', [null]],
+      ['paymentOrderAmountPaise', [null, 0]],
+      ['paymentOrderAttemptNumber', [null, 0]],
+      ['paidAt', [null]],
+      ['paymentVerifiedAt', [null]],
+      ['paymentFailureReason', [null, '']],
+      ['paymentAttemptId', [null, '']],
+      ['paymentAttemptPricing', [null, '']],
+      ['paymentAttemptedAt', [null]],
+    ]
+
+  return {
+    paymentStatus: source === 'booking' ? 'not_required' : 'unpaid',
+    $and: fields.map(([field, allowedValues]) => ({
+      [field]: { $in: allowedValues },
+    })),
+    $expr: {
+      $eq: [
+        {
+          $size: {
+            $filter: {
+              input: { $objectToArray: '$$ROOT' },
+              as: 'field',
+              cond: {
+                $and: [
+                  {
+                    $regexMatch: {
+                      input: '$$field.k',
+                      regex: PAYMENT_EVIDENCE_KEY_PATTERN,
+                      options: 'i',
+                    },
+                  },
+                  {
+                    $not: [{
+                      $in: [
+                        '$$field.k',
+                        source === 'booking' ? bookingPaymentKeys : enquiryPaymentKeys,
+                      ],
+                    }],
+                  },
+                ],
+              },
+            },
+          },
+        },
+        0,
+      ],
+    },
+  }
+}
+
+function bookingEnquiryIdentifierType(identifier) {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(identifier)) {
+    return 'requestId'
+  }
+  if (/^[0-9a-f]{24}$/i.test(identifier)) {
+    return 'enquiryId-or-reference'
+  }
+  return 'bookingReference'
+}
+
+function bookingEnquiryMatchedBy(enquiry, identifier) {
+  if (enquiry.requestId === identifier) return 'requestId'
+  if (enquiry.reference === identifier) return 'reference'
+  if (String(enquiry._id ?? '') === identifier) return 'enquiryId'
+  return 'repository-match'
 }
 
 export function mergeBookingRecords(bookings, enquiries) {
@@ -869,11 +1009,19 @@ export function createAdminRouter({
 
   router.post('/bookings/:reference/whatsapp/retry', async (request, response, next) => {
     try {
-      const enquiry = await bookingEnquiryRepository?.findByReference?.(request.params.reference)
+      const identifier = request.params.reference
+      const enquiry = await bookingEnquiryRepository?.findByReference?.(identifier)
       if (!enquiry) {
+        console.warn('[Admin WhatsApp retry] Booking enquiry lookup failed.', {
+          identifierType: bookingEnquiryIdentifierType(identifier),
+        })
         response.status(404).json({ message: 'Booking enquiry was not found.' })
         return
       }
+      console.info('[Admin WhatsApp retry] Booking enquiry lookup succeeded.', {
+        identifierType: bookingEnquiryIdentifierType(identifier),
+        matchedBy: bookingEnquiryMatchedBy(enquiry, identifier),
+      })
 
       const target = request.body?.target || 'primary'
       const attendeeIndex = typeof request.body?.attendeeIndex === 'number' ? request.body.attendeeIndex : undefined
@@ -885,7 +1033,7 @@ export function createAdminRouter({
           attendeeIndex,
           force: true,
         })
-        const updated = await bookingEnquiryRepository?.findByReference?.(request.params.reference) ?? enquiry
+        const updated = await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
         response.json({
           message: result?.message || (result?.sent || result?.success ? 'WhatsApp notification sent successfully.' : 'WhatsApp notification could not be sent.'),
           result,
@@ -914,7 +1062,7 @@ export function createAdminRouter({
       const isPaid = ['paid', 'verified', 'demo_paid'].includes(enquiry.paymentStatus)
       const type = isPaid ? 'booking_confirmation' : 'payment_assistance'
       const result = await whatsappNotifications?.notify?.(enquiry.requestId, type, { force: true, retry: true })
-      const updated = await bookingEnquiryRepository?.findByReference?.(request.params.reference) ?? enquiry
+      const updated = await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
       response.json({
         message: result?.uncertain
           ? 'WhatsApp provider response was uncertain. Retry was withheld to prevent a duplicate message.'
@@ -1141,24 +1289,66 @@ export function createAdminRouter({
     try {
       const { reference } = request.params
       const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference?.trim?.() ?? '')
-      const booking = await Booking.findOneAndDelete(
+      const bookingQuery = (
         isObjectId ? { $or: [{ reference }, { _id: reference.trim() }] } : { reference }
-      ).lean()
-      if (booking) {
-        if (booking.status !== 'cancelled') {
-          await Event.updateOne({ id: booking.eventId }, { $inc: { seatsAvailable: booking.ticketCount } })
-        }
-        await writeAudit(request, 'Booking deleted', 'booking', reference, 'Booking record deleted by an authorized admin.')
-        response.status(204).end()
-        return
-      }
-      const enquiry = await BookingEnquiry.findOneAndDelete(
+      )
+      const enquiryQuery = (
         isObjectId
           ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
           : { $or: [{ reference }, { requestId: reference }] }
-      ).lean()
-      if (!enquiry) {
+      )
+      const [bookingMatches, enquiryMatches] = await Promise.all([
+        Booking.find(bookingQuery).limit(2).lean(),
+        BookingEnquiry.find(enquiryQuery).limit(2).lean(),
+      ])
+
+      if (bookingMatches.length > 1 || enquiryMatches.length > 1 || (bookingMatches.length && enquiryMatches.length)) {
+        response.status(409).json({
+          message: 'This booking identifier matches multiple records; no record was deleted.',
+        })
+        return
+      }
+      const booking = bookingMatches[0] ?? null
+      const enquiry = enquiryMatches[0] ?? null
+      if (!booking && !enquiry) {
         response.status(404).json({ message: 'Booking record was not found.' })
+        return
+      }
+
+      const record = booking ?? enquiry
+      if (hasPaymentEvidence(record, booking ? 'booking' : 'enquiry')) {
+        response.status(409).json({
+          message: 'This booking has payment activity or financial history and cannot be deleted.',
+        })
+        return
+      }
+      if (!record._id) {
+        response.status(409).json({
+          message: 'The booking could not be uniquely verified; no record was deleted.',
+        })
+        return
+      }
+
+      const conditionalFilter = {
+        _id: record._id,
+        ...emptyPaymentEvidenceFilter(booking ? 'booking' : 'enquiry'),
+      }
+      const deleted = booking
+        ? await Booking.findOneAndDelete(conditionalFilter).lean()
+        : await BookingEnquiry.findOneAndDelete(conditionalFilter).lean()
+      if (!deleted) {
+        response.status(409).json({
+          message: 'The booking payment state changed or financial evidence appeared. Refresh and retry.',
+        })
+        return
+      }
+
+      if (booking) {
+        if (deleted.status !== 'cancelled') {
+          await Event.updateOne({ id: deleted.eventId }, { $inc: { seatsAvailable: deleted.ticketCount } })
+        }
+        await writeAudit(request, 'Booking deleted', 'booking', reference, 'Booking record deleted by an authorized admin.')
+        response.status(204).end()
         return
       }
       await writeAudit(request, 'Booking enquiry deleted', 'booking-enquiry', reference, 'Booking enquiry deleted by an authorized admin.')

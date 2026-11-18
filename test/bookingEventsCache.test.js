@@ -24,7 +24,7 @@ test('public events are cached briefly without sharing mutable result objects', 
   globalThis.fetch = async () => {
     fetchCount += 1
     return jsonResponse({
-      events: [{ id: 'event-1', title: 'Sing Along' }],
+      events: [{ id: 'event-1', title: 'Sing Along', image: '/api/media/asset-id' }],
     })
   }
 
@@ -35,6 +35,7 @@ test('public events are cached briefly without sharing mutable result objects', 
 
     assert.equal(fetchCount, 1)
     assert.equal(secondResult[0].title, 'Sing Along')
+    assert.equal(secondResult[0].image, '/api/media/asset-id')
     assert.notEqual(firstResult, secondResult)
 
     const abortedRequest = new AbortController()

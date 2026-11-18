@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { CalendarDays, Clock3, MapPin, Users, UsersRound } from 'lucide-react'
 import Button from '../common/Button.jsx'
 import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
@@ -41,6 +42,7 @@ export default function EventCard({
   showDescription = false,
 }) {
   const { openBooking } = useBookingEnquiry()
+  const [failedImage, setFailedImage] = useState('')
   const isFreeEvent =
     isFree ?? (price === 0 || (typeof price === 'string' && price.toLowerCase() === 'free'))
   const eventTo = to ?? (id != null ? `/events/${encodeURIComponent(id)}` : undefined)
@@ -52,7 +54,7 @@ export default function EventCard({
       onPointerMove={updateInteractiveTilt}
     >
       <div className="event-card__media image-overlay">
-        {image ? (
+        {image && failedImage !== image ? (
           <img
             className="event-card__image"
             src={image}
@@ -63,6 +65,7 @@ export default function EventCard({
             decoding="async"
             width="1200"
             height="750"
+            onError={() => setFailedImage(image)}
           />
         ) : (
           <div className="event-card__image-placeholder" aria-hidden="true" />

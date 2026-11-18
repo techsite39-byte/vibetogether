@@ -10,7 +10,11 @@ import {
 } from '../components/AdminUI.jsx'
 import { useAdminData } from '../context/useAdminData.js'
 import { getWhatsAppNotificationPreview } from '../../utils/whatsappNotificationPreview.js'
-import { retryWhatsAppNotification, verifyUpiPayment } from '../services/adminApi.js'
+import {
+  getWhatsAppRetryIdentifier,
+  retryWhatsAppNotification,
+  verifyUpiPayment,
+} from '../services/adminApi.js'
 
 function formatAmount(amount, currency) {
   try {
@@ -39,7 +43,7 @@ function formatBookingDate(value) {
 }
 
 function formatPaymentStatus(status) {
-  return ({
+  const label = ({
     unpaid: 'Unpaid',
     demo_paid: 'Demo Paid',
     verified: 'Paid',
@@ -48,7 +52,65 @@ function formatPaymentStatus(status) {
     refunded: 'Refunded',
     not_required: 'Not required',
     processing: 'Verifying',
-  })[status] ?? status.replaceAll('_', ' ')
+  })[status]
+  return label ?? (typeof status === 'string' ? status.replaceAll('_', ' ') : 'Unknown')
+}
+
+const PAYMENT_EVIDENCE_KEY_PATTERN =
+  /(payment|paid|cashfree|razorpay|upi|gateway|provider|transaction|refund|settlement|verification|verified|attempt|order|utr|receipt|payout|financial|audit)/i
+
+function isVisibleNoPaymentCandidate(booking) {
+  const source = booking.source === 'booking'
+    ? 'booking'
+    : booking.source === 'booking-enquiry'
+      ? 'enquiry'
+      : null
+  const expectedStatus = source === 'booking'
+    ? 'not_required'
+    : source === 'enquiry'
+      ? 'unpaid'
+      : null
+  if (!expectedStatus || booking.paymentStatus !== expectedStatus) {
+    return false
+  }
+
+  const allowedFields = source === 'booking'
+    ? new Set(['paymentStatus'])
+    : new Set([
+      'paymentStatus', 'paymentAmount', 'paymentAmountPaise', 'paymentOrderAmountPaise',
+      'paymentOrders', 'upiPayments', 'paymentProvider', 'cfOrderId', 'cfPaymentId',
+      'cfPaymentSessionId', 'cfPaymentStatus', 'cfPaymentMethod', 'paymentReference',
+      'paymentOrderId', 'razorpayPaymentId', 'paymentOrderCreatedAt',
+      'paymentOrderAttemptNumber', 'paidAt', 'paymentVerifiedAt',
+      'paymentFailureReason', 'paymentAttemptId', 'paymentAttemptPricing',
+      'paymentAttemptedAt',
+    ])
+
+  return Object.entries(booking).every(([key, value]) => {
+    if (!PAYMENT_EVIDENCE_KEY_PATTERN.test(key)) {
+      return true
+    }
+    if (!allowedFields.has(key)) {
+      return false
+    }
+    if (key === 'paymentStatus' || key === 'paymentAmount' || key === 'paymentAmountPaise') {
+      return true
+    }
+    if (key === 'paymentOrders' || key === 'upiPayments') {
+      return value == null || (Array.isArray(value) && value.length === 0)
+    }
+    if (key === 'paymentOrderAmountPaise' || key === 'paymentOrderAttemptNumber') {
+      return value == null || value === 0
+    }
+    return value == null || value === ''
+  })
+}
+
+function hasUniqueVisibleBookingIdentifier(booking, bookings) {
+  const identifier = booking.reference || booking.requestId || booking.id
+  return Boolean(identifier) && !bookings.some((other) =>
+    other !== booking && [other.reference, other.requestId, other.id].includes(identifier),
+  )
 }
 
 function formatBookingStatus(status) {
@@ -89,7 +151,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
   }
   const adminNotif = currentBooking.adminNotification
   const mobileDigits = String(currentBooking.mobile ?? '').replace(/\D/g, '')
-  const primaryBookingIdentifier = currentBooking.reference || currentBooking.requestId || currentBooking.id
+  const primaryBookingIdentifier = getWhatsAppRetryIdentifier(currentBooking)
   const isPaymentFinalized = ['demo_paid', 'paid', 'verified'].includes(currentBooking.paymentStatus)
   const whatsappPreview = getWhatsAppNotificationPreview(
     currentBooking,
@@ -361,13 +423,23 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
 }
 
 export default function ManageBookings() {
-  const { bookings, events, organizers, storageError, updateBooking, reload } = useAdminData()
+  const {
+    actor,
+    bookings,
+    events,
+    organizers,
+    storageError,
+    updateBooking,
+    deleteBooking,
+    reload,
+  } = useAdminData()
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
   const [paymentStatus, setPaymentStatus] = useState('all')
   const [gateway, setGateway] = useState('all')
   const [selected, setSelected] = useState(null)
   const [actionError, setActionError] = useState('')
+  const [actionSuccess, setActionSuccess] = useState('')
 
   const filtered = useMemo(() => {
     const term = query.trim().toLocaleLowerCase()
@@ -427,6 +499,7 @@ export default function ManageBookings() {
     }
 
     setActionError('')
+    setActionSuccess('')
     try {
       await verifyUpiPayment(booking.requestId, decision, rejectionReason)
       await reload()
@@ -485,11 +558,36 @@ export default function ManageBookings() {
     }
 
     if (hasVerifiedPayment) {
+      setActionSuccess('')
       setActionError('Bookings with verified real payments must be cancelled by the payment service.')
       return
     }
+    setActionSuccess('')
     const saved = await updateBooking(bookingIdentifier, { status: 'cancelled' })
     setActionError(saved ? '' : storageError)
+  }
+
+  async function removeBooking(booking) {
+    const identifier = booking.reference || booking.requestId || booking.id
+    if (!window.confirm(
+      `Permanently delete booking ${identifier}? This cannot be undone. Only a uniquely matched record with no payment history can be deleted.`,
+    )) {
+      return
+    }
+
+    setActionError('')
+    setActionSuccess('')
+    try {
+      const result = await deleteBooking(identifier)
+      if (!result.success) {
+        setActionError(result.error || 'The booking could not be deleted. Refresh and retry.')
+        return
+      }
+      setSelected(null)
+      setActionSuccess(`Booking ${identifier} was deleted.`)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'The booking could not be deleted.')
+    }
   }
 
   return (
@@ -500,6 +598,7 @@ export default function ManageBookings() {
         title="Booking management"
         actions={<button className="admin-button admin-button--primary" onClick={exportCsv} type="button"><Download size={16} aria-hidden="true" /> Export CSV</button>}
       />
+      {actionSuccess && <AdminNotice tone="success">{actionSuccess}</AdminNotice>}
       {actionError && <AdminNotice tone="error">{actionError}</AdminNotice>}
       <AdminPanel title={`UPI payments awaiting verification · ${pendingUpiPayments.length}`}>
         <AdminNotice tone="neutral">
@@ -570,6 +669,14 @@ export default function ManageBookings() {
                   <td><StatusBadge status={booking.whatsappNotification?.status ?? 'not_available'}>{formatWhatsAppStatus(booking.whatsappNotification?.status, booking.whatsappConsent)}</StatusBadge>{mobileDigits && <a className="admin-button admin-button--small" href={`https://wa.me/${mobileDigits}`} rel="noopener noreferrer" target="_blank"><MessageCircle size={15} aria-hidden="true" /> Contact</a>}</td>
                   <td><div className="admin-row-actions admin-row-actions--wrap">
                     <button className="admin-button admin-button--small" onClick={() => setSelected(booking)} type="button">Details</button>
+                    {actor?.role === 'super_admin'
+                      && isVisibleNoPaymentCandidate(booking)
+                      && hasUniqueVisibleBookingIdentifier(booking, bookings)
+                      && <button
+                        className="admin-button admin-button--small admin-button--danger"
+                        onClick={() => void removeBooking(booking)}
+                        type="button"
+                      >Delete</button>}
                     {!['cancelled', 'rejected'].includes(booking.status) && !['verified', 'paid'].includes(booking.paymentStatus) && <button className="admin-button admin-button--small admin-button--danger" onClick={() => void cancel(booking)} type="button">Cancel</button>}
                   </div></td>
                 </tr>

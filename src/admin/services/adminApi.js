@@ -1,4 +1,7 @@
 import { API_BASE_URL } from '../../config/api.js'
+import { resolveMediaAssetUrl } from '../../utils/mediaAssetUrl.js'
+
+export { resolveMediaAssetUrl }
 
 const TOKEN_KEY = 'vt_admin_token'
 const CSRF_KEY = 'vt_admin_csrf'
@@ -318,8 +321,12 @@ export async function signOutAdmin() {
  * Retries a failed WhatsApp notification for a booking safely without sending duplicates.
  * Supports targeted resends: { target: 'primary' | 'attendee' | 'admin', attendeeIndex }
  */
-export async function retryWhatsAppNotification(reference, options = {}) {
-  return adminRequest(`/admin/bookings/${encodeURIComponent(reference)}/whatsapp/retry`, {
+export function getWhatsAppRetryIdentifier(bookingEnquiry) {
+  return bookingEnquiry?.requestId || bookingEnquiry?.reference || bookingEnquiry?.id || ''
+}
+
+export async function retryWhatsAppNotification(identifier, options = {}) {
+  return adminRequest(`/admin/bookings/${encodeURIComponent(identifier)}/whatsapp/retry`, {
     method: 'POST',
     body: JSON.stringify(options),
   })
@@ -365,19 +372,6 @@ export async function uploadMediaImage(file) {
     ...result,
     url: resolveMediaAssetUrl(mediaUrl),
   }
-}
-
-export function resolveMediaAssetUrl(url, apiBaseUrl = API_BASE_URL) {
-  if (
-    typeof url !== 'string' ||
-    !url.startsWith('/api/media/') ||
-    apiBaseUrl.startsWith('/')
-  ) {
-    return url
-  }
-
-  const apiUrl = new URL(apiBaseUrl)
-  return apiUrl.protocol === 'https:' ? new URL(url, apiUrl).toString() : url
 }
 
 async function processImageForUpload(file) {

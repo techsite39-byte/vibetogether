@@ -18,6 +18,7 @@ import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import { useBookingEnquiry } from '../context/useBookingEnquiry.js'
 import usePublicEvents from '../hooks/usePublicEvents.js'
 import HomeCategoriesSection from '../components/home/HomeCategoriesSection.jsx'
+import EventCard from '../components/events/EventCard.jsx'
 import HomeVideosSection from '../components/home/HomeVideosSection.jsx'
 import EventPosterModal from '../components/home/EventPosterModal.jsx'
 import './Home.css'
@@ -29,10 +30,10 @@ const DotLottieReact = lazy(() =>
 )
 const heroSlides = [
   {
-    eyebrow: 'Live music, real connections',
-    headline: ['FEEL THE MUSIC.', 'LIVE THE MOMENT.'],
+    eyebrow: 'Presents',
+    headline: ['MADURAI', 'MUSICAL EVENING'],
     description:
-      'From the first note to the last encore, share the kind of night that stays with you.',
+      'Feel the Music... Live the Moment... · 22 November 2026 (Sunday) · Royal Party Hall, KK Nagar, Madurai',
   },
   {
     eyebrow: 'New faces, fresh air',
@@ -92,13 +93,15 @@ function Home() {
   const hasAdvancedHero = useRef(false)
   const latestHeroPointer = useRef({ x: 0, y: 0 })
   const { openBooking } = useBookingEnquiry()
-  const { events } = usePublicEvents()
+  const { events, loading: eventsLoading, error: eventsError } = usePublicEvents()
   const aboutFeaturedEvents = events
     .filter(({ id }) =>
       ['after-hours-sing-along', 'the-open-table', 'somewhere-together'].includes(id),
     )
     .slice(0, 3)
+  const homepageEvents = events.slice(0, 4)
   const [activeHeroSlide, setActiveHeroSlide] = useState(0)
+  const activeHeroCopy = heroSlides[activeHeroSlide % heroSlides.length]
   const [loadedHeroSlides, setLoadedHeroSlides] = useState([0])
   const [isReasonsVisible, setIsReasonsVisible] = useState(
     () => !('IntersectionObserver' in window),
@@ -409,10 +412,10 @@ function Home() {
           >
             <p className="home-eyebrow">
               <span className="home-eyebrow__dot" />
-              {heroSlides[activeHeroSlide].eyebrow}
+              {activeHeroCopy.eyebrow}
             </p>
             <h1 className="home-hero__title" id="home-hero-title">
-              {heroSlides[activeHeroSlide].headline.map((line, index) => (
+              {activeHeroCopy.headline.map((line, index) => (
                 <span
                   className={`home-hero__title-line${index === 1 ? ' home-hero__title-second' : ''}`}
                   key={line}
@@ -422,11 +425,11 @@ function Home() {
               ))}
             </h1>
             <p className="home-hero__description">
-              {heroSlides[activeHeroSlide].description}
+              {activeHeroCopy.description}
             </p>
             <div className="home-hero__actions">
-              <Button onClick={() => openBooking()}>
-                Book Now <ArrowRight size={17} aria-hidden="true" />
+              <Button to="/events">
+                Explore Events <ArrowRight size={17} aria-hidden="true" />
               </Button>
             </div>
           </div>
@@ -690,6 +693,39 @@ function Home() {
       </section>
 
       <HomeCategoriesSection />
+      <section
+        className="home-section home-events"
+        aria-labelledby="home-events-title"
+      >
+        <div className="container">
+          <div className="home-section__topline">
+            <SectionHeading
+              align="center"
+              label="Good things are happening"
+              titleId="home-events-title"
+              title="Find your next moment."
+              description="Explore upcoming music, meetups, trips, and games worth sharing."
+            />
+            <Button to="/events" variant="secondary">
+              Explore all events <ArrowRight size={16} aria-hidden="true" />
+            </Button>
+          </div>
+          {eventsError && <p className="home-events__status" role="alert">{eventsError}</p>}
+          {eventsLoading ? (
+            <p className="home-events__status" role="status">Loading upcoming events...</p>
+          ) : !eventsError && homepageEvents.length > 0 ? (
+            <div className="home-events__grid">
+              {homepageEvents.map((event) => (
+                <article className="home-events__item" key={event.id}>
+                  <EventCard {...event} showDescription />
+                </article>
+              ))}
+            </div>
+          ) : !eventsError ? (
+            <p className="home-events__status" role="status">No upcoming events are available right now.</p>
+          ) : null}
+        </div>
+      </section>
 
       <section
         className="home-section home-reasons"

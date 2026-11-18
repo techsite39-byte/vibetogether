@@ -83,9 +83,9 @@ function mapBooking(booking) {
     finalAmount: booking.finalAmount ?? booking.amount ?? booking.total ?? 0,
     amount: booking.amount ?? booking.total ?? 0,
     currency: booking.currency ?? 'INR',
-    paymentStatus: booking.paymentStatus ?? 'not_required',
+    paymentStatus: booking.paymentStatus,
     createdAt: booking.createdAt ?? new Date().toISOString(),
-    source: booking.source ?? 'booking',
+    source: booking.source,
   }
 }
 
@@ -157,7 +157,7 @@ export function AdminDataProvider({ children, actor }) {
     void reload()
   }, [reload])
 
-  const mutate = useCallback(async (path, method, body, onSuccess) => {
+  const mutate = useCallback(async (path, method, body, onSuccess, returnError = false) => {
     setStorageError('')
     try {
       const result = await adminRequest(path, {
@@ -168,10 +168,11 @@ export function AdminDataProvider({ children, actor }) {
         onSuccess(result)
       }
       await reload(false)
-      return true
+      return returnError ? { success: true, error: '' } : true
     } catch (error) {
-      setStorageError(error instanceof Error ? error.message : 'The admin update failed.')
-      return false
+      const message = error instanceof Error ? error.message : 'The admin update failed.'
+      setStorageError(message)
+      return returnError ? { success: false, error: message } : false
     }
   }, [reload])
 
@@ -275,6 +276,21 @@ export function AdminDataProvider({ children, actor }) {
     })),
   ), [mutate])
 
+  const deleteBooking = useCallback(async (reference) => {
+    return mutate(
+      `/admin/bookings/${encodeURIComponent(reference)}`,
+      'DELETE',
+      undefined,
+      () => setData((current) => ({
+        ...current,
+        bookings: current.bookings.filter((booking) =>
+          booking.reference !== reference && booking.requestId !== reference && booking.id !== reference,
+        ),
+      })),
+      true,
+    )
+  }, [mutate])
+
   const updateSettings = useCallback(async (settings) => {
     const { categories = [], ...platformSettings } = settings
     const saved = await mutate(
@@ -342,6 +358,7 @@ export function AdminDataProvider({ children, actor }) {
         deleteEvent,
         updateOrganizer,
         updateBooking,
+        deleteBooking,
         updateSettings,
         updateDiwaliOffer,
       }}

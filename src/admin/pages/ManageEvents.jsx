@@ -37,6 +37,7 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [showUrlInput, setShowUrlInput] = useState(false)
+  const [failedPreview, setFailedPreview] = useState('')
   const previewImage = resolveMediaAssetUrl(image)
 
   async function handleFile(event) {
@@ -79,12 +80,19 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
       {image ? (
         <div className="admin-image-upload__preview-card">
           <div className="admin-image-upload__preview-img-wrap">
-            <img
-              src={previewImage}
-              alt={imageAlt || 'Event poster preview'}
-              className="admin-image-upload__preview-img"
-              loading="lazy"
-            />
+            {failedPreview === previewImage ? (
+              <span className="admin-muted" role="status">
+                Poster preview unavailable. Use “Change image” to upload it again.
+              </span>
+            ) : (
+              <img
+                src={previewImage}
+                alt={imageAlt || 'Event poster preview'}
+                className="admin-image-upload__preview-img"
+                loading="lazy"
+                onError={() => setFailedPreview(previewImage)}
+              />
+            )}
           </div>
           <div className="admin-image-upload__preview-actions">
             <button

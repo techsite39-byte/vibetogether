@@ -8,21 +8,18 @@ export const homeImages = {
 
 export const heroBackgroundSlides = [
   {
-    src: '/h0.png',
+    src: '/h0.webp',
   },
   {
-    src: '/assets/optimized/hero/h2-1672-v1.webp',
-    srcSet:
-      '/assets/optimized/hero/h2-480-v1.webp 480w, /assets/optimized/hero/h2-960-v1.webp 960w, /assets/optimized/hero/h2-1672-v1.webp 1672w',
+    src: '/h1.webp',
   },
   {
-    src: '/assets/optimized/hero/h3-1672-v1.webp',
-    srcSet:
-      '/assets/optimized/hero/h3-480-v1.webp 480w, /assets/optimized/hero/h3-960-v1.webp 960w, /assets/optimized/hero/h3-1672-v1.webp 1672w',
+    src: '/h2.webp',
   },
   {
-    src: '/assets/optimized/hero/h4-1672-v1.webp',
-    srcSet:
-      '/assets/optimized/hero/h4-480-v1.webp 480w, /assets/optimized/hero/h4-960-v1.webp 960w, /assets/optimized/hero/h4-1672-v1.webp 1672w',
+    src: '/h3.webp',
+  },
+  {
+    src: '/h4.webp',
   },
 ]

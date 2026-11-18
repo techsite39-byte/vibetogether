@@ -1,5 +1,6 @@
 import { BookingApiError, readBookingApiResponse } from './bookingApiResponse.js'
 import { API_BASE_URL } from '../config/api.js'
+import { resolveMediaAssetUrl } from '../utils/mediaAssetUrl.js'
 
 const PUBLIC_EVENTS_CACHE_TTL_MS = 30_000
 let publicEventsCache
@@ -52,7 +53,7 @@ export async function getBookingEvents(signal) {
   const events = payload.events.map((event) => ({
     ...event,
     description: event.description ?? '',
-    image: event.image ?? '',
+    image: resolveMediaAssetUrl(event.image ?? ''),
     imageAlt: event.imageAlt ?? '',
   }))
   publicEventsCache = events
