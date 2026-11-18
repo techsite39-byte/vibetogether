@@ -140,8 +140,7 @@ export default function EventPosterModal() {
     writeStoredStep('dismissed')
     setCurrentStep(null)
     openBooking()
-    navigate('/booking')
-  }, [navigate, openBooking])
+  }, [openBooking])
 
   const activePoster = useMemo(() => {
     return POSTERS.find((p) => p.step === currentStep) || null
