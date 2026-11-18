@@ -125,7 +125,6 @@ export const BookingReferenceCounter = createModel(
     _id: { type: String, default: 'booking-reference-counter' },
     value: { type: Number, required: true, default: 10812026500, min: 10812026500 },
   },
-  [[{ _id: 1 }]],
 )
 
 export const Booking = createModel(

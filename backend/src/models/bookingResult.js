@@ -48,7 +48,7 @@ const bookingResultSchema = new mongoose.Schema(
   },
 )
 
-bookingResultSchema.index({ requestId: 1 }, { unique: true })
+bookingResultSchema.index({ requestId: 1 }, { unique: true, sparse: true })
 
 export const BookingResult =
   mongoose.models.BookingResult ??
