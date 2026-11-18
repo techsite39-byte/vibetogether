@@ -8,6 +8,8 @@ const servers = []
 async function startTestServer({
   eventRepository,
   repository: suppliedRepository,
+  cashfreePayments,
+  cashfreeConfigured = false,
   razorpayPayments,
   razorpayConfigured = false,
   nodeEnv,
@@ -124,6 +126,8 @@ async function startTestServer({
     corsOrigins: ['http://localhost:5173'],
     eventRepository,
     bookingEnquiryRepository: repository,
+    cashfreePayments,
+    cashfreeConfigured,
     razorpayPayments,
     razorpayConfigured,
     nodeEnv,
@@ -786,6 +790,100 @@ test('creates a Razorpay order and returns a booking only after verified payment
   assert.equal(verified.booking.reference, '10812026501')
   assert.equal(verified.booking.paymentStatus, 'paid')
   assert.equal(verified.booking.status, 'pending')
+})
+
+test('Cashfree verification notifies only for confirmed failures and preserves success behavior', async () => {
+  let verification
+  const notifications = []
+  const { baseUrl } = await startTestServer({
+    cashfreeConfigured: true,
+    cashfreePayments: {
+      async verifyPayment() {
+        return verification
+      },
+    },
+    whatsappNotifications: {
+      async notify(requestId, type) {
+        notifications.push({ requestId, type })
+      },
+    },
+  })
+  const requestId = crypto.randomUUID()
+  const submitted = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requestId,
+      name: 'Jordan Example',
+      mobile: '+91 98765 43210',
+      email: 'jordan@example.com',
+      categoryId: 'fun-games',
+      gender: 'Female',
+    }),
+  })
+  assert.equal(submitted.status, 201)
+
+  async function verify(result) {
+    verification = result
+    return fetch(`${baseUrl}/api/booking-enquiries/${requestId}/cashfree-verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: 'order_test_booking' }),
+    })
+  }
+
+  const pendingResponse = await verify({
+    pending: true,
+    booking: { requestId, paymentStatus: 'unpaid' },
+  })
+  assert.equal(pendingResponse.status, 202)
+  assert.deepEqual(notifications, [])
+
+  await verify({
+    failed: false,
+    booking: {
+      requestId,
+      paymentStatus: 'failed',
+      paymentFailureReason: 'failed',
+    },
+  })
+  assert.deepEqual(notifications, [])
+
+  await verify({
+    failed: true,
+    booking: {
+      requestId,
+      paymentStatus: 'failed',
+      paymentFailureReason: 'cancelled',
+    },
+  })
+  assert.deepEqual(notifications, [])
+
+  await verify({
+    failed: true,
+    booking: {
+      requestId,
+      paymentStatus: 'failed',
+      paymentFailureReason: 'failed',
+    },
+  })
+  assert.deepEqual(notifications, [{
+    requestId,
+    type: 'payment_assistance',
+  }])
+
+  await verify({
+    verified: true,
+    booking: {
+      requestId,
+      paymentStatus: 'paid',
+      reference: 'VT-TEST-1',
+    },
+  })
+  assert.deepEqual(notifications, [
+    { requestId, type: 'payment_assistance' },
+    { requestId, type: 'booking_confirmation' },
+  ])
 })
 
 test('failed and cancelled demo payments have no reference and can retry the same session', async () => {

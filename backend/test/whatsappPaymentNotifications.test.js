@@ -40,8 +40,13 @@ function createBookingModel(initialBooking) {
       return this.findOneAndUpdate({ _id }, update)
     },
     findOneAndUpdate(filter, update) {
-      if (!matches(record, filter)) {
-        return { lean: async () => null }
+      const matched = matches(record, filter)
+      const query = {
+        lean: async () => matched ? structuredClone(record) : null,
+        catch: (handler) => Promise.resolve().catch(handler),
+      }
+      if (!matched) {
+        return query
       }
       for (const [path, value] of Object.entries(update.$set ?? {})) {
         setPath(record, path, structuredClone(value))
@@ -63,7 +68,7 @@ function createBookingModel(initialBooking) {
           setPath(record, path, filtered)
         }
       }
-      return { lean: async () => structuredClone(record) }
+      return query
     },
     get record() {
       return structuredClone(record)
@@ -176,6 +181,76 @@ test('buildWhatsAppMessage produces exact copy for vibetogether_payment_success 
   assert.match(failMsg, /Payment Amount: ₹897/)
   assert.match(failMsg, /Retry Payment: https:\/\/www\.vibetogether\.show\/booking\/payment\/req-session-456/)
   assert.match(failMsg, /\+91 87785 95810/)
+})
+
+test('admin alert resend builds the existing message payload and records Meta acceptance', async () => {
+  const model = createBookingModel(makeBooking({
+    maleCount: 0,
+    femaleCount: 0,
+    maleMemberNames: [],
+    maleMemberMobiles: [],
+    femaleMemberNames: [],
+    femaleMemberMobiles: [],
+  }))
+  const sentRequests = []
+  const service = createWhatsAppNotificationService({
+    bookingEnquiryModel: model,
+    phoneNumberId: '1604867012700775',
+    accessToken: 'test-access-token',
+    businessAccountId: '2401641057342853',
+    apiVersion: 'v22.0',
+    successTemplateName: 'vibetogether_payment_success',
+    failureTemplateName: 'vibetogether_payment_failed',
+    adminPhoneNumber: '+919876543000',
+    fetchImpl: async (url, options) => {
+      sentRequests.push({ url, payload: JSON.parse(options.body) })
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.admin-test' }] }) }
+    },
+  })
+
+  const result = await service.resendNotification('req-session-456', { target: 'admin' })
+
+  assert.equal(sentRequests.length, 1)
+  assert.equal(sentRequests[0].payload.type, 'text')
+  assert.equal(sentRequests[0].payload.to, '919876543000')
+  assert.match(sentRequests[0].payload.text.body, /VT-2026-9025/)
+  assert.match(sentRequests[0].payload.text.body, /₹897/)
+  assert.equal(result.success, true)
+  assert.match(result.message, /accepted by Meta/)
+  assert.equal(model.record.adminNotification.status, 'sent')
+  assert.equal(model.record.adminNotification.providerMessageId, 'wamid.admin-test')
+})
+
+test('admin alert resend returns sanitized Meta rejection details without exposing credentials', async () => {
+  const model = createBookingModel(makeBooking())
+  const service = createWhatsAppNotificationService({
+    bookingEnquiryModel: model,
+    phoneNumberId: '1604867012700775',
+    accessToken: 'test-access-token',
+    businessAccountId: '2401641057342853',
+    apiVersion: 'v22.0',
+    successTemplateName: 'vibetogether_payment_success',
+    failureTemplateName: 'vibetogether_payment_failed',
+    adminPhoneNumber: '+919876543000',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          code: 131026,
+          message: 'The message could not be delivered to the recipient.',
+        },
+      }),
+    }),
+  })
+
+  const result = await service.resendNotification('req-session-456', { target: 'admin' })
+
+  assert.equal(result.success, false)
+  assert.match(result.message, /HTTP 400 \(code 131026\)/)
+  assert.equal(model.record.adminNotification.status, 'failed')
+  assert.match(model.record.adminNotification.failureReason, /HTTP 400 \(code 131026\)/)
+  assert.doesNotMatch(result.message, /test-access-token/)
 })
 
 // ---------------------------------------------------------------------------
@@ -466,9 +541,9 @@ test('Scenario 11: Duplicate recipient number in same booking — no duplicate n
 })
 
 // ---------------------------------------------------------------------------
-// 13. Duplicate failure webhook (idempotent, 1 message)
+// 13. Failure verification and webhook triggers share one idempotent notification
 // ---------------------------------------------------------------------------
-test('Duplicate failure webhook — idempotent, sends only 1 failure message', async () => {
+test('Failure verification and webhook triggers are idempotent and send only 1 failure message', async () => {
   const model = createBookingModel(makeBooking({
     paymentStatus: 'failed',
     paymentOrderId: 'order_fail_idemp_1',
@@ -481,12 +556,12 @@ test('Duplicate failure webhook — idempotent, sends only 1 failure message', a
     return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.fail-1' }] }) }
   })
 
-  // First failure trigger
+  // The verification path handles the first confirmed failure.
   const first = await service.send('req-session-456', 'payment_assistance')
   assert.equal(first.sent, true)
   assert.equal(callCount, 1)
 
-  // Second duplicate failure webhook
+  // The webhook reports the same failure and shares the same idempotency key.
   const second = await service.send('req-session-456', 'payment_assistance')
   assert.equal(second.duplicate, true)
   assert.equal(callCount, 1) // No duplicate message sent

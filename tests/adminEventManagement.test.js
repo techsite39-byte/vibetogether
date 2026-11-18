@@ -5,7 +5,12 @@ import {
   updateDemoEvent,
   buildEventImageUpdate,
 } from '../src/admin/data/adminEventOperations.js'
-import { resolveMediaAssetUrl } from '../src/admin/services/adminApi.js'
+import {
+  clearStoredSession,
+  resolveMediaAssetUrl,
+  saveStoredSession,
+  uploadMediaImage,
+} from '../src/admin/services/adminApi.js'
 
 const demoEvents = [
   { id: 'sing-along', title: 'Sing Along', status: 'pending' },
@@ -58,4 +63,51 @@ test('uploaded media URLs resolve through the configured HTTPS API host', () => 
     resolveMediaAssetUrl('/legacy/poster.webp', 'https://api.example.test/api'),
     '/legacy/poster.webp',
   )
+})
+
+test('image upload reports read failures and sends valid data to the existing media endpoint', async () => {
+  const originalFileReader = globalThis.FileReader
+  const originalFetch = globalThis.fetch
+  const requests = []
+  let shouldFail = true
+  globalThis.FileReader = class {
+    readAsDataURL() {
+      if (shouldFail) {
+        this.onerror?.()
+        return
+      }
+      this.result = 'data:image/png;base64,c2FtcGxl'
+      this.onload?.({ target: this })
+    }
+  }
+  globalThis.fetch = async (url, options) => {
+    requests.push([url, options])
+    return new Response(JSON.stringify({ id: 'test-media-id', relativeUrl: '/api/media/test-media-id' }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  saveStoredSession({ token: 'test-token', csrfToken: 'test-csrf' })
+
+  try {
+    const file = new File([new Uint8Array([1, 2, 3])], 'sample.png', { type: 'image/png' })
+    await assert.rejects(uploadMediaImage(file), /Failed to read image file/)
+    assert.equal(requests.length, 0)
+
+    shouldFail = false
+    const uploaded = await uploadMediaImage(file)
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0][0], '/api/admin/upload')
+    assert.equal(requests[0][1].method, 'POST')
+    assert.equal(JSON.parse(requests[0][1].body).data, 'data:image/png;base64,c2FtcGxl')
+    assert.equal(uploaded.url, '/api/media/test-media-id')
+  } finally {
+    clearStoredSession()
+    globalThis.fetch = originalFetch
+    if (originalFileReader === undefined) {
+      delete globalThis.FileReader
+    } else {
+      globalThis.FileReader = originalFileReader
+    }
+  }
 })

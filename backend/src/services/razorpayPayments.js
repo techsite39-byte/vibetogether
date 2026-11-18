@@ -762,7 +762,19 @@ export function createRazorpayPaymentService({
     if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
       return { duplicate: true, booking: enquiry, action: 'duplicate' }
     }
-    return { booking: enquiry, pending: true }
+
+    const failureResult = await recordFailure(enquiry.requestId, {
+      orderId,
+      paymentId,
+      outcome: 'failed',
+    })
+    if (
+      failureResult?.booking?.paymentStatus === 'failed' &&
+      failureResult.booking.paymentFailureReason !== 'cancelled'
+    ) {
+      return { ...failureResult, action: 'failed' }
+    }
+    return failureResult ?? { booking: enquiry, pending: true }
   }
 
   return { createOrder, verifyPayment, checkStatus, recordFailure, handleWebhook }

@@ -313,6 +313,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           Ticket selection and charged pricing are locked after payment. Any change requires a separate payment or refund workflow.
         </AdminNotice>
         {notification.failureReason && <AdminNotice tone="error">{notification.failureReason}</AdminNotice>}
+        {adminNotif?.failureReason && <AdminNotice tone="error">{adminNotif.failureReason}</AdminNotice>}
         {retryResult && <AdminNotice tone={retryResult.tone}>{retryResult.text}</AdminNotice>}
 
         {/* Additional Attendee WhatsApp Status Table */}

@@ -781,6 +781,12 @@ export function createBookingEnquiriesRouter({
       }
       if (result.booking.paymentStatus === 'paid') {
         await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
+      } else if (
+        result.failed &&
+        result.booking.paymentStatus === 'failed' &&
+        result.booking.paymentFailureReason !== 'cancelled'
+      ) {
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
       response.json({

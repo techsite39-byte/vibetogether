@@ -198,3 +198,71 @@ test('payment.failed webhook does not send assistance while the attempt may be r
   assert.equal(response.status, 200)
   assert.deepEqual(notifications, [])
 })
+
+test('payment.failed webhook sends assistance only for a confirmed non-cancelled failure', async () => {
+  const secret = 'razorpay-webhook-terminal-failure-test-secret'
+  const notifications = []
+  const results = [
+    {
+      action: 'failed',
+      booking: {
+        requestId: 'session-terminal-failure',
+        paymentStatus: 'failed',
+        paymentFailureReason: 'failed',
+      },
+    },
+    {
+      action: 'failed',
+      booking: {
+        requestId: 'session-cancelled',
+        paymentStatus: 'failed',
+        paymentFailureReason: 'cancelled',
+      },
+    },
+    {
+      pending: true,
+      booking: { requestId: 'session-pending', paymentStatus: 'unpaid' },
+    },
+  ]
+  const baseUrl = await startServer({
+    razorpayWebhookSecret: secret,
+    razorpayPayments: {
+      async handleWebhook() {
+        return results.shift()
+      },
+    },
+    whatsappNotifications: {
+      async notify(requestId, type) {
+        notifications.push({ requestId, type })
+      },
+    },
+  })
+
+  for (let index = 0; index < 3; index += 1) {
+    const body = JSON.stringify({
+      event: 'payment.failed',
+      payload: { payment: { entity: {
+        id: `pay_failure_${index}`,
+        order_id: `order_failure_${index}`,
+        amount: 24900,
+        currency: 'INR',
+        status: 'failed',
+      } } },
+    })
+    const signature = createHmac('sha256', secret).update(body).digest('hex')
+    const response = await fetch(`${baseUrl}/api/razorpay/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-razorpay-signature': signature,
+      },
+      body,
+    })
+    assert.equal(response.status, 200)
+  }
+
+  assert.deepEqual(notifications, [{
+    requestId: 'session-terminal-failure',
+    type: 'payment_assistance',
+  }])
+})

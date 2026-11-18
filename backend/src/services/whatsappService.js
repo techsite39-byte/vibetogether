@@ -1093,7 +1093,12 @@ export function createWhatsAppService({
       },
     ).catch(() => {})
 
-    return { sent: notificationStatus === 'sent', failed: notificationStatus === 'failed', messageId }
+    return {
+      sent: notificationStatus === 'sent',
+      failed: notificationStatus === 'failed',
+      messageId,
+      failureReason,
+    }
   }
 
   // Unified send logic for a booking confirmation event
@@ -1195,7 +1200,13 @@ export function createWhatsAppService({
         return { success: false, message: 'WHATSAPP_ADMIN_PHONE_NUMBER is not configured.' }
       }
       const result = await sendAdminAlert(booking, { force: true })
-      return { success: Boolean(result?.sent), result, message: result?.sent ? 'Admin WhatsApp alert sent.' : 'Failed to send admin alert.' }
+      return {
+        success: Boolean(result?.sent),
+        result,
+        message: result?.sent
+          ? 'Admin WhatsApp alert accepted by Meta.'
+          : result?.failureReason || 'Failed to send admin alert.',
+      }
     }
 
     throw new Error(`Unsupported resend target: ${target}`)

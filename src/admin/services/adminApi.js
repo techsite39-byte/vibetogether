@@ -378,48 +378,64 @@ async function processImageForUpload(file) {
   if (file.type === 'image/svg+xml' || file.size < 400 * 1024) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
-      reader.onload = () => resolve({ data: reader.result, mimeType: file.type, filename: file.name })
+      reader.onload = () => {
+        if (typeof reader.result !== 'string' || !reader.result.startsWith('data:image/')) {
+          reject(new Error('The selected image could not be read. Please choose another file.'))
+          return
+        }
+        resolve({ data: reader.result, mimeType: file.type, filename: file.name })
+      }
       reader.onerror = () => reject(new Error('Failed to read image file.'))
       reader.readAsDataURL(file)
     })
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (readerEvent) => {
+      if (typeof reader.result !== 'string' || !reader.result.startsWith('data:image/')) {
+        reject(new Error('The selected image could not be read. Please choose another file.'))
+        return
+      }
       const img = new Image()
       img.onload = () => {
-        const MAX_WIDTH = 1600
-        const MAX_HEIGHT = 1600
-        let { width, height } = img
+        try {
+          const MAX_WIDTH = 1600
+          const MAX_HEIGHT = 1600
+          let { width, height } = img
 
-        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
-          if (width > height) {
-            height = Math.round((height * MAX_WIDTH) / width)
-            width = MAX_WIDTH
-          } else {
-            width = Math.round((width * MAX_HEIGHT) / height)
-            height = MAX_HEIGHT
+          if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+            if (width > height) {
+              height = Math.round((height * MAX_WIDTH) / width)
+              width = MAX_WIDTH
+            } else {
+              width = Math.round((width * MAX_HEIGHT) / height)
+              height = MAX_HEIGHT
+            }
           }
+
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            throw new Error('Image processing is unavailable in this browser.')
+          }
+          ctx.drawImage(img, 0, 0, width, height)
+
+          const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+          const data = canvas.toDataURL(mimeType, 0.88)
+          if (typeof data !== 'string' || !data.startsWith(`data:${mimeType};base64,`)) {
+            throw new Error('The selected image could not be processed. Please choose another file.')
+          }
+          resolve({ data, mimeType, filename: file.name })
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error('The selected image could not be processed.'))
         }
-
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, width, height)
-
-        const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
-        const data = canvas.toDataURL(mimeType, 0.88)
-        resolve({ data, mimeType, filename: file.name })
       }
-      img.onerror = () => {
-        resolve({ data: readerEvent.target.result, mimeType: file.type || 'image/jpeg', filename: file.name })
-      }
+      img.onerror = () => reject(new Error('The selected image could not be decoded. Please choose another file.'))
       img.src = readerEvent.target.result
     }
-    reader.onerror = () => {
-      resolve({ data: '', mimeType: file.type || 'image/jpeg', filename: file.name })
-    }
+    reader.onerror = () => reject(new Error('Failed to read image file.'))
     reader.readAsDataURL(file)
   })
 }
