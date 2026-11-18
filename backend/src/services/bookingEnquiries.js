@@ -100,7 +100,13 @@ export async function findBookingEnquiry(requestId, bookingEnquiryModel = Bookin
 }
 
 export async function findBookingEnquiryByReference(reference, bookingEnquiryModel = BookingEnquiry) {
-  return bookingEnquiryModel.findOne({ reference }).lean()
+  if (!reference || typeof reference !== 'string') return null
+  const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference.trim())
+  return bookingEnquiryModel.findOne(
+    isObjectId
+      ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
+      : { $or: [{ reference }, { requestId: reference }] }
+  ).lean()
 }
 
 export async function optOutBookingWhatsApp(requestId) {

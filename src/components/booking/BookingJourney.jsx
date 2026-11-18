@@ -10,14 +10,15 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { categories } from '../../data/categories.js'
 import { submitBookingEnquiry } from '../../services/bookingEnquiry.js'
 import { getDiwaliOffer } from '../../services/diwaliOffer.js'
 import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
+import BookingProgress from './BookingProgress.jsx'
 import './BookingJourney.css'
 
-const steps = ['Name', 'WhatsApp', 'Category', 'Gender & attendees', 'Payment']
+const journeyStepQuery = 'bookingJourneyStep'
 const bookingCategories = categories.filter(({ id }) => id === 'sing-along')
 const draftStorageKey = 'vibe-together-booking-draft'
 const fallbackTicketTypes = [{ id: 'general-admission', name: 'General Admission' }]
@@ -44,6 +45,13 @@ function readBookingDraft() {
   } catch {
     return null
   }
+}
+
+function getJourneyStep(search) {
+  const value = new URLSearchParams(search).get(journeyStepQuery)
+  if (value === null) return null
+  const step = Number(value)
+  return Number.isInteger(step) && step >= 1 && step <= 4 ? step - 1 : null
 }
 
 function isValidName(value) {
@@ -75,9 +83,29 @@ function getNormalizedMobile(value, countryCode) {
   return `+${digits}`
 }
 
-export default function BookingJourney({ onClose }) {
+export default function BookingJourney({
+  initialCategory = '',
+  initialRequestId = '',
+  initialStep = 0,
+  onClose,
+  resumeDraft = false,
+}) {
   const navigate = useNavigate()
-  const [restoredDraft] = useState(readBookingDraft)
+  const location = useLocation()
+  const routeStep = getJourneyStep(location.search)
+  const [restoredDraft] = useState(() => resumeDraft ? readBookingDraft() : null)
+  const restoredOrigin = restoredDraft?.origin ?? location.state?.bookingJourneyOrigin
+  const journeyOrigin = useRef({
+    pathname: typeof restoredOrigin?.pathname === 'string'
+      ? restoredOrigin.pathname
+      : location.pathname,
+    search: typeof restoredOrigin?.search === 'string'
+      ? restoredOrigin.search
+      : location.search,
+    hash: typeof restoredOrigin?.hash === 'string'
+      ? restoredOrigin.hash
+      : location.hash,
+  })
   const restoredTicketQuantity = Number.isInteger(restoredDraft?.form?.ticketQuantity)
     ? Math.min(10, Math.max(1, restoredDraft.form.ticketQuantity))
     : 1
@@ -85,7 +113,9 @@ export default function BookingJourney({ onClose }) {
     name: typeof restoredDraft?.form?.name === 'string' ? restoredDraft.form.name : '',
     email: typeof restoredDraft?.form?.email === 'string' ? restoredDraft.form.email : '',
     mobile: typeof restoredDraft?.form?.mobile === 'string' ? restoredDraft.form.mobile : '',
-    categoryId: typeof restoredDraft?.form?.categoryId === 'string' ? restoredDraft.form.categoryId : '',
+    categoryId: typeof restoredDraft?.form?.categoryId === 'string'
+      ? restoredDraft.form.categoryId
+      : initialCategory,
     gender: typeof restoredDraft?.form?.gender === 'string' ? restoredDraft.form.gender : '',
     ticketType: fallbackTicketTypes[0].id,
     ticketQuantity: restoredTicketQuantity,
@@ -117,9 +147,10 @@ export default function BookingJourney({ onClose }) {
   }))
   const [countryCode, setCountryCode] = useState(restoredDraft?.countryCode ?? '+91')
   const [step, setStep] = useState(() => (
-    Number.isInteger(restoredDraft?.step)
-      ? Math.min(3, Math.max(0, restoredDraft.step))
-      : 0
+    routeStep ??
+      (resumeDraft && Number.isInteger(restoredDraft?.step)
+        ? Math.min(3, Math.max(0, restoredDraft.step))
+        : Math.min(3, Math.max(0, initialStep)))
   ))
   const [transitionStage, setTransitionStage] = useState('enter')
   const [direction, setDirection] = useState(1)
@@ -131,7 +162,7 @@ export default function BookingJourney({ onClose }) {
   const [diwaliOffer, setDiwaliOffer] = useState(null)
   const [offerError, setOfferError] = useState('')
   const journeyRef = useRef(null)
-  const requestId = useRef(restoredDraft?.requestId ?? crypto.randomUUID())
+  const requestId = useRef(initialRequestId || restoredDraft?.requestId || crypto.randomUUID())
   const submitting = useRef(false)
   const transitioning = useRef(false)
   const transitionTimer = useRef(null)
@@ -139,7 +170,10 @@ export default function BookingJourney({ onClose }) {
 
   useEffect(() => {
     const previouslyFocused = document.activeElement
+    const root = document.documentElement
+    const previousRootOverflowY = root.style.overflowY
     const previousOverflow = document.body.style.overflow
+    root.style.overflowY = 'hidden'
     document.body.style.overflow = 'hidden'
 
     function handleKeyDown(event) {
@@ -173,6 +207,7 @@ export default function BookingJourney({ onClose }) {
       window.removeEventListener('keydown', handleKeyDown)
       window.clearTimeout(transitionTimer.current)
       window.clearTimeout(settleTimer.current)
+      root.style.overflowY = previousRootOverflowY
       document.body.style.overflow = previousOverflow
       if (
         previouslyFocused instanceof HTMLElement &&
@@ -209,9 +244,22 @@ export default function BookingJourney({ onClose }) {
       requestId: requestId.current,
       form,
       countryCode,
+      origin: journeyOrigin.current,
       step,
     }))
   }, [countryCode, form, step])
+
+  useEffect(() => {
+    if (routeStep === null || routeStep === step) return
+    window.clearTimeout(transitionTimer.current)
+    window.clearTimeout(settleTimer.current)
+    transitioning.current = false
+    setIsTransitioning(false)
+    setDirection(routeStep > step ? 1 : -1)
+    setStep(routeStep)
+    setTransitionStage('enter')
+    journeyRef.current?.scrollTo(0, 0)
+  }, [routeStep, step])
 
   useEffect(() => {
     if (transitionStage !== 'enter') {
@@ -355,7 +403,7 @@ export default function BookingJourney({ onClose }) {
   }
 
   function animateToStep(nextStep) {
-    if (transitioning.current || nextStep < 0 || nextStep > steps.length - 1) {
+    if (transitioning.current || nextStep < 0 || nextStep > 3) {
       return
     }
 
@@ -370,6 +418,18 @@ export default function BookingJourney({ onClose }) {
       setStep(nextStep)
       setTransitionStage('enter')
       journeyRef.current?.scrollTo(0, 0)
+      const search = new URLSearchParams(location.search)
+      search.set(journeyStepQuery, String(nextStep + 1))
+      navigate(
+        { pathname: location.pathname, search: `?${search.toString()}` },
+        {
+          state: {
+            ...location.state,
+            bookingJourneyStep: nextStep + 1,
+            previousJourneyStep: step + 1,
+          },
+        },
+      )
       settleTimer.current = window.setTimeout(() => {
         setTransitionStage('idle')
         transitioning.current = false
@@ -386,6 +446,18 @@ export default function BookingJourney({ onClose }) {
       return
     }
     animateToStep(step + 1)
+  }
+
+  function handleBack() {
+    const routeState = window.history.state?.usr
+    if (
+      routeState?.bookingJourneyStep === step + 1 &&
+      routeState?.previousJourneyStep === step
+    ) {
+      navigate(-1)
+      return
+    }
+    animateToStep(step - 1)
   }
 
   async function handleSubmit(event) {
@@ -428,8 +500,15 @@ export default function BookingJourney({ onClose }) {
         ticketQuantity: form.ticketQuantity,
         whatsappConsent: form.whatsappConsent,
       })
-      onClose()
-      navigate(`/booking/payment/${requestId.current}`)
+      navigate(`/booking/payment/${requestId.current}`, {
+        state: {
+          bookingJourneyOrigin: {
+            ...journeyOrigin.current,
+            requestId: requestId.current,
+            step: 4,
+          },
+        },
+      })
     } catch (error) {
       setSubmissionError(
         error instanceof Error
@@ -519,20 +598,7 @@ export default function BookingJourney({ onClose }) {
       </header>
 
       <div className="booking-journey__body">
-          <nav aria-label="Booking progress" className="booking-journey__progress">
-            {steps.map((label, index) => (
-              <div
-                aria-current={index === step ? 'step' : undefined}
-                className={`booking-journey__progress-step${index < step ? ' is-complete' : ''}${index === step ? ' is-active' : ''}`}
-                key={label}
-              >
-                <span className="booking-journey__progress-dot">
-                  {index < step ? <Check size={13} aria-hidden="true" /> : `0${index + 1}`}
-                </span>
-                <span className="booking-journey__progress-label">{label}</span>
-              </div>
-            ))}
-          </nav>
+          <BookingProgress activeStep={step} />
 
           <form
             className={`booking-journey__screen is-${transitionStage}`}
@@ -830,7 +896,7 @@ export default function BookingJourney({ onClose }) {
                 <button
                   className="booking-journey__back"
                   disabled={isSubmitting || isTransitioning}
-                  onClick={() => animateToStep(step - 1)}
+                  onClick={handleBack}
                   type="button"
                 >
                   <ArrowLeft size={17} aria-hidden="true" /> Back
@@ -860,7 +926,7 @@ export default function BookingJourney({ onClose }) {
           </form>
 
           <div className="booking-journey__step-count" aria-live="polite">
-            {`0${step + 1}`} <span>/ 04</span>
+            {step + 1} <span>/ 5</span>
           </div>
         </div>
     </section>

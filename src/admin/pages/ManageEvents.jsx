@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Image, Plus, Search, Trash2, Upload } from 'lucide-react'
 import {
   AdminDialog,
   AdminNotice,
@@ -9,6 +9,7 @@ import {
   StatusBadge,
 } from '../components/AdminUI.jsx'
 import { useAdminData } from '../context/useAdminData.js'
+import { uploadMediaImage } from '../services/adminApi.js'
 
 const eventStatuses = [
   'draft',
@@ -27,35 +28,195 @@ const statusLabels = {
   cancelled: 'Cancelled',
 }
 
-function EditEventDialog({ categories, event, onClose, onSave }) {
+function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChange }) {
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const [showUrlInput, setShowUrlInput] = useState(false)
+
+  async function handleFile(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setUploadError('')
+    try {
+      const result = await uploadMediaImage(file)
+      if (result?.url) {
+        onImageChange(result.url)
+      } else {
+        throw new Error('Image upload failed to return a valid URL.')
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Image upload failed. Try another file or paste a URL.')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  function handleRemove() {
+    onImageChange('')
+  }
+
+  return (
+    <div className="admin-image-upload">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        style={{ display: 'none' }}
+        onChange={handleFile}
+      />
+
+      {image ? (
+        <div className="admin-image-upload__preview-card">
+          <div className="admin-image-upload__preview-img-wrap">
+            <img
+              src={image}
+              alt={imageAlt || 'Event poster preview'}
+              className="admin-image-upload__preview-img"
+              loading="lazy"
+            />
+          </div>
+          <div className="admin-image-upload__preview-actions">
+            <button
+              type="button"
+              className="admin-button admin-button--small admin-button--primary"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload size={14} aria-hidden="true" />
+              {uploading ? 'Uploading…' : 'Change image'}
+            </button>
+            <button
+              type="button"
+              className="admin-button admin-button--small admin-button--danger"
+              disabled={uploading}
+              onClick={handleRemove}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              Remove
+            </button>
+            <button
+              type="button"
+              className="admin-image-upload__url-toggle"
+              onClick={() => setShowUrlInput(!showUrlInput)}
+            >
+              {showUrlInput ? 'Hide direct URL' : 'Edit direct URL'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          role="button"
+          tabIndex={0}
+          className="admin-image-upload__dropzone"
+          onClick={() => !uploading && fileInputRef.current?.click()}
+          onKeyDown={(e) => {
+            if ((e.key === 'Enter' || e.key === ' ') && !uploading) {
+              e.preventDefault()
+              fileInputRef.current?.click()
+            }
+          }}
+        >
+          <Upload size={24} aria-hidden="true" />
+          <span>{uploading ? 'Uploading image from device…' : 'Click to upload event image from your device'}</span>
+          <span className="admin-muted">Supports JPG, PNG, WEBP, GIF (up to 12MB)</span>
+          <button
+            type="button"
+            className="admin-image-upload__url-toggle"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowUrlInput(!showUrlInput)
+            }}
+          >
+            {showUrlInput ? 'Hide direct URL' : 'Or enter custom image URL / path'}
+          </button>
+        </div>
+      )}
+
+      {uploadError && <AdminNotice tone="error">{uploadError}</AdminNotice>}
+
+      {(showUrlInput || (!image && showUrlInput)) && (
+        <label style={{ marginTop: '0.4rem' }}>
+          Direct image URL or path
+          <input
+            maxLength={2048}
+            placeholder="https://... or /m1.webp"
+            value={image}
+            onChange={(e) => onImageChange(e.target.value)}
+          />
+        </label>
+      )}
+
+      <label style={{ marginTop: '0.4rem' }}>
+        Image alternative text (for accessibility)
+        <input
+          maxLength={300}
+          placeholder="Brief visual description of the event poster"
+          value={imageAlt}
+          onChange={(e) => onImageAltChange(e.target.value)}
+        />
+      </label>
+    </div>
+  )
+}
+
+function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
   const [form, setForm] = useState({
-    title: event.title,
-    category: event.category,
-    location: event.location,
-    price: event.price,
-    status: event.status,
+    title: event.title || '',
+    category: event.category || (categories[0]?.title ?? ''),
+    location: event.location || '',
+    price: event.price || '',
+    description: event.description || '',
+    date: event.date || '',
+    time: event.time || '',
+    image: event.image || '',
+    imageAlt: event.imageAlt || '',
+    status: event.status || 'published',
   })
   const [error, setError] = useState('')
+  const [saveFailed, setSaveFailed] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   async function submit(eventObject) {
     eventObject.preventDefault()
+    if (saving) {
+      return
+    }
     if (!form.title.trim() || !form.location.trim()) {
       setError('Event title and location are required.')
       return
     }
 
+    setError('')
+    setSaveFailed(false)
+    setSaving(true)
     try {
+      const { image: formImage, ...formValues } = form
+      const image = formImage.trim()
+      const existingImage = (event.image ?? '').trim()
       const saved = await onSave(event.id, {
-        ...form,
+        ...formValues,
         title: form.title.trim(),
         location: form.location.trim(),
+        description: form.description.trim(),
+        ...(image === existingImage ? {} : { image }),
+        imageAlt: form.imageAlt.trim(),
         status: form.status,
       })
       if (saved) {
         onClose()
+      } else {
+        setSaveFailed(true)
       }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Event could not be updated.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -64,7 +225,7 @@ function EditEventDialog({ categories, event, onClose, onSave }) {
       <form className="admin-form" onSubmit={submit}>
         <label>
           Event name
-          <input maxLength={120} onChange={(e) => setForm({ ...form, title: e.target.value })} value={form.title} />
+          <input maxLength={120} onChange={(e) => setForm({ ...form, title: e.target.value })} value={form.title} required />
         </label>
         <label>
           Category
@@ -73,13 +234,36 @@ function EditEventDialog({ categories, event, onClose, onSave }) {
           </select>
         </label>
         <label>
+          Date
+          <input onChange={(e) => setForm({ ...form, date: e.target.value })} type="date" value={form.date} />
+        </label>
+        <label>
+          Time
+          <input maxLength={30} onChange={(e) => setForm({ ...form, time: e.target.value })} value={form.time} placeholder="e.g. 7:30 PM" />
+        </label>
+        <label>
           Location
-          <input maxLength={160} onChange={(e) => setForm({ ...form, location: e.target.value })} value={form.location} />
+          <input maxLength={160} onChange={(e) => setForm({ ...form, location: e.target.value })} value={form.location} required />
         </label>
         <label>
           Display price
           <input maxLength={30} onChange={(e) => setForm({ ...form, price: e.target.value })} value={form.price} />
         </label>
+        <label>
+          Description
+          <textarea maxLength={2000} rows={3} onChange={(e) => setForm({ ...form, description: e.target.value })} value={form.description} />
+        </label>
+        <div>
+          <span style={{ display: 'block', fontSize: 'var(--font-size-xs)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
+            Event poster image
+          </span>
+          <EventImageUploadField
+            image={form.image}
+            imageAlt={form.imageAlt}
+            onImageChange={(url) => setForm((prev) => ({ ...prev, image: url }))}
+            onImageAltChange={(alt) => setForm((prev) => ({ ...prev, imageAlt: alt }))}
+          />
+        </div>
         <label>
           Status
           <select onChange={(e) => setForm({ ...form, status: e.target.value })} value={form.status}>
@@ -87,9 +271,16 @@ function EditEventDialog({ categories, event, onClose, onSave }) {
           </select>
         </label>
         {error && <AdminNotice tone="error">{error}</AdminNotice>}
+        {saveFailed && (
+          <AdminNotice tone="error">
+            {storageError || 'Event could not be saved. Check the admin service connection and try again.'}
+          </AdminNotice>
+        )}
         <div className="admin-form__actions">
           <button className="admin-button admin-button--secondary" onClick={onClose} type="button">Cancel</button>
-          <button className="admin-button admin-button--primary" type="submit">Save event</button>
+          <button className="admin-button admin-button--primary" disabled={saving} type="submit">
+            {saving ? 'Saving…' : 'Save event'}
+          </button>
         </div>
       </form>
     </AdminDialog>
@@ -118,6 +309,11 @@ function NewEventDialog({ categories, onClose, onSave }) {
     const priceAmount = Number(form.priceAmount)
     const saved = await onSave({
       ...form,
+      title: form.title.trim(),
+      description: form.description.trim(),
+      location: form.location.trim(),
+      image: form.image.trim(),
+      imageAlt: form.imageAlt.trim(),
       priceAmount,
       seatsAvailable: Number(form.seatsAvailable),
       isFree: priceAmount === 0,
@@ -137,10 +333,19 @@ function NewEventDialog({ categories, onClose, onSave }) {
         <label>Description<textarea maxLength={2000} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={3} value={form.description} /></label>
         <label>Category<select onChange={(event) => setForm({ ...form, category: event.target.value })} required value={form.category}>{categories.map((category) => <option key={category.id} value={category.title}>{category.title}</option>)}</select></label>
         <label>Date<input onChange={(event) => setForm({ ...form, date: event.target.value })} required type="date" value={form.date} /></label>
-        <label>Time<input maxLength={30} onChange={(event) => setForm({ ...form, time: event.target.value })} value={form.time} /></label>
+        <label>Time<input maxLength={30} onChange={(event) => setForm({ ...form, time: event.target.value })} value={form.time} placeholder="e.g. 7:30 PM" /></label>
         <label>Location<input maxLength={200} onChange={(event) => setForm({ ...form, location: event.target.value })} required value={form.location} /></label>
-        <label>Image path or HTTPS URL<input maxLength={2048} onChange={(event) => setForm({ ...form, image: event.target.value })} value={form.image} /></label>
-        <label>Image alternative text<input maxLength={300} onChange={(event) => setForm({ ...form, imageAlt: event.target.value })} value={form.imageAlt} /></label>
+        <div>
+          <span style={{ display: 'block', fontSize: 'var(--font-size-xs)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
+            Event poster image
+          </span>
+          <EventImageUploadField
+            image={form.image}
+            imageAlt={form.imageAlt}
+            onImageChange={(url) => setForm((prev) => ({ ...prev, image: url }))}
+            onImageAltChange={(alt) => setForm((prev) => ({ ...prev, imageAlt: alt }))}
+          />
+        </div>
         <label>Price amount<input min="0" onChange={(event) => setForm({ ...form, priceAmount: event.target.value })} required step="0.01" type="number" value={form.priceAmount} /></label>
         <label>Available seats<input min="0" onChange={(event) => setForm({ ...form, seatsAvailable: event.target.value })} required step="1" type="number" value={form.seatsAvailable} /></label>
         <label>Status<select onChange={(event) => setForm({ ...form, status: event.target.value })} value={form.status}>{eventStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label>
@@ -228,7 +433,29 @@ export default function ManageEvents() {
           <tbody>
             {filteredEvents.map((event) => (
               <tr key={event.id}>
-                <td><strong>{event.title}</strong><span className="admin-table__secondary">{event.location}</span></td>
+                <td>
+                  <div className="admin-event-table-cell">
+                    {event.image ? (
+                      <img
+                        src={event.image}
+                        alt=""
+                        className="admin-event-thumbnail"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      <div className="admin-event-thumbnail admin-event-thumbnail--fallback">
+                        <Image size={18} aria-hidden="true" />
+                      </div>
+                    )}
+                    <div>
+                      <strong>{event.title}</strong>
+                      <span className="admin-table__secondary">{event.location}</span>
+                    </div>
+                  </div>
+                </td>
                 <td>{event.organizer}</td>
                 <td>{event.category}</td>
                 <td>{event.date}</td>
@@ -251,7 +478,7 @@ export default function ManageEvents() {
         </AdminTable>
         {!filteredEvents.length && <p className="admin-empty">No events match these filters.</p>}
       </AdminPanel>
-      {editingEvent && <EditEventDialog categories={categories} event={editingEvent} onClose={() => setEditingEvent(null)} onSave={updateEvent} />}
+      {editingEvent && <EditEventDialog categories={categories} event={editingEvent} onClose={() => setEditingEvent(null)} onSave={updateEvent} storageError={storageError} />}
       {addingEvent && <NewEventDialog categories={categories} onClose={() => setAddingEvent(false)} onSave={(record) => createRecord('events', record)} />}
     </div>
   )

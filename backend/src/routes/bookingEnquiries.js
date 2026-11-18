@@ -344,6 +344,7 @@ export function createBookingEnquiriesRouter({
   razorpayPayments,
   razorpayConfigured = false,
   paymentProvider = 'cashfree',
+  nodeEnv = 'production',
   upiId = 'vinothinimoorthi37-1@okhdfcbank',
   upiPayeeName = 'Vinothini Moorthi',
   diwaliOfferService,
@@ -685,7 +686,7 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (process.env.NODE_ENV === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
+    if (nodeEnv === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
       response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
       return
     }
@@ -1027,7 +1028,7 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (process.env.NODE_ENV === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
+    if (nodeEnv === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
       response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
       return
     }

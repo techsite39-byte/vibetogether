@@ -168,72 +168,6 @@
   padding: clamp(0.75rem, 2vh, 1.25rem) 0 max(1.25rem, env(safe-area-inset-bottom));
 }
 
-.booking-journey__progress {
-  display: grid;
-  width: min(100%, 44rem);
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  justify-self: center;
-  margin-bottom: clamp(1.25rem, 3.5vh, 2.25rem);
-}
-
-.booking-journey__progress-step {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  justify-items: center;
-  text-align: center;
-  gap: 0.55rem;
-  color: #81778e;
-  font-size: 0.73rem;
-  letter-spacing: 0.04em;
-}
-
-.booking-journey__progress-step:not(:last-child)::after {
-  position: absolute;
-  z-index: 0;
-  top: 0.95rem;
-  left: calc(50% + 1rem);
-  width: calc(100% - 2rem);
-  height: 1px;
-  background: rgb(255 255 255 / 13%);
-  content: '';
-  pointer-events: none;
-}
-
-.booking-journey__progress-dot {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: 2rem;
-  flex: 0 0 auto;
-  aspect-ratio: 1;
-  place-items: center;
-  border: 1px solid rgb(204 184 231 / 24%);
-  border-radius: 50%;
-  background: #0b0912;
-  color: #aaa0b7;
-  font-size: 0.65rem;
-  transition: border-color 240ms ease, background 240ms ease, box-shadow 240ms ease;
-}
-
-.booking-journey__progress-label {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.booking-journey__progress-step.is-active,
-.booking-journey__progress-step.is-complete {
-  color: #eadbff;
-}
-
-.booking-journey__progress-step.is-active .booking-journey__progress-dot,
-.booking-journey__progress-step.is-complete .booking-journey__progress-dot {
-  border-color: #bb67ff;
-  background: linear-gradient(145deg, #773bff, #a82bff);
-  box-shadow: 0 0 18px rgb(168 43 255 / 45%);
-  color: #fff;
-}
-
 .booking-journey__screen {
   display: grid;
   width: min(100%, 50rem);
@@ -1346,19 +1280,6 @@
     display: none;
   }
 
-  .booking-journey__progress {
-    margin-bottom: clamp(1rem, 3vh, 1.6rem);
-  }
-
-  .booking-journey__progress-step {
-    gap: 0.35rem;
-    font-size: clamp(0.58rem, 2.7vw, 0.68rem);
-  }
-
-  .booking-journey__progress-dot {
-    width: 1.75rem;
-  }
-
   .booking-journey__title {
     max-width: 19ch;
     font-size: clamp(1.85rem, 7.2vw, 2.7rem);
@@ -1441,10 +1362,6 @@
 @media (max-height: 700px) and (min-width: 641px) {
   .booking-journey__body {
     padding-top: 0.4rem;
-  }
-
-  .booking-journey__progress {
-    margin-bottom: 1.4rem;
   }
 
   .booking-journey__answer {

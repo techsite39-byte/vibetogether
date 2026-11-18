@@ -577,8 +577,10 @@ export default function ManageBookings() {
           event={events.find((item) => item.id === selected.eventId)}
           onClose={() => setSelected(null)}
           onBookingUpdated={(updated) => {
-            updateBooking(updated.id || updated._id || updated.reference, updated)
             setSelected(updated)
+            if (typeof reload === 'function') {
+              void reload()
+            }
           }}
           organizer={organizers.find((item) => item.id === selected.organizerId)}
         />

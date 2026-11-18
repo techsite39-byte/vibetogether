@@ -952,6 +952,116 @@
   font-size: var(--font-size-xs);
 }
 
+.admin-image-upload {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.admin-image-upload__dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border: 1.5px dashed rgb(168 43 255 / 35%);
+  border-radius: var(--radius-md);
+  background: rgb(119 59 255 / 4%);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.admin-image-upload__dropzone:hover,
+.admin-image-upload__dropzone:focus-visible {
+  border-color: var(--color-primary-light);
+  background: rgb(119 59 255 / 9%);
+  color: var(--color-text);
+  box-shadow: 0 0 16px rgb(168 43 255 / 18%);
+}
+
+.admin-image-upload__dropzone svg {
+  color: var(--color-primary-light);
+}
+
+.admin-image-upload__preview-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid rgb(168 43 255 / 20%);
+  border-radius: var(--radius-md);
+  background: rgb(23 18 39 / 80%);
+}
+
+.admin-image-upload__preview-img-wrap {
+  position: relative;
+  overflow: hidden;
+  max-height: 180px;
+  border-radius: var(--radius-sm);
+  background: #090611;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-image-upload__preview-img {
+  max-width: 100%;
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.admin-image-upload__preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.admin-image-upload__url-toggle {
+  background: none;
+  border: none;
+  color: var(--color-primary-light);
+  font-size: 0.72rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  margin-top: 0.2rem;
+}
+
+.admin-image-upload__url-toggle:hover {
+  color: #fff;
+}
+
+.admin-event-table-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.admin-event-thumbnail {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 1px solid rgb(168 43 255 / 25%);
+  background: #110d22;
+}
+
+.admin-event-thumbnail--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
 .admin-dialog-backdrop {
   position: fixed;
   z-index: var(--z-modal);

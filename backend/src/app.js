@@ -1,6 +1,7 @@
 import cors from 'cors'
 import express from 'express'
 import helmet from 'helmet'
+import mongoose from 'mongoose'
 import { createBookingEnquiriesRouter } from './routes/bookingEnquiries.js'
 import { createEventsRouter } from './routes/events.js'
 import { createAdminAuthRouter } from './auth/adminAuth.js'
@@ -14,6 +15,7 @@ import { createCashfreeWebhookRouter } from './routes/cashfreeWebhook.js'
 import healthRouter from './routes/health.js'
 import { PlatformSetting } from './models/adminRecords.js'
 import { DiwaliOffer } from './models/diwaliOffer.js'
+import { MediaAsset } from './models/mediaAsset.js'
 
 export function createApp({
   adminPasswordHash = '',
@@ -126,7 +128,7 @@ export function createApp({
     }),
   )
   app.use(express.json({
-    limit: '1mb',
+    limit: '15mb',
     verify(request, _response, buffer) {
       if (request.originalUrl.startsWith('/api/whatsapp/webhook')) {
         request.rawBody = Buffer.from(buffer)
@@ -136,6 +138,29 @@ export function createApp({
       }
     },
   }))
+  app.get('/api/media/:id', async (request, response, next) => {
+    try {
+      const { id } = request.params
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        response.status(404).json({ message: 'Media not found.' })
+        return
+      }
+
+      const asset = await MediaAsset.findById(id).lean()
+      if (!asset || !asset.data) {
+        response.status(404).json({ message: 'Media not found.' })
+        return
+      }
+
+      response.setHeader('Content-Type', asset.mimeType || 'image/jpeg')
+      response.setHeader('Content-Length', asset.data.length)
+      response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+      response.send(asset.data)
+    } catch (error) {
+      next(error)
+    }
+  })
   app.use('/api/health', healthRouter)
   app.use('/api/admin/auth', createAdminAuthRouter({
     bootstrapPasswordHash: adminPasswordHash,
@@ -206,6 +231,7 @@ export function createApp({
         razorpayPayments,
         razorpayConfigured,
         paymentProvider,
+        nodeEnv,
         upiId,
         upiPayeeName,
         diwaliOfferService,

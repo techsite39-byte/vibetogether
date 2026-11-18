@@ -1,5 +1,25 @@
 import { events as currentEventCatalog } from '../../../src/data/events.js'
+import { PlatformSetting } from '../models/adminRecords.js'
 import { Event } from '../models/event.js'
+
+export const DELETED_BUILT_IN_EVENTS_SETTING_KEY = 'deletedBuiltInEventIds'
+
+const builtInEventIds = new Set(currentEventCatalog.map(({ id }) => id))
+
+export function isBuiltInEventId(id) {
+  return typeof id === 'string' && builtInEventIds.has(id)
+}
+
+function normalizeDeletedBuiltInEventIds(value) {
+  if (value === undefined || value === null) {
+    return new Set()
+  }
+  const ids = Array.isArray(value) ? value : typeof value === 'string' ? [value] : null
+  if (!ids) {
+    throw new TypeError('Deleted built-in event setting must contain an array of IDs.')
+  }
+  return new Set(ids.filter(isBuiltInEventId))
+}
 
 function toEventRecord(event) {
   return {
@@ -31,50 +51,89 @@ function toEventRecord(event) {
   }
 }
 
-export async function ensureEventCatalog() {
-  await Event.init()
-  const existingEvents = await Event.find({}).lean()
-  const existingById = new Map(existingEvents.map((event) => [event.id, event]))
-  const operations = currentEventCatalog.map((event) => {
-    const record = toEventRecord(event)
-    const existing = existingById.get(event.id)
-    const missingFields = existing
-      ? Object.fromEntries(
+export function createEventCatalogService({
+  eventModel = Event,
+  platformSettingModel = PlatformSetting,
+} = {}) {
+  async function ensureEventCatalog() {
+    const deletedBuiltInSetting = await platformSettingModel
+      .findOne({ key: DELETED_BUILT_IN_EVENTS_SETTING_KEY })
+      .lean()
+    const deletedBuiltInEventIds = normalizeDeletedBuiltInEventIds(
+      deletedBuiltInSetting?.value,
+    )
+
+    await eventModel.init()
+    const existingEvents = await eventModel.find({}).lean()
+    const existingById = new Map(existingEvents.map((event) => [event.id, event]))
+    const operations = currentEventCatalog
+      .filter((event) => !deletedBuiltInEventIds.has(event.id))
+      .map((event) => {
+        const record = toEventRecord(event)
+        const existing = existingById.get(event.id)
+        const missingFields = existing
+          ? Object.fromEntries(
+              Object.entries(record).filter(
+                ([field]) => !Object.hasOwn(existing, field),
+              ),
+            )
+          : {}
+        const insertFields = Object.fromEntries(
           Object.entries(record).filter(
-            ([field]) => !Object.hasOwn(existing, field),
+            ([field]) => !Object.hasOwn(missingFields, field),
           ),
         )
-      : {}
-    const insertFields = Object.fromEntries(
-      Object.entries(record).filter(([field]) => !Object.hasOwn(missingFields, field)),
-    )
-    return {
-      updateOne: {
-        filter: { id: event.id },
-        update: {
-          $setOnInsert: insertFields,
-          ...(Object.keys(missingFields).length > 0
-            ? { $set: missingFields }
-            : {}),
-        },
-        upsert: true,
-      },
-    }
-  })
+        return {
+          updateOne: {
+            filter: { id: event.id },
+            update: {
+              $setOnInsert: insertFields,
+              ...(Object.keys(missingFields).length > 0
+                ? { $set: missingFields }
+                : {}),
+            },
+            upsert: true,
+          },
+        }
+      })
 
-  try {
-    await Event.bulkWrite(operations, { ordered: false })
-  } catch (error) {
-    const duplicateOnly =
-      error.code === 11000 ||
-      (Array.isArray(error.writeErrors) &&
-        error.writeErrors.length > 0 &&
-        error.writeErrors.every(({ code }) => code === 11000))
-    if (!duplicateOnly) {
-      throw error
+    if (operations.length === 0) {
+      return
+    }
+
+    try {
+      await eventModel.bulkWrite(operations, { ordered: false })
+    } catch (error) {
+      const duplicateOnly =
+        error.code === 11000 ||
+        (Array.isArray(error.writeErrors) &&
+          error.writeErrors.length > 0 &&
+          error.writeErrors.every(({ code }) => code === 11000))
+      if (!duplicateOnly) {
+        throw error
+      }
     }
   }
+
+  async function markBuiltInEventDeleted(id) {
+    if (!isBuiltInEventId(id)) {
+      return false
+    }
+    await platformSettingModel.findOneAndUpdate(
+      { key: DELETED_BUILT_IN_EVENTS_SETTING_KEY },
+      { $addToSet: { value: id } },
+      { upsert: true, new: true },
+    )
+    return true
+  }
+
+  return { ensureEventCatalog, markBuiltInEventDeleted }
 }
+
+const eventCatalogService = createEventCatalogService()
+
+export const ensureEventCatalog = eventCatalogService.ensureEventCatalog
+export const markBuiltInEventDeleted = eventCatalogService.markBuiltInEventDeleted
 
 export async function listEvents() {
   return Event.find({})

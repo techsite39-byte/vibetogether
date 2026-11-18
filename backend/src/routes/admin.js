@@ -17,6 +17,11 @@ import {
 } from '../models/adminRecords.js'
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { Event } from '../models/event.js'
+import { MediaAsset } from '../models/mediaAsset.js'
+import {
+  isBuiltInEventId,
+  markBuiltInEventDeleted,
+} from '../services/events.js'
 import { hashAdminPassword } from '../auth/adminAuth.js'
 
 const resourceModels = {
@@ -955,6 +960,66 @@ export function createAdminRouter({
     }
   })
 
+  router.post('/upload', async (request, response, next) => {
+    try {
+      const { filename, mimeType, data } = request.body || {}
+      if (!data || typeof data !== 'string') {
+        response.status(400).json({ message: 'Valid image data is required.' })
+        return
+      }
+
+      const cleanMimeType = (mimeType || '').toLowerCase().trim()
+      const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml']
+      if (!allowedMimeTypes.includes(cleanMimeType)) {
+        response.status(400).json({ message: 'Only JPG, PNG, WEBP, GIF, and SVG images are supported.' })
+        return
+      }
+
+      const base64PrefixMatch = data.match(/^data:image\/[a-zA-Z0-9+.-]+;base64,/)
+      const rawBase64 = base64PrefixMatch ? data.slice(base64PrefixMatch[0].length) : data
+      const buffer = Buffer.from(rawBase64, 'base64')
+
+      if (buffer.length === 0) {
+        response.status(400).json({ message: 'Image data cannot be empty.' })
+        return
+      }
+
+      const maxSizeBytes = 10 * 1024 * 1024
+      if (buffer.length > maxSizeBytes) {
+        response.status(400).json({ message: 'Image exceeds the maximum allowed size of 10MB.' })
+        return
+      }
+
+      const cleanFilename = String(filename || 'image.jpg')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .slice(0, 100)
+
+      const asset = await MediaAsset.create({
+        filename: cleanFilename,
+        mimeType: cleanMimeType,
+        size: buffer.length,
+        data: buffer,
+        uploadedBy: request.admin?.username || 'admin',
+      })
+
+      const host = request.get('host')
+      const protocol = request.protocol || 'https'
+      const fullUrl = host ? `${protocol}://${host}/api/media/${asset._id}` : `/api/media/${asset._id}`
+
+      await writeAudit(request, 'Image uploaded', 'media', String(asset._id), `Uploaded image asset ${cleanFilename} (${Math.round(buffer.length / 1024)} KB).`)
+
+      response.status(201).json({
+        url: fullUrl,
+        relativeUrl: `/api/media/${asset._id}`,
+        id: String(asset._id),
+        filename: asset.filename,
+        size: asset.size,
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
   router.post('/:resource', async (request, response, next) => {
     try {
       const { resource } = request.params
@@ -987,7 +1052,10 @@ export function createAdminRouter({
         return
       }
 
-      let booking = await Booking.findOne({ reference }).exec()
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference?.trim?.() ?? '')
+      let booking = await Booking.findOne(
+        isObjectId ? { $or: [{ reference }, { _id: reference.trim() }] } : { reference }
+      ).exec()
       if (booking) {
         if (booking.status === 'cancelled' && status !== 'cancelled') {
           response.status(409).json({ message: 'A cancelled booking cannot be reactivated.' })
@@ -1000,7 +1068,9 @@ export function createAdminRouter({
           }
           const cancelledAt = new Date()
           const cancelled = await Booking.findOneAndUpdate(
-            { reference, status: { $ne: 'cancelled' }, paymentStatus: 'not_required' },
+            isObjectId
+              ? { $or: [{ reference }, { _id: reference.trim() }], status: { $ne: 'cancelled' }, paymentStatus: 'not_required' }
+              : { reference, status: { $ne: 'cancelled' }, paymentStatus: 'not_required' },
             { $set: { status: 'cancelled', cancelledAt } },
             { new: true },
           ).exec()
@@ -1011,7 +1081,9 @@ export function createAdminRouter({
             )
             booking = cancelled
           } else {
-            booking = await Booking.findOne({ reference }).exec()
+            booking = await Booking.findOne(
+              isObjectId ? { $or: [{ reference }, { _id: reference.trim() }] } : { reference }
+            ).exec()
             if (!booking || booking.status !== 'cancelled') {
               response.status(409).json({ message: 'The booking status changed. Refresh and retry.' })
               return
@@ -1026,9 +1098,11 @@ export function createAdminRouter({
         return
       }
 
-      const enquiry = await BookingEnquiry.findOne({
-        $or: [{ reference }, { requestId: reference }],
-      }).exec()
+      const enquiry = await BookingEnquiry.findOne(
+        isObjectId
+          ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
+          : { $or: [{ reference }, { requestId: reference }] }
+      ).exec()
       if (!enquiry) {
         response.status(404).json({ message: 'Booking record was not found.' })
         return
@@ -1048,7 +1122,10 @@ export function createAdminRouter({
     }
     try {
       const { reference } = request.params
-      const booking = await Booking.findOneAndDelete({ reference }).lean()
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference?.trim?.() ?? '')
+      const booking = await Booking.findOneAndDelete(
+        isObjectId ? { $or: [{ reference }, { _id: reference.trim() }] } : { reference }
+      ).lean()
       if (booking) {
         if (booking.status !== 'cancelled') {
           await Event.updateOne({ id: booking.eventId }, { $inc: { seatsAvailable: booking.ticketCount } })
@@ -1057,9 +1134,11 @@ export function createAdminRouter({
         response.status(204).end()
         return
       }
-      const enquiry = await BookingEnquiry.findOneAndDelete({
-        $or: [{ reference }, { requestId: reference }],
-      }).lean()
+      const enquiry = await BookingEnquiry.findOneAndDelete(
+        isObjectId
+          ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
+          : { $or: [{ reference }, { requestId: reference }] }
+      ).lean()
       if (!enquiry) {
         response.status(404).json({ message: 'Booking record was not found.' })
         return
@@ -1185,7 +1264,14 @@ export function createAdminRouter({
         response.status(400).json({ message: 'You cannot delete your own account.' })
         return
       }
-      await model.deleteOne({ _id: record._id })
+      const deleteResult = await model.deleteOne({ _id: record._id })
+      if (
+        resource === 'events' &&
+        isBuiltInEventId(record.id) &&
+        deleteResult?.deletedCount > 0
+      ) {
+        await markBuiltInEventDeleted(record.id)
+      }
       await writeAudit(request, `${resource.slice(0, -1)} deleted`, resource, record.id ?? record._id, `${resource.slice(0, -1)} record deleted.`)
       response.status(204).end()
     } catch (error) {

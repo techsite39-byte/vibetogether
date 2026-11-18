@@ -270,7 +270,6 @@ export async function requestForgotPasswordOtp(email) {
     body: JSON.stringify({ email }),
   })
 }
-
 /**
  * Verifies the 6-digit OTP submitted by the admin.
  */
@@ -330,5 +329,86 @@ export async function verifyUpiPayment(requestId, decision, rejectionReason = ''
   return adminRequest(`/admin/upi-payments/${encodeURIComponent(requestId)}/decision`, {
     method: 'POST',
     body: JSON.stringify({ decision, rejectionReason }),
+  })
+}
+
+/**
+ * Processes and uploads an image to the backend media store.
+ * Automatically resizes large camera/phone images client-side before sending.
+ */
+export async function uploadMediaImage(file) {
+  if (!file || !(file instanceof File)) {
+    throw new Error('Please select an image file to upload.')
+  }
+
+  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml']
+  if (!validTypes.includes(file.type)) {
+    throw new Error('Please upload a valid image file (JPG, PNG, WEBP, GIF, or SVG).')
+  }
+
+  if (file.size > 12 * 1024 * 1024) {
+    throw new Error('Image size must be less than 12MB.')
+  }
+
+  const processed = await processImageForUpload(file)
+  const result = await adminRequest('/admin/upload', {
+    method: 'POST',
+    body: JSON.stringify({
+      filename: processed.filename,
+      mimeType: processed.mimeType,
+      data: processed.data,
+    }),
+  })
+
+  return result
+}
+
+async function processImageForUpload(file) {
+  if (file.type === 'image/svg+xml' || file.size < 400 * 1024) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve({ data: reader.result, mimeType: file.type, filename: file.name })
+      reader.onerror = () => reject(new Error('Failed to read image file.'))
+      reader.readAsDataURL(file)
+    })
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (readerEvent) => {
+      const img = new Image()
+      img.onload = () => {
+        const MAX_WIDTH = 1600
+        const MAX_HEIGHT = 1600
+        let { width, height } = img
+
+        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+          if (width > height) {
+            height = Math.round((height * MAX_WIDTH) / width)
+            width = MAX_WIDTH
+          } else {
+            width = Math.round((width * MAX_HEIGHT) / height)
+            height = MAX_HEIGHT
+          }
+        }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+
+        const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+        const data = canvas.toDataURL(mimeType, 0.88)
+        resolve({ data, mimeType, filename: file.name })
+      }
+      img.onerror = () => {
+        resolve({ data: readerEvent.target.result, mimeType: file.type || 'image/jpeg', filename: file.name })
+      }
+      img.src = readerEvent.target.result
+    }
+    reader.onerror = () => {
+      resolve({ data: '', mimeType: file.type || 'image/jpeg', filename: file.name })
+    }
+    reader.readAsDataURL(file)
   })
 }

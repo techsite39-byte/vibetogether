@@ -10,6 +10,7 @@ async function startTestServer({
   repository: suppliedRepository,
   razorpayPayments,
   razorpayConfigured = false,
+  nodeEnv,
   whatsappNotifications,
   diwaliOfferService,
 } = {}) {
@@ -125,6 +126,7 @@ async function startTestServer({
     bookingEnquiryRepository: repository,
     razorpayPayments,
     razorpayConfigured,
+    nodeEnv,
     whatsappNotifications,
     diwaliOfferService,
   }).listen(0)
@@ -627,7 +629,7 @@ test('stores one category interest without assigning an event', async () => {
 })
 
 test('loads enquiry details and records one idempotent demo payment', async () => {
-  const { baseUrl, saved, repository } = await startTestServer()
+  const { baseUrl, saved, repository } = await startTestServer({ nodeEnv: 'development' })
   const request = {
     requestId: crypto.randomUUID(),
     name: 'Jordan Example',
@@ -788,7 +790,7 @@ test('creates a Razorpay order and returns a booking only after verified payment
 
 test('failed and cancelled demo payments have no reference and can retry the same session', async () => {
   for (const outcome of ['failed', 'cancelled']) {
-    const { baseUrl, saved } = await startTestServer()
+    const { baseUrl, saved } = await startTestServer({ nodeEnv: 'development' })
     const request = {
       requestId: crypto.randomUUID(),
       name: 'Jordan Example',

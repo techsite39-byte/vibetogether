@@ -33,6 +33,7 @@ export default function MainLayout({ children }) {
   const location = useLocation()
   const mainRef = useRef(null)
   const isHome = location.pathname === '/'
+  const isEvents = location.pathname === '/events'
   useScrollReveal(mainRef, location.pathname, revealSelector)
 
   return (
@@ -43,7 +44,7 @@ export default function MainLayout({ children }) {
       <Navbar />
       <main
         id="main-content"
-        className={`site-main${isHome ? ' site-main--home' : ''}`}
+        className={`site-main${isHome ? ' site-main--home' : ''}${isEvents ? ' site-main--events' : ''}`}
         ref={mainRef}
       >
         <Suspense

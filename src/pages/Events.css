@@ -1,3 +1,7 @@
+.site-main.site-main--events {
+  padding-block: 0;
+}
+
 .events-discovery {
   min-height: 100%;
 }
@@ -6,7 +10,7 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  padding-block: clamp(4.5rem, 9vw, 7.5rem) clamp(3rem, 7vw, 5.5rem);
+  padding-block: clamp(1.5rem, 3.5vw, 2.75rem) clamp(2rem, 5vw, 3.5rem);
   background:
     radial-gradient(ellipse at 86% 0%, rgb(119 59 255 / 18%), transparent 42%),
     var(--color-background);

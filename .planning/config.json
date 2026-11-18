@@ -57,7 +57,7 @@
     "context_warnings": true
   },
   "project_code": null,
-  "phase_naming": "sequential",
+  "phase_naming": "custom",
   "agent_skills": {},
   "claude_md_path": "./.github/copilot-instructions.md",
   "plan_review": {

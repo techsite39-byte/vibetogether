@@ -28,9 +28,10 @@ import {
   Users,
   XCircle,
 } from 'lucide-react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
 import UpiPayment from './UpiPayment.jsx'
+import BookingProgress from '../components/booking/BookingProgress.jsx'
 import {
   checkCashfreePaymentStatus,
   createCashfreeOrder,
@@ -47,6 +48,19 @@ import './BookingPayment.css'
 const paymentAttemptTimeoutMs = 2 * 60 * 1000
 const cashfreeScriptUrl = 'https://sdk.cashfree.com/js/v3/cashfree.js'
 const razorpayScriptUrl = 'https://checkout.razorpay.com/v1/razorpay.js'
+const bookingDraftStorageKey = 'vibe-together-booking-draft'
+
+function readStoredJourneyOrigin(requestId) {
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(bookingDraftStorageKey) ?? 'null')
+    if (draft?.requestId !== requestId || !draft.origin || typeof draft.origin !== 'object') {
+      return null
+    }
+    return draft.origin
+  } catch {
+    return null
+  }
+}
 
 function getDeviceCapabilities() {
   if (typeof navigator === 'undefined') {
@@ -235,6 +249,7 @@ function getAvailablePaymentMethods(methods = {}) {
 
 export default function BookingPayment() {
   const { requestId } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const retryingPayment = searchParams.get('retry') === '1'
@@ -251,6 +266,18 @@ export default function BookingPayment() {
   const [paymentUncertain, setPaymentUncertain] = useState(false)
   const [copied, setCopied] = useState(false)
   const [ticketQrUrl, setTicketQrUrl] = useState('')
+
+  useEffect(() => {
+    const root = document.documentElement
+    const previousRootOverflowY = root.style.overflowY
+    const previousOverflow = document.body.style.overflow
+    root.style.overflowY = 'hidden'
+    document.body.style.overflow = 'hidden'
+    return () => {
+      root.style.overflowY = previousRootOverflowY
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
 
   // Custom Checkout state
   const [selectedMethod, setSelectedMethod] = useState('upiQr')
@@ -1058,6 +1085,41 @@ export default function BookingPayment() {
     setTimeout(() => setCopied(false), 2400)
   }
 
+  function handleBackToDetails() {
+    const origin = location.state?.bookingJourneyOrigin ?? readStoredJourneyOrigin(requestId)
+    const originPath = (
+      typeof origin?.pathname === 'string' &&
+      origin.pathname.startsWith('/') &&
+      !origin.pathname.startsWith('//')
+    )
+      ? origin.pathname
+      : '/events'
+    const search = new URLSearchParams(
+      typeof origin?.search === 'string' ? origin.search : '',
+    )
+    search.set('bookingJourneyStep', '4')
+    search.set('bookingRequestId', requestId)
+    if (
+      origin?.requestId === requestId &&
+      origin?.step === 4
+    ) {
+      navigate(-1)
+      return
+    }
+
+    navigate({
+      pathname: originPath,
+      search: `?${search.toString()}`,
+      hash: typeof origin?.hash === 'string' ? origin.hash : '',
+    }, {
+      replace: true,
+      state: {
+        bookingJourneyStep: 4,
+        bookingRequestId: requestId,
+      },
+    })
+  }
+
   const currentBookingState = bookingState.requestId === requestId
     ? bookingState
     : { status: 'loading', booking: null, error: '' }
@@ -1094,70 +1156,25 @@ export default function BookingPayment() {
       <div className="booking-payment__glow-orb booking-payment__glow-orb--bottom" aria-hidden="true" />
 
       <div className="booking-payment__container">
-        {/* =========================================================================
-           TOP LUXURY BRAND & PROGRESS HEADER
-           ========================================================================= */}
         <header className="booking-payment__header">
           <div className="booking-payment__header-top">
-            <Link className="booking-payment__brand" to="/" aria-label="Back to Vibe Together">
-              <div className="booking-payment__brand-logo-wrap">
-                <img
-                  src="/assets/optimized/favicon-256-v1.webp"
-                  alt="Vibe Together logo"
-                  className="booking-payment__brand-logo"
-                  width="44"
-                  height="44"
-                />
-                <div className="booking-payment__brand-logo-glow" aria-hidden="true" />
-              </div>
-              <div className="booking-payment__brand-copy">
-                <span className="booking-payment__brand-name">VIBE TOGETHER</span>
-                <span className="booking-payment__brand-tagline">Different People. One Vibe.</span>
-              </div>
-            </Link>
-
-            <div className="booking-payment__header-trust">
-              <div className="booking-payment__trust-pill" title="Protected by 256-Bit SSL Encryption">
-                <span className="booking-payment__pulse-beacon" aria-hidden="true" />
-                <ShieldCheck size={14} aria-hidden="true" />
-                <span>256-Bit SSL Secured</span>
-              </div>
-            </div>
+            <span className="booking-payment__brand">
+              <Sparkles size={16} aria-hidden="true" />
+              VIBE TOGETHER
+            </span>
+            {!isPaid && (
+              <button
+                className="booking-payment__back-button"
+                onClick={handleBackToDetails}
+                type="button"
+              >
+                <ArrowLeft size={17} aria-hidden="true" />
+                Back
+              </button>
+            )}
           </div>
-
-          {/* Cinematic 5-step booking progress tracker */}
-          <nav className="booking-payment__stepper" aria-label="Booking steps">
-            <ol className="booking-payment__stepper-list">
-              <li className="booking-payment__step is-done">
-                <span className="booking-payment__step-circle"><Check size={12} aria-hidden="true" /></span>
-                <span className="booking-payment__step-label">01 Details</span>
-              </li>
-              <li className="booking-payment__step-divider is-done" aria-hidden="true" />
-              <li className="booking-payment__step is-done">
-                <span className="booking-payment__step-circle"><Check size={12} aria-hidden="true" /></span>
-                <span className="booking-payment__step-label">02 Contact</span>
-              </li>
-              <li className="booking-payment__step-divider is-done" aria-hidden="true" />
-              <li className="booking-payment__step is-done">
-                <span className="booking-payment__step-circle"><Check size={12} aria-hidden="true" /></span>
-                <span className="booking-payment__step-label">03 Category</span>
-              </li>
-              <li className="booking-payment__step-divider is-done" aria-hidden="true" />
-              <li className="booking-payment__step is-done">
-                <span className="booking-payment__step-circle"><Check size={12} aria-hidden="true" /></span>
-                <span className="booking-payment__step-label">04 Attendees</span>
-              </li>
-              <li className="booking-payment__step-divider is-active" aria-hidden="true" />
-              <li className="booking-payment__step is-active" aria-current="step">
-                <span className="booking-payment__step-circle">05</span>
-                <span className="booking-payment__step-label">Payment</span>
-              </li>
-            </ol>
-            <div className="booking-payment__stepper-compact-badge" aria-hidden="true">
-              <span className="booking-payment__compact-step-tag">STEP 05 OF 05</span>
-              <span className="booking-payment__compact-step-desc">Final Payment Confirmation</span>
-            </div>
-          </nav>
+          <BookingProgress activeStep={4} />
+          <p className="booking-payment__step-count" aria-live="polite">5 / 5</p>
         </header>
 
         {/* =========================================================================
