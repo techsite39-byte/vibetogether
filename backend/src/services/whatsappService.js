@@ -396,7 +396,7 @@ export function createWhatsAppService({
   businessAccountId = '',
   apiVersion = '',
   bookingTemplate = '',
-  bookingTemplateLanguage = 'en_US',
+  bookingTemplateLanguage = 'en',
   adminPhoneNumber = '',
   notificationsEnabled = true,
   successTemplateName = '',

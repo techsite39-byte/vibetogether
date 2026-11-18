@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { adminRequest } from '../services/adminApi.js'
 import { AdminDataContext } from './AdminDataContext.js'
 import { AdminNotice } from '../components/AdminUI.jsx'
@@ -135,6 +136,13 @@ export function AdminDataProvider({ children, actor }) {
   const [data, setData] = useState(emptyWorkspace)
   const [loading, setLoading] = useState(true)
   const [storageError, setStorageError] = useState('')
+
+  const location = useLocation()
+  const clearStorageError = useCallback(() => setStorageError(''), [])
+
+  useEffect(() => {
+    setStorageError('')
+  }, [location.pathname])
 
   const reload = useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -348,6 +356,7 @@ export function AdminDataProvider({ children, actor }) {
         actor,
         loading,
         storageError,
+        clearStorageError,
         reload,
         createRecord,
         updateRecord,

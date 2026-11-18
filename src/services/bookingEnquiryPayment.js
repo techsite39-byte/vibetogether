@@ -140,44 +140,6 @@ export async function recordCashfreePaymentFailure(requestId, failure) {
   }
 }
 
-export async function createRazorpayOrder(requestId) {
-  const payload = await requestPayload(
-    `${encodeURIComponent(requestId)}/razorpay-order`,
-    { method: 'POST' },
-    undefined,
-    'Razorpay order',
-  )
-  if (payload.pending) {
-    return { pending: true, booking: validateBooking(payload.booking) }
-  }
-  if (
-    typeof payload.order_id !== 'string' ||
-    typeof payload.key_id !== 'string' ||
-    !Number.isInteger(payload.amount) ||
-    typeof payload.currency !== 'string'
-  ) {
-    throw new Error('Razorpay did not return a valid payment order.')
-  }
-  return payload
-}
-
-export async function verifyRazorpayPayment(requestId, payment) {
-  const payload = await requestPayload(
-    `${encodeURIComponent(requestId)}/verify-payment`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payment),
-    },
-    undefined,
-    'Razorpay payment verification',
-  )
-  return {
-    ...payload,
-    booking: validateBooking(payload.booking),
-  }
-}
-
 export async function submitUpiPayment(requestId, utr) {
   const payload = await requestPayload(
     `${encodeURIComponent(requestId)}/upi-payment`,
@@ -188,40 +150,6 @@ export async function submitUpiPayment(requestId, utr) {
     },
     undefined,
     'UPI payment submission',
-  )
-  return {
-    ...payload,
-    booking: validateBooking(payload.booking),
-  }
-}
-
-export async function checkRazorpayPaymentStatus(requestId) {
-  const payload = await requestPayload(
-    `${encodeURIComponent(requestId)}/razorpay-status`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    },
-    undefined,
-    'Razorpay payment status',
-  )
-  return {
-    ...payload,
-    booking: validateBooking(payload.booking),
-  }
-}
-
-export async function recordRazorpayPaymentFailure(requestId, failure) {
-  const payload = await requestPayload(
-    `${encodeURIComponent(requestId)}/razorpay-failure`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(failure),
-    },
-    undefined,
-    'Razorpay payment failure',
   )
   return {
     ...payload,

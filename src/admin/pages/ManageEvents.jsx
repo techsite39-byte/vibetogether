@@ -46,9 +46,11 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
 
     setUploading(true)
     setUploadError('')
+    setFailedPreview('')
     try {
       const result = await uploadMediaImage(file)
       if (result?.url) {
+        setFailedPreview('')
         onImageChange(result.url)
       } else {
         throw new Error('Image upload failed to return a valid URL.')
@@ -64,6 +66,7 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
   }
 
   function handleRemove() {
+    setFailedPreview('')
     onImageChange('')
   }
 
@@ -160,7 +163,10 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
             maxLength={2048}
             placeholder="https://... or /m1.webp"
             value={image}
-            onChange={(e) => onImageChange(e.target.value)}
+            onChange={(e) => {
+              setFailedPreview('')
+              onImageChange(e.target.value)
+            }}
           />
         </label>
       )}

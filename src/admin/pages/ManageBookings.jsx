@@ -258,7 +258,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
           <div><dt>Regular price per ticket</dt><dd>{formatAmount(currentBooking.regularPrice ?? 299, currentBooking.currency)}</dd></div>
           <div><dt>Diwali offer</dt><dd>{currentBooking.diwaliOfferApplied ? `Applied · saved ${formatAmount(currentBooking.discount ?? (currentBooking.regularPrice ?? 299) - currentBooking.amount, currentBooking.currency)}` : 'Not applied'}</dd></div>
           <div><dt>Payment status</dt><dd><StatusBadge status={currentBooking.paymentStatus}>{formatPaymentStatus(currentBooking.paymentStatus)}</StatusBadge></dd></div>
-          <div><dt>Payment provider</dt><dd><strong>{currentBooking.paymentProvider === 'cashfree' ? 'Cashfree Payments' : currentBooking.paymentProvider === 'razorpay' ? 'Razorpay (Historical)' : currentBooking.paymentProvider || '—'}</strong></dd></div>
+          <div><dt>Payment provider</dt><dd><strong>{currentBooking.paymentProvider === 'cashfree' ? 'Cashfree Payments' : currentBooking.paymentProvider === 'razorpay' ? 'Legacy gateway (Historical)' : currentBooking.paymentProvider || '—'}</strong></dd></div>
           {currentBooking.upiPayments?.map((payment, index) => (
             <div key={`${payment.utr}-${index}`}>
               <dt>UPI submission {index + 1}</dt>
@@ -282,8 +282,8 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
             </>
           ) : currentBooking.paymentProvider === 'razorpay' ? (
             <>
-              <div><dt>Razorpay order ID</dt><dd>{currentBooking.paymentOrderId || '—'}</dd></div>
-              <div><dt>Razorpay payment ID</dt><dd>{currentBooking.razorpayPaymentId || '—'}</dd></div>
+              <div><dt>Legacy order ID</dt><dd>{currentBooking.paymentOrderId || '—'}</dd></div>
+              <div><dt>Legacy payment ID</dt><dd>{currentBooking.razorpayPaymentId || '—'}</dd></div>
             </>
           ) : (
             <>
@@ -632,7 +632,7 @@ export default function ManageBookings() {
           <label className="admin-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search bookings</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Reference, customer, event, category or organizer" value={query} /></label>
           <label className="admin-select"><span>Booking</span><select onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All statuses</option><option value="confirmed">Confirmed</option><option value="pending">Pending</option><option value="cancelled">Cancelled</option></select></label>
           <label className="admin-select"><span>Payment</span><select onChange={(event) => setPaymentStatus(event.target.value)} value={paymentStatus}><option value="all">All payment states</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option><option value="demo_paid">Demo Paid</option><option value="processing">Verifying</option><option value="failed">Failed</option><option value="refunded">Refunded</option><option value="not_required">Not required</option></select></label>
-          <label className="admin-select"><span>Gateway</span><select onChange={(event) => setGateway(event.target.value)} value={gateway}><option value="all">All Gateways</option><option value="cashfree">Cashfree Payments</option><option value="razorpay">Razorpay (Historical)</option><option value="upi">Direct UPI</option></select></label>
+          <label className="admin-select"><span>Gateway</span><select onChange={(event) => setGateway(event.target.value)} value={gateway}><option value="all">All Gateways</option><option value="cashfree">Cashfree Payments</option><option value="upi">Direct UPI</option></select></label>
         </div>
         <AdminTable label="Booking records">
           <thead><tr><th scope="col">Reference / customer</th><th scope="col">Event / interest</th><th scope="col">Ticket details</th><th scope="col">Booked</th><th scope="col">Total amount</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">WhatsApp</th><th scope="col">Actions</th></tr></thead>
@@ -663,7 +663,7 @@ export default function ManageBookings() {
                   <td>
                     <StatusBadge status={booking.paymentStatus}>{formatPaymentStatus(booking.paymentStatus)}</StatusBadge>
                     <span className="admin-table__secondary" style={{ display: 'block', marginTop: '3px', fontWeight: 600 }}>
-                      {booking.paymentProvider === 'cashfree' ? 'Cashfree' : booking.paymentProvider === 'razorpay' ? 'Razorpay' : booking.paymentProvider === 'upi' ? 'Direct UPI' : '—'}
+                      {booking.paymentProvider === 'cashfree' ? 'Cashfree' : booking.paymentProvider === 'razorpay' ? 'Legacy gateway' : booking.paymentProvider === 'upi' ? 'Direct UPI' : '—'}
                     </span>
                   </td>
                   <td><StatusBadge status={booking.status}>{formatBookingStatus(booking.status)}</StatusBadge></td>

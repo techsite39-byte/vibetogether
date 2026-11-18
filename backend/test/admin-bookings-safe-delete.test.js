@@ -130,13 +130,13 @@ function matchesSafeDeleteFilter(record, filter, source) {
       'paymentStatus', 'paymentAmount', 'paymentAmountPaise', 'paymentOrderAmountPaise',
       'paymentOrders', 'upiPayments', 'paymentProvider', 'cfOrderId', 'cfPaymentId',
       'cfPaymentSessionId', 'cfPaymentStatus', 'cfPaymentMethod', 'paymentReference',
-      'paymentOrderId', 'razorpayPaymentId', 'paymentOrderCreatedAt',
+      'paymentOrderId', 'paymentOrderCreatedAt',
       'paymentOrderAttemptNumber', 'paidAt', 'paymentVerifiedAt',
       'paymentFailureReason', 'paymentAttemptId', 'paymentAttemptPricing',
       'paymentAttemptedAt',
     ])
   for (const [key, value] of Object.entries(record)) {
-    if (!/(payment|paid|cashfree|razorpay|upi|gateway|provider|transaction|refund|settlement|verification|verified|attempt|order|utr|receipt|payout|financial|audit)/i.test(key)) {
+    if (!/(payment|paid|cashfree|upi|gateway|provider|transaction|refund|settlement|verification|verified|attempt|order|utr|receipt|payout|financial|audit)/i.test(key)) {
       continue
     }
     if (!allowedFields.has(key)) return false
@@ -248,7 +248,6 @@ function enquiryFixture(overrides = {}) {
     cfPaymentMethod: '',
     paymentReference: '',
     paymentOrderId: '',
-    razorpayPaymentId: '',
     paymentOrderCreatedAt: null,
     paymentOrderAttemptNumber: 0,
     paidAt: null,
@@ -385,7 +384,7 @@ test('enquiry delete rejects payment histories and protects conditional-delete r
     { cfPaymentMethod: 'card' },
     { paymentReference: 'payment-reference-1' },
     { paymentOrderId: 'order-id-1' },
-    { razorpayPaymentId: 'razorpay-payment-1' },
+    { cfPaymentId: 'cf-payment-legacy-1' },
     { paymentOrderCreatedAt: new Date() },
     { paymentOrderAmountPaise: 100 },
     { paymentOrderAttemptNumber: 1 },
@@ -401,12 +400,12 @@ test('enquiry delete rejects payment histories and protects conditional-delete r
   const bookingEvidence = [
     { paymentOrders: [{ orderId: 'order-1' }] },
     { upiPayments: [{ status: 'Verified' }] },
-    { paymentProvider: 'razorpay' },
+    { paymentProvider: 'cashfree' },
     { cashfreePaymentId: 'cf-payment-1' },
     { cfOrderId: 'cf-order-1' },
     { cfPaymentSessionId: 'cf-session-1' },
     { cfPaymentStatus: 'FAILED' },
-    { razorpayPaymentId: 'razorpay-payment-1' },
+    { cfPaymentId: 'cf-payment-legacy-1' },
     { paymentReference: 'reference-1' },
     { paymentOrderCreatedAt: new Date() },
     { paymentOrderAttemptNumber: 1 },

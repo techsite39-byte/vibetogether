@@ -2,10 +2,18 @@ import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
 import { describe, it } from 'node:test'
 import {
-  createCashfreePaymentService,
+  createCashfreePaymentService as createCashfreePaymentServiceImpl,
   isValidCashfreeWebhookSignature,
   resolveCashfreeReturnUrl,
 } from '../src/services/cashfreePayments.js'
+import { createMockBookingResultModel } from './bookingResultMocks.js'
+
+function createCashfreePaymentService(options = {}) {
+  return createCashfreePaymentServiceImpl({
+    bookingResultModel: createMockBookingResultModel(),
+    ...options,
+  })
+}
 
 describe('Cashfree Payments Integration', () => {
   const testAppId = '1527714905b6600c9e88011fc744177251'
@@ -355,6 +363,7 @@ describe('Cashfree Payments Integration', () => {
         },
       }
 
+      const bookingResultModel = createMockBookingResultModel()
       let allocatedCount = 0
       const service = createCashfreePaymentService({
         appId: testAppId,
@@ -362,6 +371,7 @@ describe('Cashfree Payments Integration', () => {
         environment: 'PRODUCTION',
         frontendUrl: 'https://www.vibetogether.show',
         bookingEnquiryModel: mockModel,
+        bookingResultModel,
         allocateReference: async () => {
           allocatedCount += 1
           return 'VT-REF-2026-001'
@@ -385,6 +395,10 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(result.booking.cfPaymentId, '11223344')
       assert.equal(result.booking.paymentOrderId, 'VT_order_test_123')
       assert.equal(allocatedCount, 1)
+      assert.equal(bookingResultModel.record.paymentStatus, 'SUCCESS')
+      assert.equal(bookingResultModel.record.requestId, enquiry.requestId)
+      assert.equal(bookingResultModel.record.providerPaymentId, '11223344')
+      assert.equal(bookingResultModel.record.amount, 597)
 
       // Repeat verification should be idempotent (not re-allocate reference)
       const repeatResult = await service.verifyPayment(enquiry.requestId, {
@@ -394,6 +408,70 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(repeatResult.duplicate, true)
       assert.equal(repeatResult.booking.reference, 'VT-REF-2026-001')
       assert.equal(allocatedCount, 1)
+      assert.equal(bookingResultModel.record.paymentStatus, 'SUCCESS')
+      assert.equal(bookingResultModel.writeCount, 2)
+    })
+
+    it('persists provider-confirmed failures but leaves pending payments out of bookings-db', async () => {
+      for (const testCase of [
+        {
+          name: 'terminal failure',
+          payments: [{
+            cf_payment_id: 'cf-failed-1',
+            payment_status: 'FAILED',
+            payment_amount: 249,
+            payment_currency: 'INR',
+            payment_message: 'Issuer declined',
+            payment_code: 'DECLINED',
+          }],
+          orderStatus: 'EXPIRED',
+          expectedStatus: 'FAILED',
+        },
+        {
+          name: 'pending payment',
+          payments: [{
+            cf_payment_id: 'cf-pending-1',
+            payment_status: 'PENDING',
+            payment_amount: 249,
+            payment_currency: 'INR',
+          }],
+          orderStatus: 'ACTIVE',
+          expectedStatus: '',
+        },
+      ]) {
+        const enquiry = createMockEnquiry({
+          paymentOrderId: `VT_${testCase.name.replaceAll(' ', '_')}`,
+          paymentAmount: 249,
+          paymentStatus: 'unpaid',
+        })
+        const bookingResultModel = createMockBookingResultModel()
+        const service = createCashfreePaymentService({
+          appId: testAppId,
+          secretKey: testSecretKey,
+          bookingEnquiryModel: {
+            async findOne() {
+              return enquiry
+            },
+          },
+          bookingResultModel,
+          fetchFn: async (url) => url.includes('/payments')
+            ? { ok: true, json: async () => testCase.payments }
+            : { ok: true, json: async () => ({ order_status: testCase.orderStatus }) },
+        })
+
+        const result = await service.verifyPayment(enquiry.requestId, {
+          order_id: enquiry.paymentOrderId,
+        })
+
+        assert.equal(bookingResultModel.record?.paymentStatus ?? '', testCase.expectedStatus)
+        if (testCase.expectedStatus === 'FAILED') {
+          assert.equal(result.failed, true)
+          assert.equal(bookingResultModel.record.failureReason, 'Issuer declined')
+          assert.equal(bookingResultModel.record.failureCode, 'DECLINED')
+        } else {
+          assert.equal(result.pending, true)
+        }
+      }
     })
 
     it('rejects orders that are not recorded for the booking before returning duplicate success', async () => {
@@ -563,6 +641,7 @@ describe('Cashfree Payments Integration', () => {
         },
       }
 
+      const bookingResultModel = createMockBookingResultModel()
       let allocatedCount = 0
       const service = createCashfreePaymentService({
         appId: testAppId,
@@ -570,6 +649,7 @@ describe('Cashfree Payments Integration', () => {
         environment: 'PRODUCTION',
         frontendUrl: 'https://www.vibetogether.show',
         bookingEnquiryModel: mockModel,
+        bookingResultModel,
         allocateReference: async () => {
           allocatedCount += 1
           return 'VT-REF-HOOK-001'
@@ -622,6 +702,9 @@ describe('Cashfree Payments Integration', () => {
       )
       assert.equal(duplicateResult.duplicate, true)
       assert.equal(allocatedCount, 1)
+      assert.equal(bookingResultModel.record.paymentStatus, 'SUCCESS')
+      assert.equal(bookingResultModel.record.providerPaymentId, '55667788')
+      assert.equal(bookingResultModel.writeCount, 2)
     })
 
     it('does not confirm a success event whose payment amount does not match the booking', async () => {
@@ -766,12 +849,14 @@ describe('Cashfree Payments Integration', () => {
         },
       }
 
+      const bookingResultModel = createMockBookingResultModel()
       const service = createCashfreePaymentService({
         appId: testAppId,
         secretKey: testSecretKey,
         environment: 'PRODUCTION',
         frontendUrl: 'https://www.vibetogether.show',
         bookingEnquiryModel: mockModel,
+        bookingResultModel,
       })
 
       const droppedPayload = {
@@ -796,6 +881,47 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(result.booking.paymentFailureReason, 'cancelled')
       assert.equal(result.booking.reference, undefined)
       assert.equal(result.booking.paymentOrderId, 'VT_order_test_789')
+      assert.equal(bookingResultModel.record, null)
+
+      const failedPayload = {
+        data: {
+          order: { order_id: 'VT_order_test_789', order_currency: 'INR' },
+          payment: {
+            cf_payment_id: 'cf-terminal-failure',
+            payment_status: 'FAILED',
+            payment_amount: 249,
+            payment_currency: 'INR',
+            payment_message: 'Issuer declined',
+            payment_code: 'DECLINED',
+          },
+        },
+        type: 'PAYMENT_FAILED_WEBHOOK',
+      }
+      const failedRawBody = JSON.stringify(failedPayload)
+      const failedTimestamp = Math.floor(Date.now() / 1000).toString()
+      const failedSignature = createHmac('sha256', testSecretKey)
+        .update(failedTimestamp + failedRawBody)
+        .digest('base64')
+
+      const failedResult = await service.handleWebhook(
+        failedPayload,
+        failedSignature,
+        failedTimestamp,
+        failedRawBody,
+      )
+      const duplicateFailure = await service.handleWebhook(
+        failedPayload,
+        failedSignature,
+        failedTimestamp,
+        failedRawBody,
+      )
+
+      assert.equal(failedResult.action, 'failed')
+      assert.equal(duplicateFailure.duplicate, true)
+      assert.equal(bookingResultModel.record.paymentStatus, 'FAILED')
+      assert.equal(bookingResultModel.record.failureReason, 'Issuer declined')
+      assert.equal(bookingResultModel.record.failureCode, 'DECLINED')
+      assert.equal(bookingResultModel.writeCount, 2)
     })
   })
 })

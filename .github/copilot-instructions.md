@@ -55,7 +55,6 @@ VibeTogether is a customer-facing website for discovering and booking live music
 - `mongoose` 8.12.1 - MongoDB access used by backend data access.
 - `bcryptjs` 3.0.3 - password hashing for admin auth in `backend\src\auth\adminAuth.js`.
 - `nodemailer` 10.3.1 - outbound email service in `backend\src\services\emailService.js`.
-- `razorpay` 2.9.8 - Razorpay SDK for payment verification and webhooks.
 - `cors` 2.8.5 - configured in `backend\src\app.js` to restrict allowed origins.
 - `dotenv` 16.4.7 - environment loading in `backend\src\config\env.js`.
 - `helmet` 8.1.0 - HTTP security headers in `backend\src\app.js`.
@@ -117,7 +116,7 @@ VibeTogether is a customer-facing website for discovering and booking live music
 - The repository does not use a dedicated structured logger library. It relies on `console.info`, `console.error`, and occasionally `console.warn` patterns.
 - Startup and service lifecycle messages are logged with `console.info`, such as the backend startup banner in `E:\club\backend\src\server.js`.
 - Request and error logging for 5xx conditions is handled in `E:\club\backend\src\app.js` via `console.error('API request failed:', error.message)`.
-- Several payment and WhatsApp flows log operational failures with contextual labels such as `'[Cashfree Order Error]'`, `'[Razorpay custom checkout initialization failed.]'`, and `'[WhatsApp] Failed to dispatch attendee confirmation:'` across `E:\club\src\pages\BookingPayment.jsx` and `E:\club\backend\src\services\whatsappService.js`.
+- Payment and WhatsApp flows log operational failures with contextual labels such as `'[Cashfree Order Error]'` and `'[WhatsApp] Failed to dispatch attendee confirmation:'` across `E:\club\src\pages\BookingPayment.jsx` and `E:\club\backend\src\services\whatsappService.js`.
 
 ## Comments
 
@@ -136,7 +135,7 @@ VibeTogether is a customer-facing website for discovering and booking live music
 ## Module Design
 
 - Modules expose named functions and default exports for React components. For example, `E:\club\src\utils\bookingValidation.js` exports `validateBookingForm`, while `E:\club\src\components\common\Button.jsx` defaults to a component export.
-- The backend uses a factory pattern for routers and app creation (`createApp`, `createRazorpayPaymentService`, `createWhatsAppNotificationService`) in files under `E:\club\backend\src`.
+- The backend uses a factory pattern for routers and app creation (`createApp`, `createCashfreePaymentService`, `createWhatsAppNotificationService`) in files under `E:\club\backend\src`.
 - Not detected. The codebase generally imports directly from file paths rather than through index barrel files.
 
 <!-- GSD:conventions-end -->

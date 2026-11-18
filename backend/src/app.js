@@ -10,12 +10,11 @@ import { createBookingsRouter } from './routes/bookings.js'
 import { createPublicEnquiriesRouter } from './routes/publicEnquiries.js'
 import { createPublicSettingsRouter } from './routes/publicSettings.js'
 import { createWhatsAppWebhookRouter } from './routes/whatsappWebhook.js'
-import { createRazorpayWebhookRouter } from './routes/razorpayWebhook.js'
 import { createCashfreeWebhookRouter } from './routes/cashfreeWebhook.js'
 import healthRouter from './routes/health.js'
 import { PlatformSetting } from './models/adminRecords.js'
 import { DiwaliOffer } from './models/diwaliOffer.js'
-import { MediaAsset } from './models/mediaAsset.js'
+import { MediaAsset, normalizeMediaBuffer } from './models/mediaAsset.js'
 
 export function createApp({
   adminPasswordHash = '',
@@ -37,11 +36,7 @@ export function createApp({
   cashfreePayments,
   cashfreeConfigured = false,
   cashfreeSecretKey = '',
-  razorpayPayments,
-  razorpayConfigured = false,
-  razorpayKeyId = '',
-  razorpayWebhookSecret = '',
-  paymentProvider = 'razorpay',
+  paymentProvider = 'cashfree',
   upiId = 'vinothinimoorthi37-1@okhdfcbank',
   upiPayeeName = 'Vinothini Moorthi',
   whatsappNotifications,
@@ -53,6 +48,7 @@ export function createApp({
   events,
   eventRepository,
   platformSettingModel = PlatformSetting,
+  mediaAssetModel = MediaAsset,
   frontendOrigin,
   backendPort = 4000,
   nodeEnv = 'production',
@@ -133,9 +129,6 @@ export function createApp({
       if (request.originalUrl.startsWith('/api/whatsapp/webhook')) {
         request.rawBody = Buffer.from(buffer)
       }
-      if (request.originalUrl.startsWith('/api/razorpay/webhook')) {
-        request.rawBody = Buffer.from(buffer)
-      }
     },
   }))
   app.get('/api/media/:id', async (request, response, next) => {
@@ -146,17 +139,18 @@ export function createApp({
         return
       }
 
-      const asset = await MediaAsset.findById(id).lean()
-      if (!asset || !asset.data) {
+      const asset = await mediaAssetModel.findById(id).lean()
+      const buffer = normalizeMediaBuffer(asset?.data)
+      if (!asset || !buffer || buffer.length === 0) {
         response.status(404).json({ message: 'Media not found.' })
         return
       }
 
       response.setHeader('Content-Type', asset.mimeType || 'image/jpeg')
-      response.setHeader('Content-Length', asset.data.length)
+      response.setHeader('Content-Length', buffer.length)
       response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
       response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
-      response.send(asset.data)
+      response.send(buffer)
     } catch (error) {
       next(error)
     }
@@ -190,11 +184,6 @@ export function createApp({
     diwaliOfferService,
     diwaliOfferModel: DiwaliOffer,
     whatsappNotifications,
-    integrationDiagnostics: {
-      razorpayCheckoutConfigured: razorpayConfigured,
-      razorpayMode: razorpayKeyId.startsWith('rzp_test_') ? 'test' : razorpayKeyId ? 'live' : 'not_configured',
-      razorpayWebhookConfigured: Boolean(razorpayWebhookSecret),
-    },
   }))
   app.use('/api', createPublicEnquiriesRouter({ enquiryModel, subscriberModel }))
   app.use('/api/public-settings', createPublicSettingsRouter({
@@ -204,11 +193,6 @@ export function createApp({
   app.use('/api/whatsapp/webhook', createWhatsAppWebhookRouter({
     notifications: whatsappNotifications,
     ...whatsappWebhookConfig,
-  }))
-  app.use('/api/razorpay/webhook', createRazorpayWebhookRouter({
-    payments: razorpayPayments,
-    notifications: whatsappNotifications,
-    secret: razorpayWebhookSecret,
   }))
   app.use('/api/bookings', createBookingsRouter({
     bookingModel,
@@ -228,8 +212,6 @@ export function createApp({
         repository: bookingEnquiryRepository,
         cashfreePayments,
         cashfreeConfigured,
-        razorpayPayments,
-        razorpayConfigured,
         paymentProvider,
         nodeEnv,
         upiId,

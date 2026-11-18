@@ -18,13 +18,12 @@ import {
   listEvents,
 } from './services/events.js'
 import mongoose from 'mongoose'
-import Razorpay from 'razorpay'
 import { initializeAdminRecords } from './services/adminSetup.js'
 import { createCashfreePaymentService } from './services/cashfreePayments.js'
-import { createRazorpayPaymentService } from './services/razorpayPayments.js'
 import { createDiwaliOfferService } from './services/diwaliOffer.js'
 import { createWhatsAppNotificationService } from './services/whatsappNotifications.js'
 import { DiwaliOffer } from './models/diwaliOffer.js'
+import { BookingResult } from './models/bookingResult.js'
 import { AdminCredential, AdminSession, PasswordReset } from './models/adminRecords.js'
 import {
   consumeGoogleOAuthTransaction,
@@ -46,17 +45,6 @@ const cashfreePayments = createCashfreePaymentService({
   environment: config.cashfreeEnv,
   apiVersion: config.cashfreeApiVersion,
   frontendUrl: config.frontendUrl,
-  diwaliOfferService,
-})
-const razorpayPayments = createRazorpayPaymentService({
-  client: config.razorpayConfigured
-    ? new Razorpay({
-        key_id: config.razorpayKeyId,
-        key_secret: config.razorpayKeySecret,
-      })
-    : null,
-  keyId: config.razorpayKeyId,
-  keySecret: config.razorpayKeySecret,
   diwaliOfferService,
 })
 const whatsappNotifications = createWhatsAppNotificationService({
@@ -104,10 +92,6 @@ const app = createApp({
   cashfreePayments,
   cashfreeConfigured: config.cashfreeConfigured,
   cashfreeSecretKey: config.cashfreeSecretKey,
-  razorpayPayments,
-  razorpayConfigured: config.razorpayConfigured,
-  razorpayKeyId: config.razorpayKeyId,
-  razorpayWebhookSecret: config.razorpayWebhookSecret,
   paymentProvider: config.paymentProvider,
   upiId: config.upiId,
   upiPayeeName: config.upiPayeeName,
@@ -133,6 +117,16 @@ const host = process.env.HOST ?? '0.0.0.0'
 let databaseInitialized = false
 try {
   await connectDatabase(config.mongoUri, config.mongoDatabaseName)
+  if (mongoose.connection.name !== 'main') {
+    throw new Error('Booking result persistence requires MongoDB database "main".')
+  }
+  const bookingsCollectionExists = await mongoose.connection.db
+    .listCollections({ name: 'bookings-db' }, { nameOnly: true })
+    .hasNext()
+  if (!bookingsCollectionExists) {
+    throw new Error('Required MongoDB collection "bookings-db" does not exist in database "main".')
+  }
+  await BookingResult.init()
   await DiwaliOffer.init()
   await diwaliOfferService.getOffer()
   await ensureEventCatalog()

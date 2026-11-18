@@ -1,11 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
+import { BookingResult } from '../models/bookingResult.js'
 import { nextBookingReference } from './bookingReferences.js'
 import {
   DEFAULT_TICKET_TYPE,
   FIXED_BOOKING_AMOUNT,
   calculateTicketPricing,
 } from './diwaliOffer.js'
+import { persistBookingResult } from './bookingResults.js'
 
 const SANDBOX_URL = 'https://sandbox.cashfree.com/pg'
 const PRODUCTION_URL = 'https://api.cashfree.com/pg'
@@ -137,6 +139,7 @@ export function createCashfreePaymentService({
   apiVersion = DEFAULT_API_VERSION,
   frontendUrl = process.env.FRONTEND_URL || 'https://www.vibetogether.show',
   bookingEnquiryModel = BookingEnquiry,
+  bookingResultModel = BookingResult,
   allocateReference = nextBookingReference,
   diwaliOfferService,
   fetchFn = fetch,
@@ -164,6 +167,22 @@ export function createCashfreePaymentService({
       enquiry?.ticketQuantity ?? 1,
       enquiry?.ticketType ?? DEFAULT_TICKET_TYPE,
       { perTicket: Boolean(enquiry?.categoryId) },
+    )
+  }
+
+  async function persistPaymentResult(enquiry, paymentStatus, payment = {}) {
+    return persistBookingResult(
+      enquiry,
+      {
+        paymentStatus,
+        paymentProvider: 'cashfree',
+        providerPaymentId: String(payment.cf_payment_id ?? enquiry.cfPaymentId ?? ''),
+        providerOrderId: String(payment.order_id ?? enquiry.paymentOrderId ?? enquiry.cfOrderId ?? ''),
+        currency: payment.payment_currency || 'INR',
+        failureReason: payment.payment_message || enquiry.paymentFailureReason || '',
+        failureCode: payment.payment_code || payment.error_code || '',
+      },
+      { bookingResultModel },
     )
   }
 
@@ -383,6 +402,10 @@ export function createCashfreePaymentService({
       ) {
         throw serviceError(400, 'Cashfree payment does not match this booking order.')
       }
+      await persistPaymentResult(enquiry, 'SUCCESS', {
+        cf_payment_id: enquiry.cfPaymentId,
+        order_id: orderIdString,
+      })
       return {
         verified: true,
         duplicate: true,
@@ -468,6 +491,10 @@ export function createCashfreePaymentService({
       }
 
       await enquiry.save()
+      await persistPaymentResult(enquiry, 'SUCCESS', {
+        ...paymentRecord,
+        order_id: orderIdString,
+      })
 
       return {
         verified: true,
@@ -496,9 +523,18 @@ export function createCashfreePaymentService({
 
     if (failedPayment) {
       enquiry.paymentStatus = 'failed'
-      enquiry.paymentFailureReason = failedPayment.payment_status === 'USER_DROPPED' ? 'cancelled' : 'failed'
+      enquiry.paymentFailureReason =
+        ['USER_DROPPED', 'CANCELLED'].includes(failedPayment.payment_status)
+          ? 'cancelled'
+          : 'failed'
       enquiry.cfPaymentStatus = failedPayment.payment_status
       await enquiry.save()
+      if (failedPayment.payment_status === 'FAILED') {
+        await persistPaymentResult(enquiry, 'FAILED', {
+          ...failedPayment,
+          order_id: orderIdString,
+        })
+      }
     }
 
     return {
@@ -553,9 +589,25 @@ export function createCashfreePaymentService({
       return { booking: enquiry }
     }
 
+    let verification
+    if (orderId || enquiry.paymentOrderId) {
+      verification = await verifyPayment(requestId, {
+        order_id: orderId || enquiry.paymentOrderId,
+      })
+      if (verification.failed && verification.booking?.cfPaymentStatus === 'FAILED') {
+        return { booking: verification.booking, failed: true }
+      }
+    }
+    if (outcome !== 'cancelled') {
+      return {
+        booking: verification?.booking ?? enquiry,
+        pending: true,
+      }
+    }
+
     enquiry.paymentStatus = 'failed'
-    enquiry.paymentFailureReason = outcome === 'cancelled' ? 'cancelled' : 'failed'
-    enquiry.cfPaymentStatus = outcome === 'cancelled' ? 'USER_DROPPED' : 'FAILED'
+    enquiry.paymentFailureReason = 'cancelled'
+    enquiry.cfPaymentStatus = 'USER_DROPPED'
 
     const orderEntry = enquiry.paymentOrders?.find((o) => o.orderId === orderId)
     if (orderEntry && orderEntry.status === 'created') {
@@ -609,6 +661,10 @@ export function createCashfreePaymentService({
     const paymentId = String(paymentData?.cf_payment_id ?? '')
     const paymentStatus = paymentData?.payment_status
     const orderEntry = enquiry.paymentOrders?.find((order) => order.orderId === orderIdString)
+    const isCancelledPayment =
+      eventType === 'PAYMENT_USER_DROPPED_WEBHOOK' ||
+      ['USER_DROPPED', 'CANCELLED'].includes(paymentStatus)
+    const isTerminalFailure = paymentStatus === 'FAILED' && !isCancelledPayment
     const isSuccessfulPayment =
       eventType === 'PAYMENT_SUCCESS_WEBHOOK' && paymentStatus === 'SUCCESS'
 
@@ -632,6 +688,11 @@ export function createCashfreePaymentService({
       }
 
       if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+        await persistPaymentResult(enquiry, 'SUCCESS', {
+          cf_payment_id: enquiry.cfPaymentId || paymentId,
+          order_id: orderIdString,
+          payment_currency: paymentData?.payment_currency || 'INR',
+        })
         return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
       }
 
@@ -657,14 +718,14 @@ export function createCashfreePaymentService({
       }
 
       await enquiry.save()
+      await persistPaymentResult(enquiry, 'SUCCESS', {
+        ...paymentData,
+        order_id: orderIdString,
+      })
       return { received: true, booking: enquiry, action: 'confirmed' }
     }
 
-    if (
-      eventType === 'PAYMENT_FAILED_WEBHOOK' ||
-      eventType === 'PAYMENT_USER_DROPPED_WEBHOOK' ||
-      ['FAILED', 'USER_DROPPED', 'CANCELLED'].includes(paymentStatus)
-    ) {
+    if (isTerminalFailure || isCancelledPayment) {
       if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
         return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
       }
@@ -674,13 +735,18 @@ export function createCashfreePaymentService({
         enquiry.cfPaymentId === paymentId &&
         enquiry.cfPaymentStatus === paymentStatus
       ) {
+        if (isTerminalFailure) {
+          await persistPaymentResult(enquiry, 'FAILED', {
+            ...paymentData,
+            order_id: orderIdString,
+          })
+        }
         return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
       }
 
       if (enquiry.paymentStatus !== 'paid') {
         enquiry.paymentStatus = 'failed'
-        enquiry.paymentFailureReason =
-          eventType === 'PAYMENT_USER_DROPPED_WEBHOOK' ? 'cancelled' : 'failed'
+        enquiry.paymentFailureReason = isCancelledPayment ? 'cancelled' : 'failed'
         enquiry.cfPaymentId = paymentId
         enquiry.cfPaymentStatus = paymentStatus || 'FAILED'
 
@@ -690,6 +756,12 @@ export function createCashfreePaymentService({
         }
 
         await enquiry.save()
+        if (isTerminalFailure) {
+          await persistPaymentResult(enquiry, 'FAILED', {
+            ...paymentData,
+            order_id: orderIdString,
+          })
+        }
       }
       return { received: true, booking: enquiry, action: 'failed' }
     }

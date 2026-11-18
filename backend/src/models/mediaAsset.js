@@ -39,5 +39,21 @@ const mediaAssetSchema = new mongoose.Schema(
 
 mediaAssetSchema.index({ createdAt: -1 })
 
+export function normalizeMediaBuffer(data) {
+  if (Buffer.isBuffer(data)) {
+    return data
+  }
+  if (data && Buffer.isBuffer(data.buffer)) {
+    return data.buffer
+  }
+  if (data && typeof data.read === 'function') {
+    return data.read(0, typeof data.length === 'function' ? data.length() : data.length)
+  }
+  if (data && data.buffer instanceof ArrayBuffer) {
+    return Buffer.from(data.buffer, data.byteOffset || 0, data.byteLength || data.buffer.byteLength)
+  }
+  return Buffer.from(data || [])
+}
+
 export const MediaAsset =
   mongoose.models.MediaAsset ?? mongoose.model('MediaAsset', mediaAssetSchema)

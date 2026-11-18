@@ -102,20 +102,15 @@ calculates the active price: ₹249 (24,900 paise) during the offer, otherwise
 ₹299 (29,900 paise). An existing order retains its original price; a new order
 after a failed attempt uses the then-current server price.
 
-Configure these server-only Render variables for Razorpay:
-`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET`.
-The webhook secret is the separate secret configured in the Razorpay dashboard.
-The signed checkout callback and payment-status fetch verify the order, amount,
-currency, signature, and captured status before atomically assigning a permanent
-booking reference. Failed payment sessions remain retryable without a
-permanent reference. Never prefix or expose any Razorpay secret to Vite.
-Without the key ID and key secret, the page uses the explicit demo simulator;
-it does not charge money.
+Configure `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` as server-only Render
+variables. Never expose payment credentials to Vite. In non-production
+environments, the explicit demo simulator is available only when Cashfree is
+not configured; it does not charge money.
 
-Select the active payment method on the API with `PAYMENT_PROVIDER=cashfree`,
-`PAYMENT_PROVIDER=upi`, or `PAYMENT_PROVIDER=razorpay`. The Render Blueprint
-selects Cashfree (`PAYMENT_PROVIDER=cashfree`); changing this server variable
-requires an API restart/redeploy, not a frontend rebuild.
+Select the active payment method on the API with `PAYMENT_PROVIDER=cashfree` or
+`PAYMENT_PROVIDER=upi`. The Render Blueprint selects Cashfree
+(`PAYMENT_PROVIDER=cashfree`); changing this server variable requires an API
+restart/redeploy, not a frontend rebuild.
 
 In Cashfree mode (`PAYMENT_PROVIDER=cashfree`), Cashfree is the active payment gateway.
 Customers choose their preferred payment methods directly inside Cashfree's checkout modal,
@@ -123,12 +118,6 @@ including UPI payment methods (Google Pay, PhonePe, Paytm), dynamic QR codes, ca
 netbanking. When Cashfree is active, manual UTR reference submission through
 `/api/booking-enquiries/:requestId/upi-payment` is intentionally disabled (`409 Conflict`)
 because UPI transactions are handled and verified automatically within Cashfree.
-
-In Razorpay mode (`PAYMENT_PROVIDER=razorpay`), customers pay through Razorpay Checkout.
-Manual UPI reference submission is also accepted as a fallback in Razorpay mode only when
-the booking has no Razorpay order attached. Bookings with an existing Razorpay order remain
-locked to that provider to prevent duplicate payment attempts. The payment page shows UPI
-for eligible unpaid bookings.
 
 In direct UPI mode (`PAYMENT_PROVIDER=upi`), `UPI_ID` and `UPI_PAYEE_NAME` are public
 receiving-account details (defaults are the UPI details supplied for this integration).
@@ -138,15 +127,6 @@ pending and no permanent reference/ticket is issued until an authenticated admin
 the actual credit in the receiving bank account under **Admin → Booking management →
 UPI payments awaiting verification**; rejection requires a reason. Keep all payment-provider
 secrets server-only.
-
-Razorpay webhook endpoint:
-`https://vibetogether-ahgy.onrender.com/api/razorpay/webhook`
-
-Configure the same `RAZORPAY_WEBHOOK_SECRET` value in Render and in the Razorpay Test Mode
-webhook settings. Subscribe to `payment.captured`, `payment.failed`, and `order.paid`.
-A failed payment attempt is not treated as a terminal booking failure by itself; the checkout
-dismissal/status check reconciles all attempts before sending assistance, so a later successful
-retry is not preceded by a false failure message.
 
 Cashfree webhook endpoints:
 - Primary: `https://vibetogether-ahgy.onrender.com/api/payments/cashfree/webhook`
@@ -236,9 +216,10 @@ are recorded only from signed status webhooks. Missing consent is recorded as
 **Skipped**, and notification errors never undo a finalized payment or booking.
 The authenticated admin endpoint
 `GET /api/admin/integrations/diagnostics` reports configured-variable names,
-Razorpay mode/webhook readiness, and whether Meta accepts the configured phone
-number ID and access token. It never returns credentials. Template approval and
-recipient test allowlisting must still be confirmed in WhatsApp Manager.
+whether Meta accepts the configured phone number ID and access token, and
+WhatsApp notification readiness. It never returns credentials. Template
+approval and recipient test allowlisting must still be confirmed in WhatsApp
+Manager.
 
 ## Payment-first category bookings
 
@@ -246,6 +227,12 @@ Category booking submissions are saved as seven-day temporary payment sessions
 with no permanent booking reference. In demo mode, the explicit simulator records
 `Demo Paid` and does not charge money. The atomic reference counter preserves the
 first reference `10812026501` and advances beyond all saved references.
+
+Provider-verified successes and provider-confirmed terminal failures are
+idempotently upserted by `requestId` into MongoDB `main.bookings-db`. Pending and
+cancelled attempts are not stored as failed results. Startup verifies the
+configured database and that the `bookings-db` collection already exists before
+initializing its unique request index.
 
 Run `npm run bookings:reconcile` in the backend directory for a read-only summary
 of referenced unpaid records, demo/actual paid records, failed payment records,
@@ -293,9 +280,7 @@ deployment instead of appearing healthy with unavailable data APIs.
   when `PAYMENT_PROVIDER=cashfree`). Authenticated `POST /api/admin/upi-payments/:requestId/decision`
   verifies or rejects a UPI submission; approval is the only UPI path that confirms the booking
   and allocates its ticket reference.
-- In Razorpay mode, `POST /api/booking-enquiries/:requestId/razorpay-order` creates or reuses
-  a server-priced order; `POST /api/booking-enquiries/:requestId/verify-payment` verifies checkout
-  signatures and captured status before finalizing. When Razorpay is not configured, `POST
+- In non-production environments with Cashfree unconfigured, `POST
   /api/booking-enquiries/:requestId/demo-payment` is an explicit simulator; it records `Demo Paid`
   and finalizes that same record. `POST /api/booking-enquiries/:requestId/demo-payment-failure`
   records a failed/cancelled demo attempt without assigning a reference.
@@ -305,7 +290,6 @@ deployment instead of appearing healthy with unavailable data APIs.
   - `POST /api/payments/cashfree/webhook` (and alias `/api/cashfree/webhook`) verifies Cashfree
     HMAC-SHA256 signatures over raw request body and processes payment success/failure asynchronously.
   - `POST /api/whatsapp/webhook` verifies Meta webhook signatures and records delivery statuses.
-  - `POST /api/razorpay/webhook` verifies Razorpay signatures and processes payment updates idempotently.
   - Authenticated `GET /api/admin/bookings/:reference/whatsapp` returns notification history.
 - `POST /api/newsletter` stores subscriptions in `newsletter-db`.
 - `POST /api/enquiries/contact` and `POST /api/enquiries/host-event` store

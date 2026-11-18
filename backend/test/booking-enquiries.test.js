@@ -10,8 +10,6 @@ async function startTestServer({
   repository: suppliedRepository,
   cashfreePayments,
   cashfreeConfigured = false,
-  razorpayPayments,
-  razorpayConfigured = false,
   nodeEnv,
   whatsappNotifications,
   diwaliOfferService,
@@ -102,7 +100,7 @@ async function startTestServer({
         ticketType: pricing?.ticketType ?? enquiry.ticketType ?? 'general-admission',
         ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ?? 'General Admission',
         ticketQuantity: pricing?.ticketQuantity ?? enquiry.ticketQuantity ?? 1,
-        paymentProvider: 'razorpay_demo',
+        paymentProvider: 'demo',
         paymentReference: `demo_${requestId}`,
         paidAt: new Date(),
         paymentVerifiedAt: new Date(),
@@ -128,8 +126,6 @@ async function startTestServer({
     bookingEnquiryRepository: repository,
     cashfreePayments,
     cashfreeConfigured,
-    razorpayPayments,
-    razorpayConfigured,
     nodeEnv,
     whatsappNotifications,
     diwaliOfferService,
@@ -668,7 +664,7 @@ test('loads enquiry details and records one idempotent demo payment', async () =
   assert.equal(firstPaymentPayload.booking.reference, '10812026501')
   assert.equal(firstPaymentPayload.booking.status, 'pending')
   assert.equal(firstPaymentPayload.booking.paymentAmount, 199)
-  assert.equal(firstPaymentPayload.booking.paymentProvider, 'razorpay_demo')
+  assert.equal(firstPaymentPayload.booking.paymentProvider, 'demo')
   assert.match(firstPaymentPayload.booking.paymentReference, /^demo_/)
   assert.ok(firstPaymentPayload.booking.paymentVerifiedAt)
   assert.match(firstPaymentPayload.message, /No real payment was processed/)
@@ -693,38 +689,52 @@ test('loads enquiry details and records one idempotent demo payment', async () =
   assert.equal(persisted.booking.paymentStatus, 'demo_paid')
 })
 
-test('creates a Razorpay order and returns a booking only after verified payment', async () => {
+test('disables the demo simulator when Cashfree is configured', async () => {
+  const { baseUrl, saved } = await startTestServer({
+    cashfreeConfigured: true,
+    nodeEnv: 'development',
+  })
+  const requestId = crypto.randomUUID()
+  const submitted = await fetch(`${baseUrl}/api/booking-enquiries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requestId,
+      name: 'Jordan Example',
+      mobile: '+91 98765 43210',
+      categoryId: 'fun-games',
+      gender: 'Female',
+    }),
+  })
+  assert.equal(submitted.status, 201)
+
+  const demoResponse = await fetch(
+    `${baseUrl}/api/booking-enquiries/${requestId}/demo-payment`,
+    { method: 'POST' },
+  )
+
+  assert.equal(demoResponse.status, 404)
+  assert.equal(saved.get(requestId).reference, undefined)
+  assert.equal(saved.get(requestId).paymentStatus, 'unpaid')
+})
+
+test('creates a Cashfree checkout session through the booking route with mocked gateway data', async () => {
   let saved
+  let receivedOptions
   const { baseUrl, saved: records } = await startTestServer({
-    razorpayConfigured: true,
-    whatsappNotifications: {
-      async notify() {
-        throw new Error('Mock notification provider failure.')
-      },
-    },
-    razorpayPayments: {
-      async createOrder(requestId) {
+    cashfreeConfigured: true,
+    cashfreePayments: {
+      async createOrder(requestId, options) {
         assert.equal(requestId, saved.requestId)
+        receivedOptions = options
         return {
-          order_id: 'order_test_booking',
-          amount: 29900,
+          order_id: 'cf-order-mock',
+          payment_session_id: 'cf-session-mock',
+          amount: 199,
           currency: 'INR',
-          key_id: 'rzp_test_public',
+          environment: 'sandbox',
+          booking: saved,
         }
-      },
-      async verifyPayment(requestId, fields) {
-        assert.equal(requestId, saved.requestId)
-        assert.equal(fields.razorpay_order_id, 'order_test_booking')
-        Object.assign(saved, {
-          reference: '10812026501',
-          paymentStatus: 'paid',
-          paymentProvider: 'razorpay',
-          paymentReference: fields.razorpay_payment_id,
-          razorpayPaymentId: fields.razorpay_payment_id,
-          paymentVerifiedAt: new Date(),
-          expiresAt: null,
-        })
-        return { booking: saved, duplicate: false }
       },
     },
   })
@@ -732,64 +742,36 @@ test('creates a Razorpay order and returns a booking only after verified payment
     requestId: crypto.randomUUID(),
     name: 'Jordan Example',
     mobile: '+91 98765 43210',
-    email: 'jordan@example.com',
     categoryId: 'fun-games',
     gender: 'Female',
   }
-  const submit = await fetch(`${baseUrl}/api/booking-enquiries`, {
+  const submitResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   })
-  const submitted = await submit.json()
+  assert.equal(submitResponse.status, 201)
   saved = records.get(request.requestId)
-  assert.equal(submit.status, 201)
-  assert.equal(submitted.booking.reference, '')
 
-  const disabledDemoPayment = await fetch(
-    `${baseUrl}/api/booking-enquiries/${request.requestId}/demo-payment`,
-    { method: 'POST' },
-  )
-  assert.equal(disabledDemoPayment.status, 404)
-  assert.equal(saved.reference, undefined)
-
-  const orderResponse = await fetch(
-    `${baseUrl}/api/booking-enquiries/${request.requestId}/razorpay-order`,
-    { method: 'POST' },
-  )
-  const order = await orderResponse.json()
-  assert.equal(orderResponse.status, 200)
-  assert.deepEqual(order, {
-    order_id: 'order_test_booking',
-    amount: 29900,
-    currency: 'INR',
-    key_id: 'rzp_test_public',
-  })
-  assert.equal(saved.reference, undefined)
-
-  const missingFields = await fetch(
-    `${baseUrl}/api/booking-enquiries/${request.requestId}/verify-payment`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
-  )
-  assert.equal(missingFields.status, 400)
-
-  const verifiedResponse = await fetch(
-    `${baseUrl}/api/booking-enquiries/${request.requestId}/verify-payment`,
+  const checkoutResponse = await fetch(
+    `${baseUrl}/api/booking-enquiries/${request.requestId}/cashfree-order`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        razorpay_payment_id: 'pay_test_booking',
-        razorpay_order_id: 'order_test_booking',
-        razorpay_signature: 'a'.repeat(64),
-      }),
+      body: JSON.stringify({ returnUrl: 'https://vibetogether.show/return' }),
     },
   )
-  const verified = await verifiedResponse.json()
-  assert.equal(verifiedResponse.status, 200)
-  assert.equal(verified.booking.reference, '10812026501')
-  assert.equal(verified.booking.paymentStatus, 'paid')
-  assert.equal(verified.booking.status, 'pending')
+  const checkout = await checkoutResponse.json()
+
+  assert.equal(checkoutResponse.status, 200)
+  assert.equal(checkout.payment_session_id, 'cf-session-mock')
+  assert.equal(checkout.order_id, 'cf-order-mock')
+  assert.equal(checkout.booking.requestId, request.requestId)
+  assert.equal(checkout.booking.cashfreeConfigured, true)
+  assert.deepEqual(receivedOptions, {
+    returnUrl: 'https://vibetogether.show/return',
+    notifyUrl: undefined,
+  })
 })
 
 test('Cashfree verification notifies only for confirmed failures and preserves success behavior', async () => {

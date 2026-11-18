@@ -1,5 +1,7 @@
+.site-main--events,
+.site-main:has(.events-discovery),
 .site-main.site-main--events {
-  padding-block: 0;
+  padding-block: 0 !important;
 }
 
 .events-discovery {
@@ -10,7 +12,7 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  padding-block: clamp(1.5rem, 3.5vw, 2.75rem) clamp(2rem, 5vw, 3.5rem);
+  padding-block: clamp(1rem, 2.5vw, 1.75rem) clamp(2rem, 4vw, 3rem);
   background:
     radial-gradient(ellipse at 86% 0%, rgb(119 59 255 / 18%), transparent 42%),
     var(--color-background);

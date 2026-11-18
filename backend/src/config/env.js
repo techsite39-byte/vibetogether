@@ -153,13 +153,9 @@ const cashfreeEnv = (process.env.CASHFREE_ENV?.trim() ?? 'SANDBOX').toUpperCase(
 const cashfreeApiVersion = process.env.CASHFREE_API_VERSION?.trim() ?? '2023-08-01'
 const cashfreeConfigured = Boolean(cashfreeAppId && cashfreeSecretKey)
 
-const razorpayKeyId = process.env.RAZORPAY_KEY_ID?.trim() ?? ''
-const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET?.trim() ?? ''
-const razorpayWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim() ?? ''
-const razorpayConfigured = Boolean(razorpayKeyId && razorpayKeySecret)
 const paymentProvider = (process.env.PAYMENT_PROVIDER ?? 'cashfree').trim().toLowerCase()
-if (!['cashfree', 'upi', 'razorpay'].includes(paymentProvider)) {
-  throw new Error('PAYMENT_PROVIDER must be one of: cashfree, upi, razorpay.')
+if (!['cashfree', 'upi'].includes(paymentProvider)) {
+  throw new Error('PAYMENT_PROVIDER must be one of: cashfree, upi.')
 }
 const upiId = process.env.UPI_ID?.trim() ?? 'vinothinimoorthi37-1@okhdfcbank'
 const upiPayeeName = process.env.UPI_PAYEE_NAME?.trim() ?? 'Vinothini Moorthi'
@@ -177,7 +173,7 @@ const whatsappBookingTemplate = (
 )
 const whatsappBookingTemplateLanguage = (
   process.env.WHATSAPP_BOOKING_TEMPLATE_LANGUAGE?.trim() ||
-  'en_US'
+  'en'
 )
 const whatsappAdminPhoneNumber = process.env.WHATSAPP_ADMIN_PHONE_NUMBER?.trim() ?? ''
 const whatsappNotificationsEnabled = process.env.WHATSAPP_NOTIFICATIONS_ENABLED !== 'false'
@@ -233,10 +229,6 @@ export const config = Object.freeze({
   cashfreeEnv,
   cashfreeApiVersion,
   cashfreeConfigured,
-  razorpayConfigured,
-  razorpayKeyId,
-  razorpayKeySecret,
-  razorpayWebhookSecret,
   paymentProvider,
   upiId,
   upiPayeeName,

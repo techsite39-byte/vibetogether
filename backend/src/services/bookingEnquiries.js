@@ -219,7 +219,7 @@ export async function markBookingEnquiryDemoPaid(
           diwaliOfferApplied: pricing?.diwaliOfferApplied ?? Boolean(claimed.diwaliOfferApplied),
           offerActivationAt: pricing?.offerActivationAt ?? claimed.offerActivationAt ?? null,
           offerExpiresAt: pricing?.offerExpiresAt ?? claimed.offerExpiresAt ?? null,
-          paymentProvider: 'razorpay_demo',
+          paymentProvider: 'demo',
           paymentReference: `demo_${randomUUID()}`,
           paymentFailureReason: '',
           paidAt: new Date(),
@@ -305,7 +305,7 @@ export async function submitBookingEnquiryUpiPayment(
     previousPayment?.status === 'Submitted for Verification' ||
     previousPayment?.status === 'Verified' ||
     existing.paymentOrderId ||
-    existing.paymentProvider === 'razorpay'
+    (existing.paymentProvider && existing.paymentProvider !== 'upi')
   ) {
     throwUpiConflict()
   }

@@ -24,7 +24,7 @@ async function startServer(paymentProvider = 'upi', paymentOrderId = '') {
     femaleMemberNames: ['Mira Example'],
     status: 'pending',
     paymentStatus: 'unpaid',
-    paymentProvider: paymentOrderId ? 'razorpay' : '',
+    paymentProvider: paymentOrderId ? 'cashfree' : '',
     paymentOrderId,
     paymentAmount: 777,
     paymentAmountPaise: 77700,
@@ -38,7 +38,7 @@ async function startServer(paymentProvider = 'upi', paymentOrderId = '') {
     async markDemoFailed() { return null },
     async submitUpiPayment(id, { utr, upiId, pricing }) {
       if (id !== requestId) return null
-      if (enquiry.paymentOrderId || enquiry.paymentProvider === 'razorpay') {
+      if (enquiry.paymentOrderId || enquiry.paymentProvider === 'cashfree') {
         throw Object.assign(new Error('This UPI payment cannot be submitted in its current state.'), { status: 409 })
       }
       const current = enquiry.upiPayments.at(-1)
@@ -113,29 +113,10 @@ test('UPI endpoint uses server-side booking price and leaves the booking unconfi
   assert.equal(payload.booking.upiPayment.amount, payload.booking.paymentAmount)
   assert.notEqual(payload.booking.paymentAmount, 1)
 
-  const razorpayResponse = await fetch(`${baseUrl}/api/booking-enquiries/${requestId}/razorpay-order`, {
-    method: 'POST',
-  })
-  assert.equal(razorpayResponse.status, 503)
 })
 
-test('UPI fallback is allowed when Razorpay is configured and no Razorpay order exists', async () => {
-  const baseUrl = await startServer('razorpay')
-  const response = await fetch(`${baseUrl}/api/booking-enquiries/${requestId}/upi-payment`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ utr: '123456789012' }),
-  })
-  const payload = await response.json()
-
-  assert.equal(response.status, 200)
-  assert.equal(payload.booking.paymentProviderMode, 'razorpay')
-  assert.equal(payload.booking.paymentProvider, 'upi')
-  assert.equal(payload.booking.reference, '')
-})
-
-test('UPI fallback refuses a booking that already has a Razorpay order', async () => {
-  const baseUrl = await startServer('razorpay', 'order_existing')
+test('UPI payment refuses a booking that already has a Cashfree order', async () => {
+  const baseUrl = await startServer('upi', 'order_existing')
   const response = await fetch(`${baseUrl}/api/booking-enquiries/${requestId}/upi-payment`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -281,11 +281,11 @@ test('Scenario 1: Successful Cashfree payment — main user receives success mes
 })
 
 // ---------------------------------------------------------------------------
-// 3. Scenario 2: Successful Razorpay payment — main user receives success message
+// 3. Scenario 2: Successful payment — main user receives success message
 // ---------------------------------------------------------------------------
-test('Scenario 2: Successful Razorpay payment — main user receives success message', async () => {
+test('Scenario 2: Successful payment — main user receives success message', async () => {
   const model = createBookingModel(makeBooking({
-    paymentProvider: 'razorpay',
+    paymentProvider: 'cashfree',
     maleCount: 1,
     femaleCount: 0,
     maleMemberMobiles: ['+919025335720'],
@@ -293,7 +293,7 @@ test('Scenario 2: Successful Razorpay payment — main user receives success mes
   const sentRequests = []
   const service = createTestWhatsAppService(model, async (url, options) => {
     sentRequests.push({ url, payload: JSON.parse(options.body) })
-    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.rzp-success-1' }] }) }
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.success-1' }] }) }
   })
 
   const result = await service.send('req-session-456', 'booking_confirmation')
@@ -391,19 +391,19 @@ test('Scenario 5: Failed Cashfree payment — main user receives failure message
 })
 
 // ---------------------------------------------------------------------------
-// 7. Scenario 6: Failed Razorpay payment — main user receives failure message only
+// 7. Scenario 6: Failed payment — main user receives failure message only
 // ---------------------------------------------------------------------------
-test('Scenario 6: Failed Razorpay payment — main user receives failure message only', async () => {
+test('Scenario 6: Failed payment — main user receives failure message only', async () => {
   const model = createBookingModel(makeBooking({
     paymentStatus: 'failed',
-    paymentProvider: 'razorpay',
+    paymentProvider: 'cashfree',
     paymentFailureReason: 'payment_failed',
     reference: '',
   }))
   const sentRequests = []
   const service = createTestWhatsAppService(model, async (url, options) => {
     sentRequests.push({ url, payload: JSON.parse(options.body) })
-    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.fail-rzp' }] }) }
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.fail-gateway' }] }) }
   })
 
   const result = await service.send('req-session-456', 'payment_assistance')

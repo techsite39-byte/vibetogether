@@ -356,7 +356,8 @@ function getModelByResource(resource) {
 function findByResourceId(resource, id) {
   const model = getModelByResource(resource)
   if (resource === 'events') {
-    return model.findOne({ id }).exec()
+    const isObjectId = mongoose.isValidObjectId(id)
+    return model.findOne(isObjectId ? { $or: [{ id }, { _id: id }] } : { id }).exec()
   }
   if (!mongoose.isValidObjectId(id)) {
     throw Object.assign(new Error('Record ID is invalid.'), { status: 400 })
@@ -882,7 +883,6 @@ export function createAdminRouter({
   bookingEnquiryRepository,
   diwaliOfferService,
   whatsappNotifications,
-  integrationDiagnostics = {},
 }) {
   const router = Router()
   const requireAdmin = createRequireAdmin({
@@ -919,7 +919,6 @@ export function createAdminRouter({
   router.get('/integrations/diagnostics', async (_request, response, next) => {
     try {
       response.set('Cache-Control', 'no-store').json({
-        razorpay: integrationDiagnostics,
         whatsapp: await whatsappNotifications?.getDiagnostics?.() ?? {
           notificationConfigured: false,
           apiAccess: 'not_checked',

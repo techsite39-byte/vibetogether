@@ -101,8 +101,8 @@ test('reports the operation and HTTP status for a non-JSON not-found response', 
   })
 
   await assert.rejects(
-    readBookingApiResponse(response, 'Razorpay order'),
-    /Razorpay order endpoint was not found \(HTTP 404\)/,
+    readBookingApiResponse(response, 'Cashfree order'),
+    /Cashfree order endpoint was not found \(HTTP 404\)/,
   )
 })
 

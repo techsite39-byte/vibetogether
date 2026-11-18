@@ -114,6 +114,7 @@ test('sends one approved confirmation template to the consented customer number'
   assert.equal(requests[0].payload.to, '919876543210')
   assert.notEqual(requests[0].payload.to, '918778595810')
   assert.equal(requests[0].payload.template.name, 'vibe_booking_confirmation')
+  assert.equal(requests[0].payload.template.language.code, 'en')
   assert.equal(requests[0].payload.template.components[0].parameters[0].text, 'Jordan Example')
   assert.match(requests[0].payload.template.components[0].parameters[8].text, /Diwali Offer Price: ₹249/)
   assert.equal(model.record.whatsappNotification.recipient, '+919876543210')

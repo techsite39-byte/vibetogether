@@ -341,8 +341,6 @@ export function createBookingEnquiriesRouter({
   repository,
   cashfreePayments,
   cashfreeConfigured = false,
-  razorpayPayments,
-  razorpayConfigured = false,
   paymentProvider = 'cashfree',
   nodeEnv = 'production',
   upiId = 'vinothinimoorthi37-1@okhdfcbank',
@@ -378,6 +376,10 @@ export function createBookingEnquiriesRouter({
     const ticketType = pricing?.ticketType ?? enquiry.ticketType ?? DEFAULT_TICKET_TYPE
     const maleCount = enquiry.maleCount ?? (enquiry.gender === 'Male' ? ticketQuantity : 0)
     const femaleCount = enquiry.femaleCount ?? (enquiry.gender === 'Female' ? ticketQuantity : 0)
+    const paymentProviderMode =
+      enquiry.paymentProvider && enquiry.paymentProvider !== 'demo'
+        ? enquiry.paymentProvider
+        : paymentProvider
     return {
       reference: enquiry.reference ?? '',
       requestId: enquiry.requestId,
@@ -417,10 +419,9 @@ export function createBookingEnquiriesRouter({
       offerActivationAt: pricing?.offerActivationAt ?? enquiry.offerActivationAt ?? null,
       offerExpiresAt: pricing?.offerExpiresAt ?? enquiry.offerExpiresAt ?? null,
       paymentProvider: enquiry.paymentProvider ?? '',
-      paymentProviderMode: paymentProvider,
+      paymentProviderMode,
       paymentReference: enquiry.paymentReference ?? '',
       paymentOrderId: enquiry.paymentOrderId ?? '',
-      razorpayPaymentId: paymentProvider === 'razorpay' ? (enquiry.razorpayPaymentId ?? '') : '',
       cfOrderId: enquiry.cfOrderId ?? '',
       cfPaymentId: enquiry.cfPaymentId ?? '',
       cfPaymentSessionId: enquiry.cfPaymentSessionId ?? '',
@@ -431,8 +432,7 @@ export function createBookingEnquiriesRouter({
       paymentFailureReason: enquiry.paymentFailureReason ?? '',
       paymentAttemptedAt: enquiry.paymentAttemptedAt ?? null,
       whatsappConsent: Boolean(enquiry.whatsappConsent),
-      cashfreeConfigured: paymentProvider === 'cashfree' && Boolean(cashfreeConfigured),
-      razorpayConfigured: paymentProvider === 'razorpay' && Boolean(razorpayConfigured),
+      cashfreeConfigured: paymentProviderMode === 'cashfree' && Boolean(cashfreeConfigured),
       upiId,
       upiPayeeName,
       upiPayment: enquiry.upiPayments?.at(-1)
@@ -686,8 +686,8 @@ export function createBookingEnquiriesRouter({
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (nodeEnv === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
-      response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
+    if (nodeEnv === 'production' || cashfreeConfigured || paymentProvider !== 'cashfree') {
+      response.status(404).json({ message: 'Demo payments are disabled in production or while Cashfree is configured.' })
       return
     }
 
@@ -733,6 +733,17 @@ export function createBookingEnquiriesRouter({
     }
 
     try {
+      const existingBooking = await repository.findByRequestId(requestId)
+      if (
+        existingBooking?.paymentOrderId &&
+        existingBooking.paymentProvider &&
+        existingBooking.paymentProvider !== 'cashfree'
+      ) {
+        response.status(409).json({
+          message: 'This booking has an existing payment order that cannot be used with Cashfree.',
+        })
+        return
+      }
       const { returnUrl, notifyUrl } = request.body || {}
       const result = await cashfreePayments.createOrder(requestId, { returnUrl, notifyUrl })
       if (!result) {
@@ -859,183 +870,14 @@ export function createBookingEnquiriesRouter({
     }
   })
 
-  // ==========================================
-  // RAZORPAY INTEGRATION (PRESERVED SAFELY)
-  // ==========================================
-
-  router.post('/:requestId/razorpay-order', async (request, response) => {
-    const { requestId } = request.params
-    if (!requestIdPattern.test(requestId)) {
-      response.status(400).json({ message: 'The booking request could not be verified.' })
-      return
-    }
-    if (paymentProvider !== 'razorpay' || !razorpayConfigured || typeof razorpayPayments?.createOrder !== 'function') {
-      response.status(503).json({ message: 'Razorpay Checkout is not configured on the booking server.' })
-      return
-    }
-
-    try {
-      const result = await razorpayPayments.createOrder(requestId)
-      if (!result) {
-        response.status(409).json({ message: 'This booking session is no longer payable.' })
-        return
-      }
-      if (result.pending) {
-        response.status(202).json({
-          message: 'The payment order is still being checked. Check its status before retrying.',
-          pending: true,
-          booking: serializeEnquiry(result.booking),
-        })
-        return
-      }
-      response.json(result)
-    } catch (error) {
-      response.status(error.status ?? 500).json({
-        message: error.message || 'Razorpay could not create the payment order.',
-      })
-    }
-  })
-
-  router.post('/:requestId/verify-payment', async (request, response) => {
-    const { requestId } = request.params
-    if (!requestIdPattern.test(requestId)) {
-      response.status(400).json({ message: 'The booking request could not be verified.' })
-      return
-    }
-    if (paymentProvider !== 'razorpay') {
-      response.status(409).json({ message: 'Razorpay payments are not currently enabled.' })
-      return
-    }
-    const fields = request.body
-    if (
-      !fields ||
-      typeof fields.razorpay_payment_id !== 'string' ||
-      typeof fields.razorpay_order_id !== 'string' ||
-      typeof fields.razorpay_signature !== 'string'
-    ) {
-      response.status(400).json({ message: 'Razorpay payment ID, order ID, and signature are required.' })
-      return
-    }
-
-    try {
-      const result = await razorpayPayments?.verifyPayment?.(requestId, fields)
-      if (!result) {
-        response.status(409).json({ message: 'The payment could not be matched to this booking session.' })
-        return
-      }
-      if (result.pending) {
-        response.status(202).json({
-          message: 'The payment is not captured yet. Check its status before retrying.',
-          pending: true,
-          booking: serializeEnquiry(result.booking),
-        })
-        return
-      }
-      if (result.booking.paymentStatus === 'paid') {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      }
-      const booking = await getUpdatedEnquiry(requestId, result.booking)
-      response.json({
-        verified: true,
-        duplicate: result.duplicate,
-        booking: serializeEnquiry(booking),
-      })
-    } catch (error) {
-      response.status(error.status ?? 500).json({
-        message: error.message || 'Razorpay payment verification failed.',
-      })
-    }
-  })
-
-  router.post('/:requestId/razorpay-status', async (request, response) => {
-    const { requestId } = request.params
-    if (!requestIdPattern.test(requestId)) {
-      response.status(400).json({ message: 'The booking request could not be verified.' })
-      return
-    }
-    if (paymentProvider !== 'razorpay') {
-      response.status(409).json({ message: 'Razorpay payments are not currently enabled.' })
-      return
-    }
-    try {
-      const result = await razorpayPayments?.checkStatus?.(requestId)
-      if (!result) {
-        response.status(404).json({ message: 'Booking enquiry not found.' })
-        return
-      }
-      if (result.booking.paymentStatus === 'paid') {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
-      }
-      const booking = await getUpdatedEnquiry(requestId, result.booking)
-      response.set('Cache-Control', 'no-store').json({
-        pending: Boolean(result.pending),
-        duplicate: Boolean(result.duplicate),
-        booking: serializeEnquiry(booking),
-      })
-    } catch (error) {
-      response.status(error.status ?? 502).json({
-        message: error.message || 'Razorpay payment status could not be checked.',
-      })
-    }
-  })
-
-  router.post('/:requestId/razorpay-failure', async (request, response) => {
-    const { requestId } = request.params
-    const { orderId, paymentId = '', outcome = 'failed' } = request.body ?? {}
-    if (!requestIdPattern.test(requestId) || typeof orderId !== 'string' || !orderId) {
-      response.status(400).json({ message: 'A valid booking and Razorpay order are required.' })
-      return
-    }
-    if (paymentProvider !== 'razorpay') {
-      response.status(409).json({ message: 'Razorpay payments are not currently enabled.' })
-      return
-    }
-    if (paymentId && typeof paymentId !== 'string') {
-      response.status(400).json({ message: 'Razorpay payment ID is invalid.' })
-      return
-    }
-    if (!['failed', 'cancelled'].includes(outcome)) {
-      response.status(400).json({ message: 'Payment outcome must be failed or cancelled.' })
-      return
-    }
-    try {
-      const result = await razorpayPayments?.recordFailure?.(requestId, {
-        orderId,
-        paymentId,
-        outcome,
-      })
-      if (!result) {
-        response.status(409).json({ message: 'The payment outcome could not be matched to this booking.' })
-        return
-      }
-      if (result.pending) {
-        response.status(202).json({ pending: true, booking: serializeEnquiry(result.booking) })
-        return
-      }
-      if (result.booking.paymentStatus === 'paid') {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
-      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
-      }
-      const booking = await getUpdatedEnquiry(requestId, result.booking)
-      response.json({ booking: serializeEnquiry(booking) })
-    } catch (error) {
-      response.status(error.status ?? 502).json({
-        message: error.message || 'Razorpay payment outcome could not be recorded.',
-      })
-    }
-  })
-
   router.post('/:requestId/demo-payment-failure', async (request, response) => {
     const { requestId } = request.params
     if (!requestIdPattern.test(requestId)) {
       response.status(400).json({ message: 'The booking request could not be verified.' })
       return
     }
-    if (nodeEnv === 'production' || razorpayConfigured || paymentProvider !== 'razorpay') {
-      response.status(404).json({ message: 'Demo payments are disabled in production and while Razorpay Checkout is configured.' })
+    if (nodeEnv === 'production' || cashfreeConfigured || paymentProvider !== 'cashfree') {
+      response.status(404).json({ message: 'Demo payments are disabled in production or while Cashfree is configured.' })
       return
     }
     const outcome = request.body?.outcome
