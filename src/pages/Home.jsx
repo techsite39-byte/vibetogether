@@ -13,7 +13,7 @@ import SectionHeading from '../components/common/SectionHeading.jsx'
 import NewsletterSignup from '../components/common/NewsletterSignup.jsx'
 import { categories } from '../data/categories.js'
 import { testimonials } from '../data/testimonials.js'
-import { homeImages } from '../data/homepage.js'
+import { heroBackgroundSlides, homeImages } from '../data/homepage.js'
 import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
 import { useBookingEnquiry } from '../context/useBookingEnquiry.js'
 import usePublicEvents from '../hooks/usePublicEvents.js'
@@ -27,28 +27,6 @@ const DotLottieReact = lazy(() =>
     default: module.DotLottieReact,
   })),
 )
-const heroBackgroundSlides = [
-  {
-    src: '/assets/optimized/hero/h1-1672-v1.webp',
-    srcSet:
-      '/assets/optimized/hero/h1-480-v1.webp 480w, /assets/optimized/hero/h1-960-v1.webp 960w, /assets/optimized/hero/h1-1672-v1.webp 1672w',
-  },
-  {
-    src: '/assets/optimized/hero/h2-1672-v1.webp',
-    srcSet:
-      '/assets/optimized/hero/h2-480-v1.webp 480w, /assets/optimized/hero/h2-960-v1.webp 960w, /assets/optimized/hero/h2-1672-v1.webp 1672w',
-  },
-  {
-    src: '/assets/optimized/hero/h3-1672-v1.webp',
-    srcSet:
-      '/assets/optimized/hero/h3-480-v1.webp 480w, /assets/optimized/hero/h3-960-v1.webp 960w, /assets/optimized/hero/h3-1672-v1.webp 1672w',
-  },
-  {
-    src: '/assets/optimized/hero/h4-1672-v1.webp',
-    srcSet:
-      '/assets/optimized/hero/h4-480-v1.webp 480w, /assets/optimized/hero/h4-960-v1.webp 960w, /assets/optimized/hero/h4-1672-v1.webp 1672w',
-  },
-]
 const heroSlides = [
   {
     eyebrow: 'Live music, real connections',
@@ -252,9 +230,14 @@ function Home() {
 
     function loadNextSlide() {
       timers.preload = 0
+      const nextSlideImage = heroBackgroundSlides[nextSlide]
       preloadImage.sizes = '100vw'
-      preloadImage.srcset = heroBackgroundSlides[nextSlide].srcSet
-      preloadImage.src = heroBackgroundSlides[nextSlide].src
+      if (nextSlideImage.srcSet) {
+        preloadImage.srcset = nextSlideImage.srcSet
+      } else {
+        preloadImage.removeAttribute('srcset')
+      }
+      preloadImage.src = nextSlideImage.src
     }
 
     function schedulePreload(delay) {

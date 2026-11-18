@@ -9,7 +9,11 @@ import {
   StatusBadge,
 } from '../components/AdminUI.jsx'
 import { useAdminData } from '../context/useAdminData.js'
-import { uploadMediaImage } from '../services/adminApi.js'
+import {
+  resolveMediaAssetUrl,
+  uploadMediaImage,
+} from '../services/adminApi.js'
+import { buildEventImageUpdate } from '../data/adminEventOperations.js'
 
 const eventStatuses = [
   'draft',
@@ -33,6 +37,7 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [showUrlInput, setShowUrlInput] = useState(false)
+  const previewImage = resolveMediaAssetUrl(image)
 
   async function handleFile(event) {
     const file = event.target.files?.[0]
@@ -75,7 +80,7 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
         <div className="admin-image-upload__preview-card">
           <div className="admin-image-upload__preview-img-wrap">
             <img
-              src={image}
+              src={previewImage}
               alt={imageAlt || 'Event poster preview'}
               className="admin-image-upload__preview-img"
               loading="lazy"
@@ -204,7 +209,7 @@ function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
         title: form.title.trim(),
         location: form.location.trim(),
         description: form.description.trim(),
-        ...(image === existingImage ? {} : { image }),
+        ...buildEventImageUpdate(existingImage, image),
         imageAlt: form.imageAlt.trim(),
         status: form.status,
       })
@@ -437,7 +442,7 @@ export default function ManageEvents() {
                   <div className="admin-event-table-cell">
                     {event.image ? (
                       <img
-                        src={event.image}
+                        src={resolveMediaAssetUrl(event.image)}
                         alt=""
                         className="admin-event-thumbnail"
                         loading="lazy"

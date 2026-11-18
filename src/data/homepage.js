@@ -5,3 +5,24 @@ export const homeImages = {
   aboutDetail:
     'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=700&q=75',
 }
+
+export const heroBackgroundSlides = [
+  {
+    src: '/h0.png',
+  },
+  {
+    src: '/assets/optimized/hero/h2-1672-v1.webp',
+    srcSet:
+      '/assets/optimized/hero/h2-480-v1.webp 480w, /assets/optimized/hero/h2-960-v1.webp 960w, /assets/optimized/hero/h2-1672-v1.webp 1672w',
+  },
+  {
+    src: '/assets/optimized/hero/h3-1672-v1.webp',
+    srcSet:
+      '/assets/optimized/hero/h3-480-v1.webp 480w, /assets/optimized/hero/h3-960-v1.webp 960w, /assets/optimized/hero/h3-1672-v1.webp 1672w',
+  },
+  {
+    src: '/assets/optimized/hero/h4-1672-v1.webp',
+    srcSet:
+      '/assets/optimized/hero/h4-480-v1.webp 480w, /assets/optimized/hero/h4-960-v1.webp 960w, /assets/optimized/hero/h4-1672-v1.webp 1672w',
+  },
+]

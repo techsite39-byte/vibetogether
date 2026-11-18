@@ -364,6 +364,26 @@ function findByResourceId(resource, id) {
   return model.findById(id).exec()
 }
 
+export async function deleteEventRecord({
+  record,
+  eventModel,
+  bookingCount = 0,
+  enquiryCount = 0,
+  markDeleted = markBuiltInEventDeleted,
+}) {
+  if (bookingCount + enquiryCount > 0) {
+    return {
+      status: 409,
+      message: 'Events with booking records cannot be deleted. Cancel the event instead.',
+    }
+  }
+  const deleteResult = await eventModel.deleteOne({ _id: record._id })
+  if (deleteResult?.deletedCount > 0 && isBuiltInEventId(record.id)) {
+    await markDeleted(record.id)
+  }
+  return { status: deleteResult?.deletedCount > 0 ? 204 : 404 }
+}
+
 async function writeAudit(request, action, entity, entityId, description) {
   await ActivityLog.create({
     actorId: request.admin.id,
@@ -1002,15 +1022,13 @@ export function createAdminRouter({
         uploadedBy: request.admin?.username || 'admin',
       })
 
-      const host = request.get('host')
-      const protocol = request.protocol || 'https'
-      const fullUrl = host ? `${protocol}://${host}/api/media/${asset._id}` : `/api/media/${asset._id}`
+      const relativeUrl = `/api/media/${asset._id}`
 
       await writeAudit(request, 'Image uploaded', 'media', String(asset._id), `Uploaded image asset ${cleanFilename} (${Math.round(buffer.length / 1024)} KB).`)
 
       response.status(201).json({
-        url: fullUrl,
-        relativeUrl: `/api/media/${asset._id}`,
+        url: relativeUrl,
+        relativeUrl,
         id: String(asset._id),
         filename: asset.filename,
         size: asset.size,
@@ -1239,12 +1257,19 @@ export function createAdminRouter({
           Booking.countDocuments({ eventId: record.id }),
           BookingEnquiry.countDocuments({ eventId: record.id }),
         ])
-        if (bookingCount + enquiryCount > 0) {
-          response.status(409).json({ message: 'Events with booking records cannot be deleted. Cancel the event instead.' })
+        const deletion = await deleteEventRecord({
+          record,
+          eventModel: model,
+          bookingCount,
+          enquiryCount,
+        })
+        if (deletion.status !== 204) {
+          response.status(deletion.status).json(
+            deletion.message ? { message: deletion.message } : { message: 'Record was not found.' },
+          )
           return
         }
-      }
-      if (resource === 'categories') {
+      } else if (resource === 'categories') {
         const linkedEvents = await Event.countDocuments({
           $or: [{ category: record.title }, { category: record.id }],
         })
@@ -1264,13 +1289,8 @@ export function createAdminRouter({
         response.status(400).json({ message: 'You cannot delete your own account.' })
         return
       }
-      const deleteResult = await model.deleteOne({ _id: record._id })
-      if (
-        resource === 'events' &&
-        isBuiltInEventId(record.id) &&
-        deleteResult?.deletedCount > 0
-      ) {
-        await markBuiltInEventDeleted(record.id)
+      if (resource !== 'events') {
+        await model.deleteOne({ _id: record._id })
       }
       await writeAudit(request, `${resource.slice(0, -1)} deleted`, resource, record.id ?? record._id, `${resource.slice(0, -1)} record deleted.`)
       response.status(204).end()
