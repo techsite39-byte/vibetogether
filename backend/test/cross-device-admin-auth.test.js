@@ -2,8 +2,7 @@ import assert from 'node:assert/strict'
 import express from 'express'
 import cors from 'cors'
 import { afterEach, test } from 'node:test'
-import { createAdminAuthRouter, createRequireAdmin, hashAdminPassword } from '../src/auth/adminAuth.js'
-import { createAdminRouter } from '../src/routes/admin.js'
+import { createAdminAuthRouter, hashAdminPassword } from '../src/auth/adminAuth.js'
 
 const servers = []
 

@@ -3,7 +3,6 @@ import express from 'express'
 import { test } from 'node:test'
 import { createAdminAuthRouter, hashAdminPassword } from '../src/auth/adminAuth.js'
 import { createAdminRouter } from '../src/routes/admin.js'
-import { findBookingEnquiryByReference } from '../src/services/bookingEnquiries.js'
 
 const sessionSecret = 'a-session-secret-with-more-than-thirty-two-characters'
 
@@ -51,18 +50,18 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
         },
       }
     },
+    findOneAndUpdate() {
+      return { lean: async () => enquiry }
+    },
   }
   const lookupIdentifiers = []
   const notificationCalls = []
-  const legacyEnquiryModel = {
-    findOne() {
-      return { lean: async () => null }
-    },
-  }
   const bookingEnquiryRepository = {
-    findByReference(identifier) {
+    resolveByReference(identifier) {
       lookupIdentifiers.push(identifier)
-      return findBookingEnquiryByReference(identifier, enquiryModel, legacyEnquiryModel)
+      return identifier === requestId
+        ? { enquiry, model: enquiryModel, sourceCollection: 'bookings-db' }
+        : null
     },
   }
   const password = 'correct-horse-battery-staple'
@@ -164,10 +163,17 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
     console.error = originalError
   }
 
-  assert.deepEqual(lookupIdentifiers, [requestId, requestId, 'not-a-real-reference'])
+  assert.deepEqual(lookupIdentifiers, [requestId, 'not-a-real-reference'])
   assert.deepEqual(notificationCalls, [{
     id: requestId,
-    options: { target: 'primary', attendeeIndex: undefined, force: true, source: 'admin_manual_retry' },
+    options: {
+      target: 'primary',
+      attendeeIndex: undefined,
+      force: true,
+      source: 'admin_manual_retry',
+      booking: enquiry,
+      bookingModel: enquiryModel,
+    },
   }])
   assert.deepEqual(
     diagnostics.filter(({ details }) => details.event !== 'whatsapp_notification')

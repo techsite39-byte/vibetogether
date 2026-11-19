@@ -86,7 +86,11 @@ export default function BookingConfirmation() {
     }
 
     const controller = new AbortController()
-    setBookingLookup({ reference, status: 'loading', booking: null, error: '' })
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        setBookingLookup({ reference, status: 'loading', booking: null, error: '' })
+      }
+    })
     getBooking(reference, controller.signal)
       .then((booking) => setBookingLookup({ reference, status: 'found', booking, error: '' }))
       .catch((error) => {

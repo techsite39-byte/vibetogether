@@ -19,12 +19,19 @@ function setPath(object, path, value) {
 
 function matches(record, filter) {
   return Object.entries(filter).every(([key, expected]) => {
+    if (key === '$or') return expected.some((condition) => matches(record, condition))
+    if (key === '$and') return expected.every((condition) => matches(record, condition))
     const actual = key.startsWith('$') ? undefined : getPath(record, key)
     if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
       if ('$ne' in expected) return actual !== expected.$ne
       if ('$lte' in expected) return actual <= expected.$lte
       if ('$in' in expected) return expected.$in.includes(actual)
-      return Object.entries(expected).every(([operator, value]) => operator === '$ne' && actual !== value)
+      if ('$nin' in expected) return !expected.$nin.includes(actual)
+      return Object.entries(expected).every(([operator, value]) => {
+        if (operator === '$ne') return actual !== value
+        if (operator === '$nin') return !value.includes(actual)
+        return false
+      })
     }
     return actual === expected
   })
@@ -33,6 +40,12 @@ function matches(record, filter) {
 function createBookingModel(initialBooking) {
   const record = structuredClone(initialBooking)
   return {
+    find(filter) {
+      return {
+        limit() { return this },
+        lean: async () => matches(record, filter) ? [structuredClone(record)] : [],
+      }
+    },
     findOne(filter) {
       return { lean: async () => matches(record, filter) ? structuredClone(record) : null }
     },

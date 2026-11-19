@@ -190,15 +190,12 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
     setRetryResult(null)
     try {
       const response = await retryWhatsAppNotification(bookingIdentifier, { target, attendeeIndex })
-      const updated = response.booking ? { ...currentBooking, ...response.booking } : currentBooking
-      if (response.notification) {
-        updated.whatsappNotification = response.notification
-      }
-      if (response.attendeeNotifications) {
-        updated.attendeeNotifications = response.attendeeNotifications
-      }
-      if (response.adminNotification) {
-        updated.adminNotification = response.adminNotification
+      const updated = {
+        ...currentBooking,
+        ...(response.booking ?? {}),
+        ...(response.notification ? { whatsappNotification: response.notification } : {}),
+        ...(response.attendeeNotifications ? { attendeeNotifications: response.attendeeNotifications } : {}),
+        ...(response.adminNotification ? { adminNotification: response.adminNotification } : {}),
       }
       setCurrentBooking(updated)
       setRetryResult({

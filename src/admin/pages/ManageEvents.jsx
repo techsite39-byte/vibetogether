@@ -39,10 +39,10 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [previewFailed, setPreviewFailed] = useState(false)
   const previewImage = resolveMediaAssetUrl(image)
-  const prevImageRef = useRef(previewImage)
+  const [prevImage, setPrevImage] = useState(previewImage)
 
-  if (prevImageRef.current !== previewImage) {
-    prevImageRef.current = previewImage
+  if (prevImage !== previewImage) {
+    setPrevImage(previewImage)
     if (previewFailed) {
       setPreviewFailed(false)
     }

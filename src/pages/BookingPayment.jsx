@@ -259,7 +259,7 @@ export default function BookingPayment() {
     void loadCashfreeSdk()
   }, [])
 
-  async function refreshPaymentStatus() {
+  const refreshPaymentStatus = useCallback(async () => {
     setPaymentError('')
     try {
       let booking = await getBookingEnquiry(requestId)
@@ -290,7 +290,7 @@ export default function BookingPayment() {
       )
       return null
     }
-  }
+  }, [requestId])
 
   // Initial booking fetch & URL order verification
   useEffect(() => {
@@ -348,7 +348,7 @@ export default function BookingPayment() {
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [bookingState.booking?.paymentStatus, requestId])
+  }, [bookingState.booking?.paymentStatus, refreshPaymentStatus, requestId])
 
   // Real-time WhatsApp Notification polling
   const whatsappBookingReference = bookingState.booking?.reference
@@ -406,11 +406,13 @@ export default function BookingPayment() {
       ['paid', 'demo_paid'].includes(bookingState.booking.paymentStatus) ||
       cashfreeOrder
     ) {
-      return
+      return undefined
     }
 
-    let active = true
-    setIsOrderLoading(true)
+    const controller = new AbortController()
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) setIsOrderLoading(true)
+    })
 
     const returnUrl = window.location.protocol === 'https:'
       ? `${window.location.origin}/booking/payment/${encodeURIComponent(requestId)}?order_id={order_id}`
@@ -418,7 +420,7 @@ export default function BookingPayment() {
 
     requestCashfreeOrderOnce(cashfreeOrderRequestRef, requestId, returnUrl)
       .then((order) => {
-        if (!active) return
+        if (controller.signal.aborted) return
         if (order.alreadyPaid) {
           setBookingState({ requestId, status: 'ready', booking: order.booking, error: '' })
           return
@@ -436,18 +438,18 @@ export default function BookingPayment() {
         }))
       })
       .catch((err) => {
-        if (!active) return
+        if (controller.signal.aborted) return
         console.error('[Cashfree Order Error]', err)
         setPaymentError(err instanceof Error ? err.message : 'Could not prepare payment channels.')
       })
       .finally(() => {
-        if (active) setIsOrderLoading(false)
+        if (!controller.signal.aborted) setIsOrderLoading(false)
       })
 
     return () => {
-      active = false
+      controller.abort()
     }
-  }, [isCashfreeActive, bookingState.status, bookingState.booking?.paymentStatus, requestId, cashfreeOrder])
+  }, [isCashfreeActive, bookingState.status, bookingState.booking, requestId, cashfreeOrder])
 
 
   // =========================================================================
@@ -482,27 +484,32 @@ export default function BookingPayment() {
   useEffect(() => {
     if (!cashfreeOrder?.payment_session_id || !isCashfreeActive) return undefined
 
-    let active = true
-    setIsElementReady(false)
-    setElementLoadError('')
+    const elementController = new AbortController()
+    queueMicrotask(() => {
+      if (!elementController.signal.aborted) {
+        setIsElementReady(false)
+        setElementLoadError('')
+      }
+    })
     unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
 
     const selectedUpiApp = cashfreeUpiApps[selectedMethod]
     if (selectedUpiApp && (device.isAndroidWebView || (!device.isAndroid && !device.isIOS))) {
-      setElementLoadError(
-        device.isAndroidWebView
-          ? `${selectedUpiApp.name} app handoff is not supported inside this Android WebView. Use Other UPI · QR instead.`
-          : `${selectedUpiApp.name} app handoff is only available on a supported mobile browser. Use Other UPI · QR on this device.`,
-      )
+      const errorMsg = device.isAndroidWebView
+        ? `${selectedUpiApp.name} app handoff is not supported inside this Android WebView. Use Other UPI · QR instead.`
+        : `${selectedUpiApp.name} app handoff is only available on a supported mobile browser. Use Other UPI · QR on this device.`
+      queueMicrotask(() => {
+        if (!elementController.signal.aborted) setElementLoadError(errorMsg)
+      })
       return () => {
-        active = false
+        elementController.abort()
         unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
       }
     }
 
     loadCashfreeSdk().then((loaded) => {
-      if (!active || !loaded || typeof window.Cashfree !== 'function') {
-        if (active) setElementLoadError('Payment interface could not connect. Check internet access.')
+      if (elementController.signal.aborted || !loaded || typeof window.Cashfree !== 'function') {
+        if (!elementController.signal.aborted) setElementLoadError('Payment interface could not connect. Check internet access.')
         return
       }
       try {
@@ -519,14 +526,14 @@ export default function BookingPayment() {
           const component = cf.create(componentName, options)
           activeComponentsRef.current[componentName] = component
           component.on('ready', () => {
-            if (!active) return
+            if (elementController.signal.aborted) return
             readyComponents.add(componentName)
             if (requiredComponents.every((name) => readyComponents.has(name))) {
               setIsElementReady(true)
             }
           })
           component.on('loaderror', (event) => {
-            if (!active) return
+            if (elementController.signal.aborted) return
             setIsElementReady(false)
             setElementLoadError(event?.error?.message || `Failed to load ${componentName}.`)
           })
@@ -575,7 +582,7 @@ export default function BookingPayment() {
           mountComponent('cardHolder', {}, '#vibetogether-cf-card-holder')
         }
       } catch (err) {
-        if (active) {
+        if (!elementController.signal.aborted) {
           console.error('[Cashfree Element Mount Exception]', err)
           setElementLoadError(err instanceof Error ? err.message : 'Could not load the payment element.')
         }
@@ -583,7 +590,7 @@ export default function BookingPayment() {
     })
 
     return () => {
-      active = false
+      elementController.abort()
       unmountCashfreeComponents(activeComponentsRef, selectedPaymentComponentRef, cashfreeInstanceRef)
     }
   }, [cashfreeOrder?.environment, cashfreeOrder?.payment_session_id, device.isAndroid, device.isAndroidWebView, device.isIOS, isCashfreeActive, selectedMethod])

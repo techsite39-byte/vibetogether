@@ -81,7 +81,8 @@ export default function UpiPayment({ booking: initialBooking, bookingRequestId }
     try {
       rememberBookingReference(bookingRequestId)
     } catch (error) {
-      setStorageWarning(error instanceof Error ? error.message : 'This device could not save your booking status link.')
+      const msg = error instanceof Error ? error.message : 'This device could not save your booking status link.'
+      queueMicrotask(() => setStorageWarning(msg))
     }
   }, [bookingRequestId])
 
