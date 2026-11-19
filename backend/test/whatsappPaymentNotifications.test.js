@@ -115,8 +115,10 @@ function makeBooking(overrides = {}) {
     femaleCount: 1,
     maleMemberNames: ['Sanjay Kumar', 'Ravi Prakash'],
     maleMemberMobiles: ['+919025335720', '+919876543211'],
+    maleMemberConsents: [true, true],
     femaleMemberNames: ['Priya Sharma'],
     femaleMemberMobiles: ['+919876543222'],
+    femaleMemberConsents: [true],
     ...overrides,
   }
 }

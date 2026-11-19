@@ -185,8 +185,10 @@ test('sends confirmation templates to attendee members who provided an optional 
     femaleCount: 1,
     maleMemberNames: ['Jordan Example'],
     maleMemberMobiles: ['+919876543210'],
+    maleMemberConsents: [true],
     femaleMemberNames: ['Taylor Friend'],
     femaleMemberMobiles: ['+919876543299'],
+    femaleMemberConsents: [true],
   }))
   const requests = []
   const service = createService(model, async (url, options) => {
@@ -205,6 +207,27 @@ test('sends confirmation templates to attendee members who provided an optional 
   assert.equal(model.record.attendeeNotifications[0].name, 'Taylor Friend')
   assert.equal(model.record.attendeeNotifications[0].recipient, '+919876543299')
   assert.equal(model.record.attendeeNotifications[0].status, 'sent')
+})
+
+test('does not send to attendees whose WhatsApp consent is missing', async () => {
+  const model = createBookingModel(booking({
+    ticketQuantity: 2,
+    maleCount: 1,
+    femaleCount: 0,
+    maleMemberNames: ['Taylor Friend'],
+    maleMemberMobiles: ['+919876543299'],
+  }))
+  const requests = []
+  const service = createService(model, async (url, options) => {
+    requests.push({ url, options, payload: JSON.parse(options.body) })
+    return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.primary-only' }] }) }
+  })
+
+  await service.notify('session-1', 'booking_confirmation')
+
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].payload.to, '919876543210')
+  assert.equal(model.record.attendeeNotifications?.length ?? 0, 0)
 })
 
 test('sends failure assistance without a permanent reference and reports the applicable amount', async () => {

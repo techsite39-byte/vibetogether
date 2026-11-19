@@ -744,7 +744,7 @@ export function createWhatsAppService({
       const rawMobile = (booking.maleMemberMobiles?.[i] || '').trim()
       const consent = Array.isArray(booking.maleMemberConsents) && typeof booking.maleMemberConsents[i] === 'boolean'
         ? booking.maleMemberConsents[i]
-        : true
+        : false
       const mobile = normalizeWhatsAppRecipient(rawMobile)
       attendees.push({
         index: i,
@@ -760,7 +760,7 @@ export function createWhatsAppService({
       const rawMobile = (booking.femaleMemberMobiles?.[i] || '').trim()
       const consent = Array.isArray(booking.femaleMemberConsents) && typeof booking.femaleMemberConsents[i] === 'boolean'
         ? booking.femaleMemberConsents[i]
-        : true
+        : false
       const mobile = normalizeWhatsAppRecipient(rawMobile)
       attendees.push({
         index: i,
