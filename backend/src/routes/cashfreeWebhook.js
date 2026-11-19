@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { isRealPaidBookingStatus } from '../../../src/utils/paymentStatus.js'
 import { isValidCashfreeWebhookSignature } from '../services/cashfreePayments.js'
 import {
+  getWhatsAppNotificationOutcome,
   logWhatsAppNotification,
   logWhatsAppNotificationResult,
 } from '../services/whatsappNotifications.js'
@@ -23,14 +24,14 @@ export function createCashfreeWebhookRouter({
       })
       return result
     } catch (error) {
-      logWhatsAppNotification('REJECTED', {
+      logWhatsAppNotification('UNCERTAIN', {
         source,
         notificationType: type,
         identity: requestId,
-        reason: 'Notification service threw',
+        reason: 'Notification processing failed before its outcome was confirmed',
         errorDetails: error?.code ? `Processing error code ${error.code}` : 'Processing error',
       })
-      return { failed: true }
+      return { failed: true, uncertain: true }
     }
   }
 
@@ -80,8 +81,9 @@ export function createCashfreeWebhookRouter({
         rawBody,
       )
 
+      let notificationResult = null
       if (result?.action === 'confirmed' && isRealPaidBookingStatus(result.booking?.paymentStatus) && result.booking.reference) {
-        await notifyWithoutAffectingPayment(result.booking.requestId, 'booking_confirmation')
+        notificationResult = await notifyWithoutAffectingPayment(result.booking.requestId, 'payment_success')
       } else if (
         result?.action === 'failed' &&
         result.booking?.paymentStatus === 'failed' &&
@@ -89,7 +91,7 @@ export function createCashfreeWebhookRouter({
         result.booking?.paymentFailureReason !== 'user_dropped' &&
         payload?.type !== 'PAYMENT_USER_DROPPED_WEBHOOK'
       ) {
-        await notifyWithoutAffectingPayment(result.booking.requestId, 'payment_assistance')
+        notificationResult = await notifyWithoutAffectingPayment(result.booking.requestId, 'payment_failed')
       } else {
         logWhatsAppNotification('SKIPPED', {
           source: 'cashfree_webhook',
@@ -105,7 +107,11 @@ export function createCashfreeWebhookRouter({
         })
       }
 
-      response.status(200).json({ received: true })
+      const notificationOutcome = getWhatsAppNotificationOutcome(notificationResult)
+      response.status(200).json({
+        received: true,
+        outcome: notificationOutcome,
+      })
     } catch (error) {
       const errorCode = Number(error?.code)
       const errorStatus = Number(error?.status)

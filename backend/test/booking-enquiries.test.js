@@ -53,6 +53,8 @@ async function startTestServer({
         whatsappConsentAt: enquiry.whatsappConsent ? new Date() : null,
         whatsappNotification: {
           messageType: 'booking_confirmation',
+          recipient: enquiry.whatsappConsent === true ? enquiry.mobile : '',
+          idempotencyKey: `${enquiry.requestId}:booking_confirmation:primary`,
           bookingReference: '',
           status: 'skipped',
           attemptCount: 0,
@@ -177,6 +179,9 @@ test('lists existing events and saves one idempotent booking enquiry', async () 
   })
 
   assert.equal(firstResponse.status, 201)
+  const firstPayload = await firstResponse.json()
+  assert.equal(firstPayload.outcome, 'booking_created_payment_pending')
+  assert.equal(firstPayload.paymentState, 'payment_pending')
   assert.equal(saved.size, 1)
   const savedEnquiry = saved.get(request.requestId)
   assert.equal(savedEnquiry.event, events[0].title)
@@ -192,6 +197,7 @@ test('lists existing events and saves one idempotent booking enquiry', async () 
     body: JSON.stringify(request),
   })
   assert.equal(duplicateResponse.status, 200)
+  assert.equal((await duplicateResponse.json()).outcome, 'booking_already_exists')
   assert.equal(saved.size, 1)
 
   const conflictingResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
@@ -345,6 +351,14 @@ test('does not send automatic WhatsApp messages before successful payment', asyn
   assert.equal(firstPayload.booking.reference, '')
   assert.equal(firstPayload.booking.paymentStatus, 'unpaid')
   assert.equal(firstPayload.booking.whatsappNotification.status, 'skipped')
+  assert.equal(
+    saved.get(request.requestId).whatsappNotification.recipient,
+    '+919876543210',
+  )
+  assert.equal(
+    saved.get(request.requestId).whatsappNotification.idempotencyKey,
+    `${request.requestId}:booking_confirmation:primary`,
+  )
   assert.equal(saved.get(request.requestId).reference, undefined)
   assert.ok(saved.get(request.requestId).whatsappConsentAt instanceof Date)
 
@@ -796,7 +810,9 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
     whatsappNotifications: {
       async notify(requestId, type) {
         notifications.push({ requestId, type })
-        return type === 'booking_confirmation' ? { sent: true } : { failed: true }
+        return type === 'booking_confirmation'
+          ? { sent: true }
+          : { failed: true, providerRejected: true }
       },
     },
   })
@@ -861,7 +877,7 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
   })
   assert.deepEqual(notifications, [{
     requestId,
-    type: 'payment_assistance',
+    type: 'payment_failed',
   }])
 
   await verify({
@@ -873,12 +889,12 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
     },
   })
   assert.deepEqual(notifications, [
-    { requestId, type: 'payment_assistance' },
-    { requestId, type: 'booking_confirmation' },
+    { requestId, type: 'payment_failed' },
+    { requestId, type: 'payment_success' },
   ])
   assert.ok(notificationLogs.some(({ details }) =>
     details?.stage === 'caller_result' && details.source === 'cashfree_verification' &&
-    details.notificationType === 'payment_assistance' && details.outcome === 'REJECTED',
+    details.notificationType === 'payment_failed' && details.outcome === 'REJECTED',
   ))
   assert.equal(JSON.stringify(notificationLogs).includes(requestId), false)
 })

@@ -1908,6 +1908,25 @@
   flex-wrap: wrap;
 }
 
+.booking-payment__return-home-btn {
+  min-width: 14rem;
+  padding: 1rem 2.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-decoration: none;
+  margin: 0.5rem auto 0;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.booking-payment__return-home-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(199, 125, 255, 0.4);
+}
+
+.booking-payment__failure-icon {
+  stroke-width: 2.25;
+}
+
 .booking-payment__link-inline {
   color: var(--bp-accent-violet);
   font-size: 0.85rem;

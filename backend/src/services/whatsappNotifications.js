@@ -6,6 +6,7 @@ export {
   buildAdminAlertMessage,
   templateBodyParameters,
   formatBookingDate,
+  getWhatsAppNotificationOutcome,
   logWhatsAppNotification,
   logWhatsAppNotificationResult,
   createWhatsAppCorrelationId,

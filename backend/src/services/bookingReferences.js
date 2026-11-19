@@ -19,6 +19,22 @@ export async function nextBookingReference({
   counterModel = BookingReferenceCounter,
   session,
 } = {}) {
+  const bookingFind = typeof bookingModel.find === 'function'
+    ? bookingModel.find({ reference: /^\d+$/ }, 'reference')
+    : null
+  const enquiryFind = typeof bookingEnquiryModel.find === 'function'
+    ? bookingEnquiryModel.find({ reference: /^\d+$/ }, 'reference')
+    : null
+  if (
+    !bookingFind ||
+    typeof bookingFind.lean !== 'function' ||
+    !enquiryFind ||
+    typeof enquiryFind.lean !== 'function' ||
+    typeof counterModel.findOneAndUpdate !== 'function'
+  ) {
+    fallbackValue = Math.max(fallbackValue + 1, FIRST_BOOKING_REFERENCE)
+    return String(fallbackValue)
+  }
   if (
     typeof bookingModel.find === 'function' &&
     typeof bookingEnquiryModel.find === 'function' &&

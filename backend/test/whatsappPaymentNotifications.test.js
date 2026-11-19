@@ -231,7 +231,7 @@ test('admin alert resend builds the existing message payload and records Meta ac
   assert.match(sentRequests[0].payload.text.body, /VT-2026-9025/)
   assert.match(sentRequests[0].payload.text.body, /₹897/)
   assert.equal(result.success, true)
-  assert.match(result.message, /accepted by Meta/)
+  assert.match(result.message, /accepted by the provider/)
   assert.equal(model.record.adminNotification.status, 'sent')
   assert.equal(model.record.adminNotification.providerMessageId, 'wamid.admin-test')
 })
@@ -262,7 +262,7 @@ test('admin alert resend returns sanitized Meta rejection details without exposi
   const result = await service.resendNotification('req-session-456', { target: 'admin' })
 
   assert.equal(result.success, false)
-  assert.match(result.message, /HTTP 400 \(code 131026\)/)
+  assert.match(result.message, /provider rejected the notification/i)
   assert.equal(model.record.adminNotification.status, 'failed')
   assert.match(model.record.adminNotification.failureReason, /HTTP 400 \(code 131026\)/)
   assert.doesNotMatch(result.message, /test-access-token/)
@@ -641,10 +641,11 @@ test('Invalid WhatsApp recipient — fails gracefully without throwing error or 
 
   const result = await service.send('req-session-456', 'payment_assistance')
 
-  assert.equal(result.failed, true)
+  assert.equal(result.skipped, true)
+  assert.equal(result.reason, 'Invalid mobile number')
   assert.equal(apiCalled, false) // Meta API was not called with garbage number
-  assert.equal(model.record.whatsappNotification.status, 'failed')
-  assert.match(model.record.whatsappNotification.failureReason, /not a valid WhatsApp recipient/)
+  assert.equal(model.record.whatsappNotification.status, 'skipped')
+  assert.equal(model.record.whatsappNotification.recipient, '')
   // Booking state is intact
   assert.equal(model.record.paymentStatus, 'failed')
 })

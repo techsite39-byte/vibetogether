@@ -35,7 +35,12 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
     reference: 'VT-BOOKING-123',
     mobile: '919876543210',
     whatsappConsent: true,
-    whatsappNotification: { status: 'failed', history: [] },
+    paymentStatus: 'pending',
+    whatsappNotification: {
+      messageType: 'booking_confirmation',
+      status: 'skipped',
+      history: [],
+    },
     attendeeNotifications: [],
     adminNotification: null,
   }
@@ -106,7 +111,12 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
     whatsappNotifications: {
       async resendNotification(id, options) {
         notificationCalls.push({ id, options })
-        return { sent: false, failed: true, message: 'Stubbed; no provider call.' }
+        return {
+          outcome: 'notification_skipped',
+          notificationType: 'booking_confirmation',
+          message: 'Payment is still pending; the WhatsApp notification was skipped.',
+          result: { skipped: true, pending: true },
+        }
       },
     },
   }))
@@ -149,7 +159,10 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
       body: JSON.stringify({ target: 'primary' }),
     })
     assert.equal(response.status, 200)
-    assert.equal((await response.json()).result.sent, false)
+    const retryPayload = await response.json()
+    assert.equal(retryPayload.outcome, 'notification_skipped')
+    assert.equal(retryPayload.notificationType, 'booking_confirmation')
+    assert.match(retryPayload.message, /payment is still pending/i)
 
     const missingResponse = await fetch(`${baseUrl}/api/admin/bookings/not-a-real-reference/whatsapp/retry`, {
       method: 'POST',
@@ -180,11 +193,11 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
       .map(({ level, details }) => [level, details.matchedBy ?? details.identifierType]),
     [['info', 'requestId'], ['warn', 'bookingReference']],
   )
-  assert.ok(diagnostics.some(({ level, details }) =>
-    level === 'error' && details.event === 'whatsapp_notification' &&
+  assert.equal(diagnostics.some(({ details }) =>
+    details.event === 'whatsapp_notification' &&
     details.stage === 'caller_result' && details.outcome === 'REJECTED' &&
     details.source === 'admin_manual_retry',
-  ))
+  ), false)
   assert.equal(JSON.stringify(diagnostics).includes(requestId), false)
   assert.equal(JSON.stringify(diagnostics).includes(enquiry.mobile), false)
 })

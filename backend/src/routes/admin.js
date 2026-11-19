@@ -21,6 +21,7 @@ import { UnmatchedCashfreePayment } from '../models/unmatchedCashfreePayment.js'
 import { Event } from '../models/event.js'
 import { MediaAsset } from '../models/mediaAsset.js'
 import {
+  getWhatsAppNotificationOutcome,
   logWhatsAppNotification,
   logWhatsAppNotificationResult,
 } from '../services/whatsappNotifications.js'
@@ -30,7 +31,6 @@ import {
 } from '../services/events.js'
 import { hashAdminPassword } from '../auth/adminAuth.js'
 import {
-  isCompletedBookingPaymentStatus,
   normalizeBookingPaymentStatus,
 } from '../../../src/utils/paymentStatus.js'
 
@@ -1273,16 +1273,33 @@ export function createAdminRouter({
           booking: enquiry,
           bookingModel: resolved.model,
         })
+        const outcome = result?.outcome ?? getWhatsAppNotificationOutcome(result?.result ?? result)
+        const notificationType = result?.notificationType ??
+          (target === 'admin'
+            ? 'admin_alert'
+            : target === 'attendee'
+              ? 'booking_confirmation'
+              : enquiry.whatsappNotification?.messageType ?? 'unknown')
         logWhatsAppNotificationResult(result?.result ?? result, {
           source: 'admin_manual_retry',
-          notificationType: target === 'admin' ? 'admin_alert' : target === 'attendee' ? 'booking_confirmation' : 'payment_assistance',
+          notificationType,
           identity: enquiry.requestId,
         })
         const updated = resolved
           ? await resolved.model.findOne({ _id: enquiry._id, requestId: enquiry.requestId }).lean() ?? enquiry
           : await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
         response.json({
-          message: result?.message || (result?.sent || result?.success ? 'WhatsApp notification sent successfully.' : 'WhatsApp notification could not be sent.'),
+          outcome,
+          notificationType,
+          message: result?.message || (
+            outcome === 'notification_accepted'
+              ? 'WhatsApp notification was accepted by the provider.'
+              : outcome === 'notification_provider_rejected'
+                ? 'WhatsApp provider rejected the notification.'
+                : outcome === 'notification_provider_uncertain'
+                  ? 'WhatsApp provider response was uncertain; retry was withheld to prevent a duplicate.'
+                  : 'WhatsApp notification was skipped; no message was sent.'
+          ),
           result,
           notification: updated.whatsappNotification,
           attendeeNotifications: updated.attendeeNotifications,
@@ -1299,12 +1316,19 @@ export function createAdminRouter({
           identity: enquiry.requestId,
           reason: enquiry.whatsappOptedOutAt ? 'Customer opted out' : 'Customer consent missing',
         })
-        response.status(400).json({ message: 'Customer has not provided WhatsApp notification consent.' })
+        response.status(200).json({
+          outcome: 'notification_skipped',
+          notificationType: enquiry.whatsappNotification?.messageType ?? 'unknown',
+          message: enquiry.whatsappOptedOutAt
+            ? 'Customer opted out; notification was skipped.'
+            : 'Customer has not provided WhatsApp consent; notification was skipped.',
+        })
         return
       }
       const currentStatus = enquiry.whatsappNotification?.status
       if (['delivered', 'read'].includes(currentStatus)) {
         response.status(409).json({
+          outcome: 'notification_skipped',
           message: 'WhatsApp notification was already delivered. No duplicate message was sent.',
           alreadyDelivered: true,
           status: currentStatus,
@@ -1312,13 +1336,21 @@ export function createAdminRouter({
         })
         return
       }
-      const isPaid = isCompletedBookingPaymentStatus(enquiry.paymentStatus)
-      const type = isPaid ? 'booking_confirmation' : 'payment_assistance'
+      const type = enquiry.whatsappNotification?.messageType
+      if (!['booking_confirmation', 'payment_success', 'payment_assistance', 'payment_failed'].includes(type)) {
+        response.status(200).json({
+          outcome: 'notification_skipped',
+          notificationType: 'unknown',
+          message: 'Stored notification type is missing; retry was skipped.',
+        })
+        return
+      }
       const result = await whatsappNotifications?.notify?.(enquiry.requestId, type, {
         force: true,
         retry: true,
         source: 'admin_manual_retry',
       })
+      const outcome = getWhatsAppNotificationOutcome(result)
       logWhatsAppNotificationResult(result, {
         source: 'admin_manual_retry',
         notificationType: type,
@@ -1326,15 +1358,19 @@ export function createAdminRouter({
       })
       const updated = await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
       response.json({
-        message: result?.uncertain
-          ? 'WhatsApp provider response was uncertain. Retry was withheld to prevent a duplicate message.'
-          : result?.alreadyDelivered
-          ? 'WhatsApp notification was already delivered. No duplicate message was sent.'
-          : result?.sent
-            ? 'WhatsApp notification sent successfully.'
-            : result?.failed
-              ? 'WhatsApp notification retry failed. Check notification error details.'
-              : 'WhatsApp notification request processed.',
+        outcome,
+        notificationType: type,
+        message: result?.sent
+          ? 'WhatsApp notification was accepted by the provider.'
+          : result?.providerRejected
+            ? 'WhatsApp provider rejected the notification.'
+            : result?.uncertain
+              ? 'WhatsApp provider response was uncertain; retry was withheld to prevent a duplicate.'
+              : result?.pending
+                ? 'Payment is still pending; the WhatsApp notification was skipped.'
+                : result?.duplicate || result?.alreadyDelivered
+                  ? 'Notification was already processed; no duplicate WhatsApp message was sent.'
+                  : 'WhatsApp notification was skipped; no message was sent.',
         result,
         notification: updated.whatsappNotification,
         attendeeNotifications: updated.attendeeNotifications,

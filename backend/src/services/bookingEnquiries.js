@@ -55,11 +55,12 @@ export async function saveBookingEnquiry(enquiry, { bookingEnquiryModel = Bookin
     if (!sameRequest(existing, enquiry)) {
       throwIdempotencyConflict()
     }
-
     return { enquiry: existing, duplicate: true }
   }
 
   try {
+    const notificationType = 'booking_confirmation'
+    const notificationRecipient = enquiry.whatsappConsent === true ? enquiry.mobile : ''
     const saved = await bookingEnquiryModel.create({
       ...enquiry,
       email: enquiry.email ?? '',
@@ -76,7 +77,9 @@ export async function saveBookingEnquiry(enquiry, { bookingEnquiryModel = Bookin
       paymentVerifiedAt: null,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       whatsappNotification: {
-        messageType: 'booking_confirmation',
+        messageType: notificationType,
+        recipient: notificationRecipient,
+        idempotencyKey: `${enquiry.requestId}:${notificationType}:primary`,
         bookingReference: '',
         status: 'skipped',
         history: [],

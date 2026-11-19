@@ -21,6 +21,7 @@ import {
   Ticket,
   User,
   Users,
+  XCircle,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
@@ -861,7 +862,18 @@ export default function BookingPayment() {
     booking?.paymentStatus === 'failed' &&
     booking?.paymentProvider !== 'upi' &&
     !isUpiPayment
-  const isFailureView = isPaymentFailed && !paymentUncertain && searchParams.get('retry') !== '1'
+  const isTerminalFailed = Boolean(
+    isPaymentFailed &&
+    !paymentUncertain &&
+    booking?.paymentFailureReason !== 'cancelled' &&
+    booking?.cfPaymentStatus !== 'USER_DROPPED'
+  )
+  const isCancelledView = Boolean(
+    isPaymentFailed &&
+    !paymentUncertain &&
+    (booking?.paymentFailureReason === 'cancelled' || booking?.cfPaymentStatus === 'USER_DROPPED') &&
+    searchParams.get('retry') !== '1'
+  )
   const isVerifying = paymentUncertain || isRecentProcessing(booking)
   const bookingLabel = booking?.status === 'confirmed' ? 'Approved' : 'Pending Approval'
 
@@ -888,7 +900,7 @@ export default function BookingPayment() {
               <Sparkles size={16} aria-hidden="true" />
               VIBE TOGETHER
             </span>
-            {!isPaid && (
+            {!isPaid && !isTerminalFailed && (
               <button
                 className="booking-payment__back-button"
                 onClick={handleBackToDetails}
@@ -899,8 +911,8 @@ export default function BookingPayment() {
               </button>
             )}
           </div>
-          <BookingProgress activeStep={4} />
-          <p className="booking-payment__step-count" aria-live="polite">5 / 5</p>
+          {!isTerminalFailed && <BookingProgress activeStep={4} />}
+          {!isTerminalFailed && <p className="booking-payment__step-count" aria-live="polite">5 / 5</p>}
         </header>
 
         {/* =========================================================================
@@ -1082,9 +1094,25 @@ export default function BookingPayment() {
               </Link>
             </div>
           </div>
-        ) : isFailureView ? (
+        ) : isTerminalFailed ? (
           /* =========================================================================
-             LUXURY FAILURE & RECOVERY STATE
+             SIMPLE PAYMENT FAILED SCREEN (CONFIRMED TERMINAL FAILURE)
+             ========================================================================= */
+          <div className="booking-payment__state-card booking-payment__state-card--failure" role="alert">
+            <div className="booking-payment__failure-beacon" aria-hidden="true">
+              <XCircle size={44} className="booking-payment__failure-icon" />
+            </div>
+            <h1 className="booking-payment__state-title">Payment Failed</h1>
+            <p className="booking-payment__state-desc">Your payment could not be completed.</p>
+            <div className="booking-payment__failure-cta-wrap">
+              <Link to="/" className="booking-payment__btn booking-payment__btn--primary booking-payment__return-home-btn">
+                Return Home
+              </Link>
+            </div>
+          </div>
+        ) : isCancelledView ? (
+          /* =========================================================================
+             USER CANCELLED STATE
              ========================================================================= */
           <div className="booking-payment__state-card booking-payment__state-card--failure" role="alert">
             <div className="booking-payment__failure-beacon">
@@ -1125,7 +1153,6 @@ export default function BookingPayment() {
                 <ArrowRight size={18} aria-hidden="true" />
               </button>
               <div className="booking-payment__failure-sublinks">
-                <Link className="booking-payment__link-inline" to="/contact">Need assistance? Reach our team</Link>
                 <Link className="booking-payment__link-inline" to="/">Return to home</Link>
               </div>
             </div>

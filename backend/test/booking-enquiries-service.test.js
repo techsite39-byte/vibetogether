@@ -58,7 +58,7 @@ function createBookingModel(initialRecord = null) {
   }
 }
 
-test('initial booking save is temporary, unpaid, expiring, and reference-free', async () => {
+test('initial booking save is temporary, unpaid, expiring, and prepares WhatsApp state', async () => {
   const model = createBookingModel()
   const before = Date.now()
   const result = await saveBookingEnquiry({
@@ -90,6 +90,12 @@ test('initial booking save is temporary, unpaid, expiring, and reference-free', 
   assert.equal(result.enquiry.email, 'jordan@example.com')
   assert.deepEqual(result.enquiry.maleMemberNames, ['Arun Example', ''])
   assert.deepEqual(result.enquiry.femaleMemberNames, ['Mira Example'])
+  assert.equal(result.enquiry.whatsappNotification.recipient, '+919876543210')
+  assert.equal(result.enquiry.whatsappNotification.bookingReference, '')
+  assert.equal(
+    result.enquiry.whatsappNotification.idempotencyKey,
+    `${result.enquiry.requestId}:booking_confirmation:primary`,
+  )
   assert.ok(result.enquiry.expiresAt.getTime() >= before + 7 * 24 * 60 * 60 * 1000 - 1000)
   assert.equal(result.enquiry.whatsappNotification.status, 'skipped')
 
@@ -98,6 +104,11 @@ test('initial booking save is temporary, unpaid, expiring, and reference-free', 
     expiresAt: undefined,
   }, { bookingEnquiryModel: model })
   assert.equal(duplicate.duplicate, true)
+  assert.equal(duplicate.enquiry.reference, result.enquiry.reference)
+  assert.equal(
+    duplicate.enquiry.whatsappNotification.idempotencyKey,
+    result.enquiry.whatsappNotification.idempotencyKey,
+  )
   await assert.rejects(
     saveBookingEnquiry({
       ...result.enquiry,
@@ -105,6 +116,40 @@ test('initial booking save is temporary, unpaid, expiring, and reference-free', 
     }, { bookingEnquiryModel: model }),
     (error) => error.status === 409,
   )
+})
+
+test('duplicate save does not invent a missing canonical reference', async () => {
+  const original = {
+    requestId: 'legacy-session',
+    name: 'Jordan Example',
+    mobile: '+919876543210',
+    email: 'jordan@example.com',
+    category: 'Fun Games',
+    categoryId: 'fun-games',
+    event: '',
+    eventId: '',
+    gender: 'Mixed',
+    ticketQuantity: 3,
+    maleCount: 2,
+    femaleCount: 1,
+    maleMemberNames: ['Arun Example', ''],
+    femaleMemberNames: ['Mira Example'],
+    whatsappConsent: true,
+    status: 'pending',
+    createdAt: new Date(),
+    source: 'Website booking journey',
+  }
+  const model = createBookingModel({
+    _id: 'legacy-record',
+    ...original,
+    paymentStatus: 'unpaid',
+    reference: '',
+  })
+
+  const result = await saveBookingEnquiry(original, { bookingEnquiryModel: model })
+
+  assert.equal(result.duplicate, true)
+  assert.equal(result.enquiry.reference, '')
 })
 
 test('demo payment finalization allocates once under duplicate callbacks and clears expiry', async () => {

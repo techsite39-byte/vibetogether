@@ -57,7 +57,7 @@ test('registers the Cashfree webhook before CORS and parses the signed raw body'
   })
 
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { received: true })
+  assert.deepEqual(await response.json(), { received: true, outcome: 'notification_skipped' })
   assert.equal(received.length, 1)
   assert.deepEqual(received[0].payload, { type: 'TEST_WEBHOOK', data: {} })
   assert.deepEqual(received[0].rawBody, Buffer.from(body))
@@ -124,7 +124,7 @@ test('accepts webhooks with application/*+json content-type on both primary and 
   })
 
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { received: true })
+  assert.deepEqual(await response.json(), { received: true, outcome: 'notification_skipped' })
   assert.equal(received.length, 1)
   assert.equal(received[0].payload.type, 'PAYMENT_SUCCESS_WEBHOOK')
   assert.deepEqual(received[0].rawBody, Buffer.from(body))
@@ -160,7 +160,7 @@ test('logs Cashfree failure notification results and suppresses duplicate webhoo
     whatsappNotifications: {
       async notify(id, type, options) {
         notificationCalls.push({ id, type, options })
-        return { failed: true }
+        return { failed: true, providerRejected: true }
       },
     },
   })
@@ -185,7 +185,7 @@ test('logs Cashfree failure notification results and suppresses duplicate webhoo
   }
 
   assert.equal(notificationCalls.length, 1)
-  assert.equal(notificationCalls[0].type, 'payment_assistance')
+  assert.equal(notificationCalls[0].type, 'payment_failed')
   assert.equal(notificationCalls[0].options.source, 'cashfree_webhook')
   assert.ok(logs.some(({ details }) =>
     details?.stage === 'caller_result' && details.outcome === 'REJECTED' &&
@@ -280,7 +280,7 @@ test('acknowledges an unmatched success only after durable event capture complet
   })
 
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { received: true })
+  assert.deepEqual(await response.json(), { received: true, outcome: 'notification_skipped' })
   assert.equal(persistedRecord.providerOrderId, 'stored-order-id')
   assert.equal(persistedRecord.providerPaymentId, 'stored-payment-id')
 })

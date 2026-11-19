@@ -178,6 +178,21 @@ test('sends one approved confirmation template to the consented customer number'
   assert.equal(duplicate.duplicate, true)
 })
 
+test('HTTP 200 without a provider message ID is not treated as accepted', async () => {
+  const model = createBookingModel(booking())
+  const service = createService(model, async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ success: true }),
+  }))
+
+  const result = await service.notify('session-1', 'booking_confirmation')
+
+  assert.equal(result.sent, undefined)
+  assert.equal(result.providerRejected, true)
+  assert.equal(model.record.whatsappNotification.status, 'failed')
+})
+
 test('sends confirmation templates to attendee members who provided an optional mobile number', async () => {
   const model = createBookingModel(booking({
     ticketQuantity: 2,
@@ -230,10 +245,10 @@ test('does not send to attendees whose WhatsApp consent is missing', async () =>
   assert.equal(model.record.attendeeNotifications?.length ?? 0, 0)
 })
 
-test('sends failure assistance without a permanent reference and reports the applicable amount', async () => {
+test('sends eligible failure assistance without a permanent reference and reports the applicable amount', async () => {
   const model = createBookingModel(booking({
     paymentStatus: 'failed',
-    paymentFailureReason: 'cancelled',
+    paymentFailureReason: 'failed',
     paymentAmount: 249,
     reference: '',
     diwaliOfferApplied: true,
@@ -270,7 +285,7 @@ test('records skipped without consent and does not call the WhatsApp API', async
   assert.equal(requestCount, 0)
   assert.equal(result.skipped, true)
   assert.equal(model.record.whatsappNotification.status, 'skipped')
-  assert.match(model.record.whatsappNotification.history[0].note, /no WhatsApp notification consent/i)
+  assert.match(model.record.whatsappNotification.history[0].note, /customer consent missing/i)
 })
 
 test('records delivered and read webhooks idempotently without regressing status', async () => {
@@ -358,7 +373,13 @@ test('logs each primary notification skip reason without calling Meta', async ()
     { reason: 'Customer consent missing', booking: booking({ paymentStatus: 'failed', whatsappConsent: false }) },
     { reason: 'Customer opted out', booking: booking({ paymentStatus: 'failed', whatsappConsent: false, whatsappOptedOutAt: new Date() }) },
     { reason: 'Invalid mobile number', booking: booking({ paymentStatus: 'failed', mobile: 'not-a-phone' }) },
+    { reason: 'Invalid mobile number', booking: booking({ paymentStatus: 'failed', mobile: '' }) },
     { reason: 'Payment still pending', booking: booking({ paymentStatus: 'pending', reference: '' }) },
+    {
+      reason: 'Payment still pending',
+      booking: booking({ paymentStatus: 'pending', reference: '' }),
+      type: 'payment_success',
+    },
     { reason: 'Payment already completed', booking: booking({ paymentStatus: 'paid', reference: 'VT-PAID' }) },
     { reason: 'Demo payment; no real payment was processed.', booking: booking({ paymentStatus: 'demo_paid' }), type: 'booking_confirmation' },
     {
@@ -366,7 +387,7 @@ test('logs each primary notification skip reason without calling Meta', async ()
       booking: booking({
         paymentStatus: 'failed',
         paymentOrderId: 'order-1',
-        whatsappNotification: { status: 'sent', idempotencyKey: 'session-1:payment_assistance:order-1' },
+        whatsappNotification: { status: 'sent', idempotencyKey: 'session-1:payment_assistance:primary' },
       }),
     },
     {
@@ -374,7 +395,7 @@ test('logs each primary notification skip reason without calling Meta', async ()
       booking: booking({
         paymentStatus: 'failed',
         paymentOrderId: 'order-1',
-        whatsappNotification: { status: 'pending', inProgress: true, idempotencyKey: 'session-1:payment_assistance:order-1' },
+        whatsappNotification: { status: 'pending', inProgress: true, idempotencyKey: 'session-1:payment_assistance:primary' },
       }),
     },
   ]
@@ -395,6 +416,71 @@ test('logs each primary notification skip reason without calling Meta', async ()
   for (const testCase of cases) assert.ok(reasons.includes(testCase.reason), testCase.reason)
   assert.ok(reasons.includes('WhatsApp configuration missing'))
   assert.equal(entries.some(({ details }) => details?.outcome === 'ATTEMPTED'), false)
+})
+
+test('payment_failed is skipped until a terminal Cashfree failure is verified', async () => {
+  const model = createBookingModel(booking({
+    paymentStatus: 'failed',
+    paymentFailureReason: 'failed',
+    cfPaymentStatus: 'PENDING',
+    cfPaymentId: '',
+    reference: '',
+  }))
+  const service = createService(model, async () => {
+    throw new Error('Meta must not be called for an unverified payment failure.')
+  })
+
+  const result = await service.notify('session-1', 'payment_failed')
+
+  assert.equal(result.skipped, true)
+  assert.equal(result.reason, 'Terminal Cashfree failure not verified')
+  assert.equal(model.record.whatsappNotification.status, 'skipped')
+  assert.equal(model.record.paymentStatus, 'failed')
+})
+
+test('pending booking confirmation persists its consented primary recipient and stable key without sending', async () => {
+  const model = createBookingModel(booking({
+    paymentStatus: 'unpaid',
+    reference: '',
+    whatsappNotification: {
+      messageType: 'booking_confirmation',
+      status: 'skipped',
+      attemptCount: 0,
+      history: [],
+    },
+  }))
+  const service = createService(model, async () => {
+    throw new Error('Meta must not be called while payment is pending.')
+  })
+
+  const result = await service.notify('session-1', 'booking_confirmation')
+
+  assert.equal(result.skipped, true)
+  assert.equal(result.pending, true)
+  assert.equal(model.record.whatsappNotification.status, 'skipped')
+  assert.equal(model.record.whatsappNotification.recipient, '+919876543210')
+  assert.equal(model.record.whatsappNotification.bookingReference, '')
+  assert.equal(model.record.whatsappNotification.idempotencyKey, 'session-1:booking_confirmation:primary')
+  assert.equal(model.record.whatsappNotification.attemptCount, 0)
+})
+
+test('payment assistance remains skipped for pending payment with its own stable key', async () => {
+  const model = createBookingModel(booking({
+    paymentStatus: 'pending',
+    reference: '',
+    whatsappNotification: { status: 'skipped', attemptCount: 0, history: [] },
+  }))
+  const service = createService(model, async () => {
+    throw new Error('Meta must not be called for pending payment assistance.')
+  })
+
+  const result = await service.notify('session-1', 'payment_assistance')
+
+  assert.equal(result.skipped, true)
+  assert.equal(result.pending, true)
+  assert.equal(model.record.whatsappNotification.messageType, 'payment_assistance')
+  assert.equal(model.record.whatsappNotification.idempotencyKey, 'session-1:payment_assistance:primary')
+  assert.equal(model.record.whatsappNotification.attemptCount, 0)
 })
 
 test('logs ATTEMPTED immediately before Meta fetch and ACCEPTED with message ID', async () => {
@@ -653,7 +739,7 @@ test('admin retries do not resend when the previous provider response was uncert
   const model = createBookingModel(booking({
     whatsappNotification: {
       status: 'failed',
-      idempotencyKey: 'session-1:booking_confirmation:10812026501',
+      idempotencyKey: 'session-1:booking_confirmation:primary',
       failureReason: 'WhatsApp provider response was uncertain; automatic retry was withheld to prevent duplicate messages.',
       retryable: false,
       inProgress: false,
