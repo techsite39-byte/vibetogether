@@ -254,10 +254,13 @@ export default function BookingJourney({
     window.clearTimeout(transitionTimer.current)
     window.clearTimeout(settleTimer.current)
     transitioning.current = false
-    setIsTransitioning(false)
-    setDirection(routeStep > step ? 1 : -1)
-    setStep(routeStep)
-    setTransitionStage('enter')
+    const nextDirection = routeStep > step ? 1 : -1
+    queueMicrotask(() => {
+      setIsTransitioning(false)
+      setDirection(nextDirection)
+      setStep(routeStep)
+      setTransitionStage('enter')
+    })
     journeyRef.current?.scrollTo(0, 0)
   }, [routeStep, step])
 
@@ -356,7 +359,7 @@ export default function BookingJourney({
     })
   }
 
-  function updateMemberConsent(gender, index, value) {
+  function _updateMemberConsent(gender, index, value) {
     resetRequestAfterEdit()
     const consentsKey = gender === 'Male' ? 'maleMemberConsents' : 'femaleMemberConsents'
     setForm((current) => {
@@ -811,9 +814,9 @@ export default function BookingJourney({
                     })}
                   </fieldset>
                   {[
-                    ['Male', form.maleCount, form.maleMemberNames, form.maleMemberMobiles, form.maleMemberConsents],
-                    ['Female', form.femaleCount, form.femaleMemberNames, form.femaleMemberMobiles, form.femaleMemberConsents],
-                  ].map(([gender, count, names, mobiles, consents]) => count > 0 && (
+                    ['Male', form.maleCount, form.maleMemberNames, form.maleMemberMobiles],
+                    ['Female', form.femaleCount, form.femaleMemberNames, form.femaleMemberMobiles],
+                  ].map(([gender, count, names, mobiles]) => count > 0 && (
                     <fieldset className="booking-member-group" key={gender}>
                       <legend>{gender.toUpperCase()} MEMBERS</legend>
                       {Array.from({ length: count }, (_, index) => (

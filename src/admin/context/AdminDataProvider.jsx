@@ -155,10 +155,12 @@ export function AdminDataProvider({ children, actor }) {
     })
   }, [])
 
-  useEffect(() => {
+  const [lastPathname, setLastPathname] = useState(location.pathname)
+  if (lastPathname !== location.pathname) {
+    setLastPathname(location.pathname)
     setStorageError('')
     setScopedErrors({})
-  }, [location.pathname])
+  }
 
   const reload = useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -178,8 +180,29 @@ export function AdminDataProvider({ children, actor }) {
   }, [])
 
   useEffect(() => {
-    void reload()
-  }, [reload])
+    let ignore = false
+    adminRequest('/admin/workspace')
+      .then((workspace) => {
+        if (!ignore) {
+          setData(mapWorkspace(workspace))
+          setStorageError('')
+        }
+      })
+      .catch((error) => {
+        if (!ignore) {
+          setStorageError(error instanceof Error ? error.message : 'Admin data could not be loaded.')
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false)
+        }
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [])
 
   const mutate = useCallback(async (path, method, body, onSuccess, returnError = false, customScope) => {
     const scope = customScope || extractScopeFromPath(path)

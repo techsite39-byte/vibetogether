@@ -62,20 +62,13 @@ function writeStoredStep(step) {
 export default function EventPosterModal() {
   const navigate = useNavigate()
   const { openBooking } = useBookingEnquiry()
-  const [currentStep, setCurrentStep] = useState(null)
-  const dialogRef = useRef(null)
-
-  // Initialize from sessionStorage on client mount
-  useEffect(() => {
+  const [currentStep, setCurrentStep] = useState(() => {
     const stored = readStoredStep()
-    if (stored === 'dismissed') {
-      setCurrentStep(null)
-    } else if (stored === '2') {
-      setCurrentStep(2)
-    } else {
-      setCurrentStep(1)
-    }
-  }, [])
+    if (stored === 'dismissed') return null
+    if (stored === '2') return 2
+    return 1
+  })
+  const dialogRef = useRef(null)
 
   // Lock background body scroll while the popup is visible
   useEffect(() => {

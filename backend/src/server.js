@@ -5,6 +5,7 @@ import { createEmailService } from './services/emailService.js'
 import {
   findBookingEnquiry,
   findBookingEnquiryByReference,
+  resolveBookingEnquiryByReference,
   markBookingEnquiryDemoPaid,
   markBookingEnquiryDemoFailed,
   submitBookingEnquiryUpiPayment,
@@ -93,6 +94,7 @@ const app = createApp({
     save: saveBookingEnquiry,
     findByRequestId: findBookingEnquiry,
     findByReference: findBookingEnquiryByReference,
+    resolveByReference: resolveBookingEnquiryByReference,
     optOutWhatsApp: optOutBookingWhatsApp,
     markDemoPaid: markBookingEnquiryDemoPaid,
     markDemoFailed: markBookingEnquiryDemoFailed,

@@ -37,7 +37,7 @@ export default function useBookings() {
   }, [])
 
   useEffect(() => {
-    refresh()
+    queueMicrotask(() => refresh())
     const unsubscribe = subscribeToBookings(refresh)
     return () => {
       unsubscribe()

@@ -89,7 +89,7 @@ export function BookingEnquiryProvider({ children }) {
     }
 
     if (location.pathname.startsWith('/booking/payment/')) {
-      setActiveBooking(null)
+      queueMicrotask(() => setActiveBooking(null))
       return
     }
 

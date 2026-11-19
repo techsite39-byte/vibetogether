@@ -137,7 +137,7 @@ export function isValidCashfreeWebhookSignature(rawBody, signature, timestamp, s
       actualBuffer.length === expectedBuffer.length &&
       timingSafeEqual(actualBuffer, expectedBuffer)
     )
-  } catch (err) {
+  } catch {
     console.error('[Cashfree Webhook] Signature verification failed.', {
       reason: 'signature_validation_error',
     })
@@ -632,7 +632,7 @@ export function createCashfreePaymentService({
         headers: getHeaders(),
         body: JSON.stringify(orderPayload),
       })
-    } catch (err) {
+    } catch {
       console.error('[Cashfree] Order creation network error.', {
         reason: 'provider_request_failed',
       })
@@ -788,7 +788,7 @@ export function createCashfreePaymentService({
         method: 'GET',
         headers: getHeaders(),
       })
-    } catch (err) {
+    } catch {
       console.error('[Cashfree] Verify payment network error.', {
         reason: 'provider_request_failed',
       })

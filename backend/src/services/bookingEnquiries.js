@@ -122,6 +122,46 @@ export async function findBookingEnquiryByReference(
   return legacyBookingEnquiryModel.findOne(query).lean()
 }
 
+export async function resolveBookingEnquiryByReference(
+  reference,
+  bookingEnquiryModel = BookingEnquiry,
+  legacyBookingEnquiryModel = LegacyBookingEnquiry,
+) {
+  if (!reference || typeof reference !== 'string') return null
+  const identifier = reference.trim()
+  if (!identifier) return null
+
+  const isObjectId = /^[0-9a-fA-F]{24}$/.test(identifier)
+  const query = isObjectId
+    ? { $or: [{ reference: identifier }, { requestId: identifier }, { _id: identifier }] }
+    : { $or: [{ reference: identifier }, { requestId: identifier }] }
+  const [bookings, legacyBookings] = await Promise.all([
+    bookingEnquiryModel.find(query).limit(2).lean(),
+    legacyBookingEnquiryModel.find(query).limit(2).lean(),
+  ])
+  const matches = [
+    ...bookings.map((enquiry) => ({
+      enquiry,
+      model: bookingEnquiryModel,
+      sourceCollection: 'bookings-db',
+    })),
+    ...legacyBookings.map((enquiry) => ({
+      enquiry,
+      model: legacyBookingEnquiryModel,
+      sourceCollection: 'user-db',
+    })),
+  ]
+
+  if (matches.length > 1) {
+    throw Object.assign(
+      new Error('Booking identifier matches multiple enquiries.'),
+      { status: 409 },
+    )
+  }
+
+  return matches[0] ?? null
+}
+
 export async function optOutBookingWhatsApp(requestId) {
   const enquiry = await BookingEnquiry.findOne({ requestId }).lean()
   if (!enquiry) {

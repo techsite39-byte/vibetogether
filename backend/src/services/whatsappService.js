@@ -550,7 +550,7 @@ export function createWhatsAppService({
   bookingEnquiryModel = BookingEnquiry,
   phoneNumberId = '',
   accessToken = '',
-  businessAccountId = '',
+  businessAccountId: _businessAccountId = '',
   apiVersion = '',
   bookingTemplate = '',
   bookingTemplateLanguage = 'en',
@@ -633,8 +633,27 @@ export function createWhatsAppService({
     return diagnostics
   }
 
-  async function getBooking(requestId) {
-    return bookingEnquiryModel.findOne({ requestId }).lean()
+  async function getBooking(requestId, model = bookingEnquiryModel) {
+    return model.findOne({ requestId }).lean()
+  }
+
+  async function getUniqueBookingForRetry(requestId, model) {
+    const matches = await model.find({ requestId }).limit(2).lean()
+    if (matches.length > 1) {
+      throw Object.assign(
+        new Error('Booking request ID matches multiple enquiries.'),
+        { status: 409 },
+      )
+    }
+    return matches[0] ?? null
+  }
+
+  function bookingFilter(booking, filter = {}) {
+    return {
+      ...(booking?._id != null ? { _id: booking._id } : {}),
+      requestId: booking.requestId,
+      ...filter,
+    }
   }
 
   function logSkipped(booking, type, source, reason, identity = '') {
@@ -664,10 +683,10 @@ export function createWhatsAppService({
     return { ok: response.ok, status: response.status, body }
   }
 
-  async function setSkipped(booking, idempotencyKey, reason) {
+  async function setSkipped(booking, idempotencyKey, reason, model = bookingEnquiryModel) {
     const at = now()
-    return bookingEnquiryModel.findOneAndUpdate(
-      { requestId: booking.requestId, whatsappConsent: { $ne: true } },
+    return model.findOneAndUpdate(
+      bookingFilter(booking, { whatsappConsent: { $ne: true } }),
       {
         $set: {
           'whatsappNotification.messageType': idempotencyKey.includes('payment_assistance')
@@ -688,10 +707,10 @@ export function createWhatsAppService({
     ).lean()
   }
 
-  async function setUnavailable(booking, type, idempotencyKey, reason, retryable = false) {
+  async function setUnavailable(booking, type, idempotencyKey, reason, retryable = false, model = bookingEnquiryModel) {
     const at = now()
-    return bookingEnquiryModel.findOneAndUpdate(
-      { requestId: booking.requestId, whatsappConsent: true },
+    return model.findOneAndUpdate(
+      bookingFilter(booking, { whatsappConsent: true }),
       {
         $set: {
           'whatsappNotification.messageType': type === 'payment_assistance'
@@ -756,7 +775,13 @@ export function createWhatsAppService({
   }
 
   // Send to primary customer
-  async function sendPrimaryConfirmation(booking, { retry = false, force = false, targetType = null, source = 'application' } = {}) {
+  async function sendPrimaryConfirmation(booking, {
+    retry = false,
+    force = false,
+    targetType = null,
+    source = 'application',
+    bookingModel = bookingEnquiryModel,
+  } = {}) {
     const requestId = booking.requestId
     const effectiveType = targetType || (isCompletedBookingPaymentStatus(booking.paymentStatus) ? 'booking_confirmation' : 'payment_assistance')
     const isSuccess = effectiveType === 'booking_confirmation'
@@ -773,8 +798,8 @@ export function createWhatsAppService({
     }
 
     if (isSuccess && booking.paymentStatus === 'demo_paid') {
-      const skipped = await bookingEnquiryModel.findOneAndUpdate(
-        { requestId, paymentStatus: 'demo_paid', whatsappConsent: true },
+      const skipped = await bookingModel.findOneAndUpdate(
+        bookingFilter(booking, { paymentStatus: 'demo_paid', whatsappConsent: true }),
         {
           $set: {
             'whatsappNotification.status': 'skipped',
@@ -811,7 +836,12 @@ export function createWhatsAppService({
       : `${requestId}:payment_assistance:${booking.paymentOrderId || booking.paymentAttemptedAt?.toISOString() || 'attempt'}`
 
     if (!booking.whatsappConsent) {
-      const skipped = await setSkipped(booking, idempotencyKey, 'Skipped – no WhatsApp notification consent.')
+      const skipped = await setSkipped(
+        booking,
+        idempotencyKey,
+        'Skipped – no WhatsApp notification consent.',
+        bookingModel,
+      )
       logSkipped(
         booking,
         type,
@@ -833,7 +863,14 @@ export function createWhatsAppService({
 
     const recipient = normalizeWhatsAppRecipient(booking.mobile)
     if (!recipient) {
-      const invalid = await setUnavailable(booking, type, idempotencyKey, 'The saved mobile number is not a valid WhatsApp recipient.')
+      const invalid = await setUnavailable(
+        booking,
+        type,
+        idempotencyKey,
+        'The saved mobile number is not a valid WhatsApp recipient.',
+        false,
+        bookingModel,
+      )
       logSkipped(booking, type, source, 'Invalid mobile number', idempotencyKey)
       return { booking: invalid ?? booking, failed: true }
     }
@@ -845,6 +882,7 @@ export function createWhatsAppService({
         idempotencyKey,
         'WhatsApp Cloud API or approved templates are not configured.',
         true,
+        bookingModel,
       )
       logSkipped(booking, type, source, 'WhatsApp configuration missing', idempotencyKey)
       return { booking: unavailable ?? booking, failed: true }
@@ -884,12 +922,16 @@ export function createWhatsAppService({
     }
 
     const at = now()
-    const claimFilter = {
-      requestId,
+    const claimFilter = bookingFilter(booking, {
       whatsappConsent: true,
       'whatsappNotification.inProgress': { $ne: true },
       ...(force
-        ? {}
+        ? {
+            $or: [
+              { 'whatsappNotification.idempotencyKey': { $ne: idempotencyKey } },
+              { 'whatsappNotification.status': { $nin: ['sent', 'delivered', 'read'] } },
+            ],
+          }
         : {
             ...(previousNotification.idempotencyKey === idempotencyKey
               ? {
@@ -900,9 +942,9 @@ export function createWhatsAppService({
                 }
               : { 'whatsappNotification.idempotencyKey': { $ne: idempotencyKey } }),
           }),
-    }
+    })
 
-    const claimed = await bookingEnquiryModel.findOneAndUpdate(
+    const claimed = await bookingModel.findOneAndUpdate(
       claimFilter,
       {
         $set: {
@@ -928,7 +970,10 @@ export function createWhatsAppService({
 
     if (!claimed) {
       logSkipped(booking, type, source, 'Notification already in progress', idempotencyKey)
-      return { booking: await getBooking(requestId), duplicate: true }
+      return {
+        booking: await bookingModel.findOne(bookingFilter(booking)).lean(),
+        duplicate: true,
+      }
     }
 
     const templateName = isSuccess ? activeTemplateName : activeFailureTemplateName
@@ -975,8 +1020,8 @@ export function createWhatsAppService({
         retryable: false,
       })
       const reason = 'WhatsApp provider response was uncertain; automatic retry was withheld to prevent duplicate messages.'
-      const failed = await bookingEnquiryModel.findOneAndUpdate(
-        { requestId, 'whatsappNotification.idempotencyKey': idempotencyKey },
+      const failed = await bookingModel.findOneAndUpdate(
+        bookingFilter(booking, { 'whatsappNotification.idempotencyKey': idempotencyKey }),
         {
           $set: {
             'whatsappNotification.status': 'failed',
@@ -1011,8 +1056,8 @@ export function createWhatsAppService({
       const attempts = claimed.whatsappNotification?.attemptCount ?? 1
       const delayMinutes = Math.min(60, 2 ** Math.min(attempts, 5))
       const reason = safeFailureReason(status, body, [accessToken])
-      const failed = await bookingEnquiryModel.findOneAndUpdate(
-        { requestId, 'whatsappNotification.idempotencyKey': idempotencyKey },
+      const failed = await bookingModel.findOneAndUpdate(
+        bookingFilter(booking, { 'whatsappNotification.idempotencyKey': idempotencyKey }),
         {
           $set: {
             'whatsappNotification.status': 'failed',
@@ -1044,8 +1089,8 @@ export function createWhatsAppService({
       reason: 'Meta accepted; delivery not yet confirmed',
     })
     const sentAt = now()
-    const sent = await bookingEnquiryModel.findOneAndUpdate(
-      { requestId, 'whatsappNotification.idempotencyKey': idempotencyKey },
+    const sent = await bookingModel.findOneAndUpdate(
+      bookingFilter(booking, { 'whatsappNotification.idempotencyKey': idempotencyKey }),
       {
         $set: {
           'whatsappNotification.status': 'sent',
@@ -1067,7 +1112,11 @@ export function createWhatsAppService({
   }
 
   // Send confirmation to an individual attendee
-  async function sendAttendeeConfirmation(booking, attendee, { force = false, source = 'application' } = {}) {
+  async function sendAttendeeConfirmation(
+    booking,
+    attendee,
+    { force = false, source = 'application', bookingModel = bookingEnquiryModel } = {},
+  ) {
     const requestId = booking.requestId
     const idempotencyKey = `${requestId}:booking_confirmation:${booking.reference}:attendee:${attendee.gender}:${attendee.index}:${attendee.mobile}`
     const identity = idempotencyKey || `${requestId}:booking_confirmation:attendee:${attendee.index}`
@@ -1150,7 +1199,7 @@ export function createWhatsAppService({
         sentAt: null,
         idempotencyKey,
       }
-      await updateAttendeeNotificationRecord(requestId, record)
+      await updateAttendeeNotificationRecord(booking, record, bookingModel)
       return { failed: true, error: 'Network error' }
     }
 
@@ -1197,15 +1246,15 @@ export function createWhatsAppService({
       idempotencyKey,
     }
 
-    await updateAttendeeNotificationRecord(requestId, record)
+    await updateAttendeeNotificationRecord(booking, record, bookingModel)
     return { sent: notificationStatus === 'sent', failed: notificationStatus === 'failed', messageId }
   }
 
-  async function updateAttendeeNotificationRecord(requestId, record) {
+  async function updateAttendeeNotificationRecord(booking, record, bookingModel) {
     try {
       // Remove any prior notification for this exact attendee index and push new record
-      await bookingEnquiryModel.findOneAndUpdate(
-        { requestId },
+      await bookingModel.findOneAndUpdate(
+        bookingFilter(booking),
         {
           $pull: {
             attendeeNotifications: {
@@ -1215,8 +1264,8 @@ export function createWhatsAppService({
           },
         },
       )
-      await bookingEnquiryModel.findOneAndUpdate(
-        { requestId },
+      await bookingModel.findOneAndUpdate(
+        bookingFilter(booking),
         {
           $push: { attendeeNotifications: record },
         },
@@ -1233,7 +1282,10 @@ export function createWhatsAppService({
   }
 
   // Send admin alert
-  async function sendAdminAlert(booking, { force = false, source = 'application' } = {}) {
+  async function sendAdminAlert(
+    booking,
+    { force = false, source = 'application', bookingModel = bookingEnquiryModel } = {},
+  ) {
     if (!configured || !adminPhoneNumber) {
       logSkipped(booking, 'admin_alert', source, 'WhatsApp configuration missing')
       return { skipped: true, reason: 'unconfigured' }
@@ -1326,8 +1378,8 @@ export function createWhatsAppService({
         reason: 'Provider response uncertain',
         retryable: false,
       })
-      await bookingEnquiryModel.findOneAndUpdate(
-        { requestId },
+      await bookingModel.findOneAndUpdate(
+        bookingFilter(booking),
         {
           $set: {
             'adminNotification.recipient': adminRecipient,
@@ -1371,8 +1423,8 @@ export function createWhatsAppService({
       })
     }
 
-    await bookingEnquiryModel.findOneAndUpdate(
-      { requestId },
+    await bookingModel.findOneAndUpdate(
+      bookingFilter(booking),
       {
         $set: {
           'adminNotification.recipient': adminRecipient,
@@ -1516,8 +1568,15 @@ export function createWhatsAppService({
   }
 
   // Admin manual resend action for a specific target
-  async function resendNotification(requestId, { target = 'primary', attendeeIndex = 0, force = true, source = 'admin_manual_retry' } = {}) {
-    const booking = await getBooking(requestId)
+  async function resendNotification(requestId, {
+    target = 'primary',
+    attendeeIndex = 0,
+    force = true,
+    source = 'admin_manual_retry',
+    booking: resolvedBooking,
+    bookingModel = bookingEnquiryModel,
+  } = {}) {
+    const booking = resolvedBooking ?? await getUniqueBookingForRetry(requestId, bookingModel)
     if (!booking) {
       logWhatsAppNotification('SKIPPED', {
         source,
@@ -1525,7 +1584,10 @@ export function createWhatsAppService({
         identity: requestId,
         reason: 'Booking not found',
       })
-      throw new Error('Booking not found.')
+      throw Object.assign(new Error('Booking not found.'), { status: 404 })
+    }
+    if (String(booking.requestId) !== String(requestId)) {
+      throw Object.assign(new Error('Booking identity does not match the retry request.'), { status: 409 })
     }
     const isPaid = isCompletedBookingPaymentStatus(booking.paymentStatus)
 
@@ -1535,8 +1597,12 @@ export function createWhatsAppService({
           booking.whatsappOptedOutAt ? 'Customer opted out' : 'Customer consent missing')
         return { success: false, message: 'Primary customer has not provided WhatsApp consent.' }
       }
-      const type = isPaid ? 'booking_confirmation' : 'payment_assistance'
-      const result = await sendPrimaryConfirmation(booking, { force, retry: true, source })
+      const result = await sendPrimaryConfirmation(booking, {
+        force,
+        retry: true,
+        source,
+        bookingModel,
+      })
       return { success: Boolean(result?.sent), result, message: result?.sent ? 'Primary WhatsApp sent.' : result?.failureReason || 'Failed to send.' }
     }
 
@@ -1559,7 +1625,11 @@ export function createWhatsAppService({
         logSkipped(booking, 'booking_confirmation', source, 'Attendee consent missing', `${booking.requestId}:attendee:${attendeeIndex}`)
         return { success: false, message: `${attendee.name} has not consented to WhatsApp updates.` }
       }
-      const result = await sendAttendeeConfirmation(booking, attendee, { force: true, source })
+      const result = await sendAttendeeConfirmation(booking, attendee, {
+        force: true,
+        source,
+        bookingModel,
+      })
       return { success: Boolean(result?.sent), result, message: result?.sent ? `WhatsApp sent to ${attendee.name}.` : result?.error || 'Failed to send.' }
     }
 
@@ -1568,7 +1638,7 @@ export function createWhatsAppService({
         logSkipped(booking, 'admin_alert', source, 'Admin WhatsApp number not configured')
         return { success: false, message: 'WHATSAPP_ADMIN_PHONE_NUMBER is not configured.' }
       }
-      const result = await sendAdminAlert(booking, { force: true, source })
+      const result = await sendAdminAlert(booking, { force: true, source, bookingModel })
       return {
         success: Boolean(result?.sent),
         result,

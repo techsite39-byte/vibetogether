@@ -1234,7 +1234,13 @@ export function createAdminRouter({
   router.post('/bookings/:reference/whatsapp/retry', async (request, response, next) => {
     try {
       const identifier = request.params.reference
-      const enquiry = await bookingEnquiryRepository?.findByReference?.(identifier)
+      const resolveByReference = bookingEnquiryRepository?.resolveByReference
+      if (typeof resolveByReference !== 'function') {
+        throw Object.assign(new Error('Booking retry lookup is unavailable.'), { status: 503 })
+      }
+
+      const resolved = await resolveByReference(identifier)
+      const enquiry = resolved?.enquiry ?? null
       if (!enquiry) {
         console.warn('[Admin WhatsApp retry] Booking enquiry lookup failed.', {
           identifierType: bookingEnquiryIdentifierType(identifier),
@@ -1242,9 +1248,16 @@ export function createAdminRouter({
         response.status(404).json({ message: 'Booking enquiry was not found.' })
         return
       }
+      if (
+        typeof resolved.model?.findOne !== 'function' ||
+        typeof resolved.model.findOneAndUpdate !== 'function'
+      ) {
+        throw Object.assign(new Error('Booking retry lookup is unavailable.'), { status: 503 })
+      }
       console.info('[Admin WhatsApp retry] Booking enquiry lookup succeeded.', {
         identifierType: bookingEnquiryIdentifierType(identifier),
         matchedBy: bookingEnquiryMatchedBy(enquiry, identifier),
+        ...(resolved?.sourceCollection ? { sourceCollection: resolved.sourceCollection } : {}),
       })
 
       const target = request.body?.target || 'primary'
@@ -1257,13 +1270,17 @@ export function createAdminRouter({
           attendeeIndex,
           force: true,
           source: 'admin_manual_retry',
+          booking: enquiry,
+          bookingModel: resolved.model,
         })
         logWhatsAppNotificationResult(result?.result ?? result, {
           source: 'admin_manual_retry',
           notificationType: target === 'admin' ? 'admin_alert' : target === 'attendee' ? 'booking_confirmation' : 'payment_assistance',
           identity: enquiry.requestId,
         })
-        const updated = await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
+        const updated = resolved
+          ? await resolved.model.findOne({ _id: enquiry._id, requestId: enquiry.requestId }).lean() ?? enquiry
+          : await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
         response.json({
           message: result?.message || (result?.sent || result?.success ? 'WhatsApp notification sent successfully.' : 'WhatsApp notification could not be sent.'),
           result,
