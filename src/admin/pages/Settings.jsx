@@ -107,12 +107,6 @@ export default function Settings() {
       return
     }
 
-    const whatsappDigits = form.whatsappNumber.replace(/\D/g, '')
-    if (form.whatsappNumber && !/^\d{8,15}$/.test(whatsappDigits)) {
-      setError('WhatsApp number must include 8 to 15 digits with country code.')
-      return
-    }
-
     try {
       const saved = await updateSettings({
         ...form,
@@ -120,7 +114,6 @@ export default function Settings() {
         tagline: form.tagline.trim(),
         contactEmail: form.contactEmail.trim(),
         contactPhone: form.contactPhone.trim(),
-        whatsappNumber: whatsappDigits,
       })
       if (saved) {
         setMessage('Platform settings saved.')
@@ -154,7 +147,6 @@ export default function Settings() {
             <label>Tagline<input maxLength={120} onChange={(e) => updateField('tagline', e.target.value)} value={form.tagline} /></label>
             <label>Contact email<input autoComplete="email" onChange={(e) => updateField('contactEmail', e.target.value)} type="email" value={form.contactEmail} /></label>
             <label>Contact phone<input autoComplete="tel" onChange={(e) => updateField('contactPhone', e.target.value)} value={form.contactPhone} /></label>
-            <label>WhatsApp number with country code<input autoComplete="off" inputMode="numeric" onChange={(e) => updateField('whatsappNumber', e.target.value)} placeholder="Not configured" value={form.whatsappNumber} /></label>
           </div>
         </AdminPanel>
         <AdminPanel title="Social media links">

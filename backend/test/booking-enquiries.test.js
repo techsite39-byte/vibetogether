@@ -11,7 +11,6 @@ async function startTestServer({
   cashfreePayments,
   cashfreeConfigured = false,
   nodeEnv,
-  whatsappNotifications,
   diwaliOfferService,
 } = {}) {
   const saved = suppliedRepository?.saved ?? new Map()
@@ -50,16 +49,6 @@ async function startTestServer({
         paidAt: null,
         paymentVerifiedAt: null,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        whatsappConsentAt: enquiry.whatsappConsent ? new Date() : null,
-        whatsappNotification: {
-          messageType: 'booking_confirmation',
-          recipient: enquiry.whatsappConsent === true ? enquiry.mobile : '',
-          idempotencyKey: `${enquiry.requestId}:booking_confirmation:primary`,
-          bookingReference: '',
-          status: 'skipped',
-          attemptCount: 0,
-          history: [],
-        },
       }
       saved.set(enquiry.requestId, savedEnquiry)
       return { enquiry: savedEnquiry, duplicate: false }
@@ -69,13 +58,6 @@ async function startTestServer({
     },
     async findByReference(reference) {
       return [...saved.values()].find((enquiry) => enquiry.reference === reference) ?? null
-    },
-    async optOutWhatsApp(requestId) {
-      const enquiry = saved.get(requestId)
-      if (!enquiry) return null
-      enquiry.whatsappConsent = false
-      enquiry.whatsappOptedOutAt = new Date()
-      return enquiry
     },
     async markDemoPaid(requestId, { pricing } = {}) {
       const enquiry = saved.get(requestId)
@@ -129,7 +111,6 @@ async function startTestServer({
     cashfreePayments,
     cashfreeConfigured,
     nodeEnv,
-    whatsappNotifications,
     diwaliOfferService,
   }).listen(0)
   servers.push(server)
@@ -237,6 +218,8 @@ test('reloads persisted booking and attendee details without requiring offer pri
     femaleCount: 1,
     maleMemberNames: ['Jordan Example'],
     femaleMemberNames: ['Mira Example'],
+    maleMemberMobiles: ['+919876543210'],
+    femaleMemberMobiles: ['+919876543211'],
   }
   const createResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
     method: 'POST',
@@ -248,6 +231,23 @@ test('reloads persisted booking and attendee details without requiring offer pri
   assert.equal(created.booking.paymentAmount, 199)
   assert.equal(created.booking.paymentAmountPaise, 19_900)
   assert.equal(created.booking.ticketQuantity, 2)
+  assert.deepEqual(created.booking.attendees, [
+    { name: 'Jordan Example', gender: 'Male', mobile: '+919876543210' },
+    { name: 'Mira Example', gender: 'Female', mobile: '+919876543211' },
+  ])
+  assert.equal('maleMemberConsents' in created.booking, false)
+  assert.equal('femaleMemberConsents' in created.booking, false)
+
+  Object.assign(saved.get(request.requestId), {
+    maleMemberConsents: [true],
+    femaleMemberConsents: [false],
+    attendees: created.booking.attendees.map((attendee) => ({
+      ...attendee,
+      messagingConsent: true,
+    })),
+    attendeeNotifications: [{ status: 'delivered' }],
+    adminNotification: { status: 'sent' },
+  })
 
   const refreshResponses = await Promise.all([
     fetch(`${baseUrl}/api/booking-enquiries/${request.requestId}`),
@@ -269,6 +269,11 @@ test('reloads persisted booking and attendee details without requiring offer pri
     assert.equal(booking.paymentAmount, 199)
     assert.deepEqual(booking.maleMemberNames, ['Jordan Example'])
     assert.deepEqual(booking.femaleMemberNames, ['Mira Example'])
+    assert.deepEqual(booking.attendees, created.booking.attendees)
+    assert.equal('maleMemberConsents' in booking, false)
+    assert.equal('femaleMemberConsents' in booking, false)
+    assert.equal('attendeeNotifications' in booking, false)
+    assert.equal('adminNotification' in booking, false)
     assert.equal(booking.paymentStatus, 'unpaid')
   }
   assert.equal(pricingReads, 1)
@@ -329,46 +334,6 @@ test('stores mixed ticket counts and optional member names consistently', async 
     body: JSON.stringify({ ...request, requestId: crypto.randomUUID(), femaleCount: 0 }),
   })
   assert.equal(invalidResponse.status, 400)
-})
-
-test('does not send automatic WhatsApp messages before successful payment', async () => {
-  const { baseUrl, saved } = await startTestServer()
-  const request = {
-    requestId: crypto.randomUUID(),
-    name: 'Jordan Example',
-    mobile: '+91 98765 43210',
-    categoryId: 'fun-games',
-    gender: 'Female',
-    whatsappConsent: true,
-  }
-  const firstResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  })
-  const firstPayload = await firstResponse.json()
-  assert.equal(firstResponse.status, 201)
-  assert.equal(firstPayload.booking.reference, '')
-  assert.equal(firstPayload.booking.paymentStatus, 'unpaid')
-  assert.equal(firstPayload.booking.whatsappNotification.status, 'skipped')
-  assert.equal(
-    saved.get(request.requestId).whatsappNotification.recipient,
-    '+919876543210',
-  )
-  assert.equal(
-    saved.get(request.requestId).whatsappNotification.idempotencyKey,
-    `${request.requestId}:booking_confirmation:primary`,
-  )
-  assert.equal(saved.get(request.requestId).reference, undefined)
-  assert.ok(saved.get(request.requestId).whatsappConsentAt instanceof Date)
-
-  const duplicateResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  })
-  assert.equal(duplicateResponse.status, 200)
-  assert.equal((await duplicateResponse.json()).booking.reference, '')
 })
 
 test('calculates ticket pricing on the server and ignores client-supplied amounts', async () => {
@@ -449,7 +414,7 @@ test('rejects invalid ticket quantities and unavailable ticket types', async () 
   assert.equal(invalidTypeResponse.status, 400)
 })
 
-test('keeps temporary booking data separate from WhatsApp send status', async () => {
+test('keeps temporary booking data separate from payment status', async () => {
   const { baseUrl, saved } = await startTestServer()
   const request = {
     requestId: crypto.randomUUID(),
@@ -457,7 +422,6 @@ test('keeps temporary booking data separate from WhatsApp send status', async ()
     mobile: '+91 98765 43210',
     categoryId: 'fun-games',
     gender: 'Female',
-    whatsappConsent: true,
   }
   const failureResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
     method: 'POST',
@@ -468,23 +432,17 @@ test('keeps temporary booking data separate from WhatsApp send status', async ()
   assert.equal(failureResponse.status, 201)
   assert.equal(saved.size, 1)
   assert.equal(failurePayload.booking.reference, '')
-  assert.equal(failurePayload.booking.whatsappNotification.status, 'skipped')
-  assert.equal(saved.get(request.requestId).whatsappNotification.failureReason, undefined)
-  assert.equal(failurePayload.booking.whatsappNotification.failureReason, undefined)
 
   const noConsent = {
     ...request,
     requestId: crypto.randomUUID(),
-    whatsappConsent: false,
   }
   const skippedResponse = await fetch(`${baseUrl}/api/booking-enquiries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(noConsent),
   })
-  const skippedPayload = await skippedResponse.json()
   assert.equal(skippedResponse.status, 201)
-  assert.equal(skippedPayload.booking.whatsappNotification.status, 'skipped')
   assert.equal(saved.size, 2)
 })
 
@@ -534,35 +492,6 @@ test('failed payment retry uses the fixed per-ticket server amount regardless of
   assert.equal(retry.booking.paymentAmount, 199)
   assert.equal(retry.booking.paymentAmountPaise, 19_900)
   assert.equal(retry.booking.diwaliOfferApplied, false)
-})
-
-test('records customer opt-out on the saved enquiry without changing its booking reference', async () => {
-  const { baseUrl, saved } = await startTestServer()
-  const request = {
-    requestId: crypto.randomUUID(),
-    name: 'Jordan Example',
-    mobile: '+91 98765 43210',
-    categoryId: 'fun-games',
-    gender: 'Female',
-    whatsappConsent: true,
-  }
-  const created = await fetch(`${baseUrl}/api/booking-enquiries`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  })
-  const originalBooking = (await created.json()).booking
-  const optOut = await fetch(
-    `${baseUrl}/api/booking-enquiries/${request.requestId}/whatsapp-opt-out`,
-    { method: 'POST' },
-  )
-  const optedOutBooking = (await optOut.json()).booking
-
-  assert.equal(optOut.status, 200)
-  assert.equal(optedOutBooking.reference, originalBooking.reference)
-  assert.equal(optedOutBooking.whatsappConsent, false)
-  assert.ok(optedOutBooking.whatsappOptedOutAt)
-  assert.equal(saved.get(request.requestId).reference, undefined)
 })
 
 test('serves database events and validates booking selections against them', async () => {
@@ -788,31 +717,13 @@ test('creates a Cashfree checkout session through the booking route with mocked 
   })
 })
 
-test('Cashfree verification notifies only for confirmed failures and preserves success behavior', async (t) => {
+test('Cashfree verification preserves failure and success behavior', async () => {
   let verification
-  const notifications = []
-  const notificationLogs = []
-  const originalInfo = console.info
-  const originalError = console.error
-  console.info = (message, details) => notificationLogs.push({ level: 'info', message, details })
-  console.error = (message, details) => notificationLogs.push({ level: 'error', message, details })
-  t.after(() => {
-    console.info = originalInfo
-    console.error = originalError
-  })
   const { baseUrl } = await startTestServer({
     cashfreeConfigured: true,
     cashfreePayments: {
       async verifyPayment() {
         return verification
-      },
-    },
-    whatsappNotifications: {
-      async notify(requestId, type) {
-        notifications.push({ requestId, type })
-        return type === 'booking_confirmation'
-          ? { sent: true }
-          : { failed: true, providerRejected: true }
       },
     },
   })
@@ -845,7 +756,6 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
     booking: { requestId, paymentStatus: 'unpaid' },
   })
   assert.equal(pendingResponse.status, 202)
-  assert.deepEqual(notifications, [])
 
   await verify({
     failed: false,
@@ -855,7 +765,6 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
       paymentFailureReason: 'failed',
     },
   })
-  assert.deepEqual(notifications, [])
 
   await verify({
     failed: true,
@@ -865,7 +774,6 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
       paymentFailureReason: 'cancelled',
     },
   })
-  assert.deepEqual(notifications, [])
 
   await verify({
     failed: true,
@@ -875,11 +783,6 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
       paymentFailureReason: 'failed',
     },
   })
-  assert.deepEqual(notifications, [{
-    requestId,
-    type: 'payment_failed',
-  }])
-
   await verify({
     verified: true,
     booking: {
@@ -888,15 +791,6 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
       reference: 'VT-TEST-1',
     },
   })
-  assert.deepEqual(notifications, [
-    { requestId, type: 'payment_failed' },
-    { requestId, type: 'payment_success' },
-  ])
-  assert.ok(notificationLogs.some(({ details }) =>
-    details?.stage === 'caller_result' && details.source === 'cashfree_verification' &&
-    details.notificationType === 'payment_failed' && details.outcome === 'REJECTED',
-  ))
-  assert.equal(JSON.stringify(notificationLogs).includes(requestId), false)
 })
 
 test('failed and cancelled demo payments have no reference and can retry the same session', async () => {

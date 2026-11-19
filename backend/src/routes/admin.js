@@ -21,11 +21,6 @@ import { UnmatchedCashfreePayment } from '../models/unmatchedCashfreePayment.js'
 import { Event } from '../models/event.js'
 import { MediaAsset } from '../models/mediaAsset.js'
 import {
-  getWhatsAppNotificationOutcome,
-  logWhatsAppNotification,
-  logWhatsAppNotificationResult,
-} from '../services/whatsappNotifications.js'
-import {
   isBuiltInEventId,
   markBuiltInEventDeleted,
 } from '../services/events.js'
@@ -420,7 +415,6 @@ function cleanPlatformSettings(value) {
     'tagline',
     'contactEmail',
     'contactPhone',
-    'whatsappNumber',
     'socialInstagram',
     'socialFacebook',
     'socialYoutube',
@@ -442,7 +436,6 @@ function cleanPlatformSettings(value) {
     tagline: 120,
     contactEmail: 254,
     contactPhone: 24,
-    whatsappNumber: 15,
     socialInstagram: 2048,
     socialFacebook: 2048,
     socialYoutube: 2048,
@@ -463,9 +456,6 @@ function cleanPlatformSettings(value) {
   }
   if (result.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result.contactEmail)) {
     throw Object.assign(new Error('Enter a valid contact email address.'), { status: 400 })
-  }
-  if (result.whatsappNumber && !/^\d{8,15}$/.test(result.whatsappNumber)) {
-    throw Object.assign(new Error('WhatsApp number must include 8 to 15 digits.'), { status: 400 })
   }
   for (const field of ['socialInstagram', 'socialFacebook', 'socialYoutube', 'socialLinkedin']) {
     if (result[field]) {
@@ -519,11 +509,11 @@ function bookingFromEnquiry(enquiry) {
     femaleMemberNames: enquiry.femaleMemberNames ?? [],
     maleMemberMobiles: enquiry.maleMemberMobiles ?? [],
     femaleMemberMobiles: enquiry.femaleMemberMobiles ?? [],
-    maleMemberConsents: enquiry.maleMemberConsents ?? [],
-    femaleMemberConsents: enquiry.femaleMemberConsents ?? [],
-    attendees: enquiry.attendees ?? [],
-    attendeeNotifications: enquiry.attendeeNotifications ?? [],
-    adminNotification: enquiry.adminNotification ?? null,
+    attendees: (enquiry.attendees ?? []).map((attendee) => ({
+      name: attendee.name ?? '',
+      gender: attendee.gender ?? '',
+      mobile: attendee.mobile ?? '',
+    })),
     gender: enquiry.gender,
     pricePerTicket: enquiry.pricePerTicket ?? enquiry.regularPrice ?? 299,
     subtotal: enquiry.subtotal ?? enquiry.regularPrice ?? 299,
@@ -554,14 +544,6 @@ function bookingFromEnquiry(enquiry) {
     paymentFailureReason: enquiry.paymentFailureReason ?? '',
     status: enquiry.status,
     source: 'booking-enquiry',
-    whatsappConsent: Boolean(enquiry.whatsappConsent),
-    whatsappActionStatus: 'not_available',
-    whatsappConsentAt: enquiry.whatsappConsentAt ?? null,
-    whatsappOptedOutAt: enquiry.whatsappOptedOutAt ?? null,
-    whatsappNotification: enquiry.whatsappNotification ?? {
-      status: 'not_available',
-      history: [],
-    },
   }
 }
 
@@ -686,23 +668,6 @@ function emptyPaymentEvidenceFilter(source) {
       ],
     },
   }
-}
-
-function bookingEnquiryIdentifierType(identifier) {
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(identifier)) {
-    return 'requestId'
-  }
-  if (/^[0-9a-f]{24}$/i.test(identifier)) {
-    return 'enquiryId-or-reference'
-  }
-  return 'bookingReference'
-}
-
-function bookingEnquiryMatchedBy(enquiry, identifier) {
-  if (enquiry.requestId === identifier) return 'requestId'
-  if (enquiry.reference === identifier) return 'reference'
-  if (String(enquiry._id ?? '') === identifier) return 'enquiryId'
-  return 'repository-match'
 }
 
 export function mergeBookingRecords(bookings = [], enquiries = [], legacyEnquiries = []) {
@@ -964,7 +929,6 @@ export function createAdminRouter({
   cashfreeRecovery,
   unmatchedPaymentModel = UnmatchedCashfreePayment,
   diwaliOfferService,
-  whatsappNotifications,
 }) {
   const router = Router()
   const requireAdmin = createRequireAdmin({
@@ -1141,20 +1105,6 @@ export function createAdminRouter({
     }
   })
 
-  router.get('/integrations/diagnostics', async (_request, response, next) => {
-    try {
-      response.set('Cache-Control', 'no-store').json({
-        whatsapp: await whatsappNotifications?.getDiagnostics?.() ?? {
-          notificationConfigured: false,
-          apiAccess: 'not_checked',
-          apiError: 'WhatsApp notification service is unavailable.',
-        },
-      })
-    } catch (error) {
-      next(error)
-    }
-  })
-
   router.get('/bookings', async (request, response, next) => {
     try {
       response.json(await listBookings(request, legacyBookingEnquiryModel))
@@ -1203,179 +1153,6 @@ export function createAdminRouter({
           : 'UPI payment rejected.',
         duplicate: Boolean(result.duplicate),
         item: bookingFromEnquiry(result.enquiry),
-      })
-    } catch (error) {
-      next(error)
-    }
-  })
-
-  router.get('/bookings/:reference/whatsapp', async (request, response, next) => {
-    try {
-      const enquiry = await bookingEnquiryRepository?.findByReference?.(request.params.reference)
-      if (!enquiry) {
-        response.status(404).json({ message: 'Booking enquiry was not found.' })
-        return
-      }
-      response.json({
-        reference: enquiry.reference,
-        status: enquiry.whatsappNotification?.status ?? 'not_available',
-        attemptCount: enquiry.whatsappNotification?.attemptCount ?? 0,
-        lastAttemptAt: enquiry.whatsappNotification?.lastAttemptAt ?? null,
-        sentAt: enquiry.whatsappNotification?.sentAt ?? null,
-        deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
-        providerMessageId: enquiry.whatsappNotification?.providerMessageId ?? '',
-        history: enquiry.whatsappNotification?.history ?? [],
-      })
-    } catch (error) {
-      next(error)
-    }
-  })
-
-  router.post('/bookings/:reference/whatsapp/retry', async (request, response, next) => {
-    try {
-      const identifier = request.params.reference
-      const resolveByReference = bookingEnquiryRepository?.resolveByReference
-      if (typeof resolveByReference !== 'function') {
-        throw Object.assign(new Error('Booking retry lookup is unavailable.'), { status: 503 })
-      }
-
-      const resolved = await resolveByReference(identifier)
-      const enquiry = resolved?.enquiry ?? null
-      if (!enquiry) {
-        console.warn('[Admin WhatsApp retry] Booking enquiry lookup failed.', {
-          identifierType: bookingEnquiryIdentifierType(identifier),
-        })
-        response.status(404).json({ message: 'Booking enquiry was not found.' })
-        return
-      }
-      if (
-        typeof resolved.model?.findOne !== 'function' ||
-        typeof resolved.model.findOneAndUpdate !== 'function'
-      ) {
-        throw Object.assign(new Error('Booking retry lookup is unavailable.'), { status: 503 })
-      }
-      console.info('[Admin WhatsApp retry] Booking enquiry lookup succeeded.', {
-        identifierType: bookingEnquiryIdentifierType(identifier),
-        matchedBy: bookingEnquiryMatchedBy(enquiry, identifier),
-        ...(resolved?.sourceCollection ? { sourceCollection: resolved.sourceCollection } : {}),
-      })
-
-      const target = request.body?.target || 'primary'
-      const attendeeIndex = typeof request.body?.attendeeIndex === 'number' ? request.body.attendeeIndex : undefined
-
-      // If targeted resend via whatsappNotifications.resendNotification is available:
-      if (typeof whatsappNotifications?.resendNotification === 'function') {
-        const result = await whatsappNotifications.resendNotification(enquiry.requestId, {
-          target,
-          attendeeIndex,
-          force: true,
-          source: 'admin_manual_retry',
-          booking: enquiry,
-          bookingModel: resolved.model,
-        })
-        const outcome = result?.outcome ?? getWhatsAppNotificationOutcome(result?.result ?? result)
-        const notificationType = result?.notificationType ??
-          (target === 'admin'
-            ? 'admin_alert'
-            : target === 'attendee'
-              ? 'booking_confirmation'
-              : enquiry.whatsappNotification?.messageType ?? 'unknown')
-        logWhatsAppNotificationResult(result?.result ?? result, {
-          source: 'admin_manual_retry',
-          notificationType,
-          identity: enquiry.requestId,
-        })
-        const updated = resolved
-          ? await resolved.model.findOne({ _id: enquiry._id, requestId: enquiry.requestId }).lean() ?? enquiry
-          : await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
-        response.json({
-          outcome,
-          notificationType,
-          message: result?.message || (
-            outcome === 'notification_accepted'
-              ? 'WhatsApp notification was accepted by the provider.'
-              : outcome === 'notification_provider_rejected'
-                ? 'WhatsApp provider rejected the notification.'
-                : outcome === 'notification_provider_uncertain'
-                  ? 'WhatsApp provider response was uncertain; retry was withheld to prevent a duplicate.'
-                  : 'WhatsApp notification was skipped; no message was sent.'
-          ),
-          result,
-          notification: updated.whatsappNotification,
-          attendeeNotifications: updated.attendeeNotifications,
-          adminNotification: updated.adminNotification,
-          booking: jsonRecord(updated),
-        })
-        return
-      }
-
-      if (!enquiry.whatsappConsent) {
-        logWhatsAppNotification('SKIPPED', {
-          source: 'admin_manual_retry',
-          notificationType: 'payment_assistance',
-          identity: enquiry.requestId,
-          reason: enquiry.whatsappOptedOutAt ? 'Customer opted out' : 'Customer consent missing',
-        })
-        response.status(200).json({
-          outcome: 'notification_skipped',
-          notificationType: enquiry.whatsappNotification?.messageType ?? 'unknown',
-          message: enquiry.whatsappOptedOutAt
-            ? 'Customer opted out; notification was skipped.'
-            : 'Customer has not provided WhatsApp consent; notification was skipped.',
-        })
-        return
-      }
-      const currentStatus = enquiry.whatsappNotification?.status
-      if (['delivered', 'read'].includes(currentStatus)) {
-        response.status(409).json({
-          outcome: 'notification_skipped',
-          message: 'WhatsApp notification was already delivered. No duplicate message was sent.',
-          alreadyDelivered: true,
-          status: currentStatus,
-          notification: enquiry.whatsappNotification,
-        })
-        return
-      }
-      const type = enquiry.whatsappNotification?.messageType
-      if (!['booking_confirmation', 'payment_success', 'payment_assistance', 'payment_failed'].includes(type)) {
-        response.status(200).json({
-          outcome: 'notification_skipped',
-          notificationType: 'unknown',
-          message: 'Stored notification type is missing; retry was skipped.',
-        })
-        return
-      }
-      const result = await whatsappNotifications?.notify?.(enquiry.requestId, type, {
-        force: true,
-        retry: true,
-        source: 'admin_manual_retry',
-      })
-      const outcome = getWhatsAppNotificationOutcome(result)
-      logWhatsAppNotificationResult(result, {
-        source: 'admin_manual_retry',
-        notificationType: type,
-        identity: enquiry.requestId,
-      })
-      const updated = await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
-      response.json({
-        outcome,
-        notificationType: type,
-        message: result?.sent
-          ? 'WhatsApp notification was accepted by the provider.'
-          : result?.providerRejected
-            ? 'WhatsApp provider rejected the notification.'
-            : result?.uncertain
-              ? 'WhatsApp provider response was uncertain; retry was withheld to prevent a duplicate.'
-              : result?.pending
-                ? 'Payment is still pending; the WhatsApp notification was skipped.'
-                : result?.duplicate || result?.alreadyDelivered
-                  ? 'Notification was already processed; no duplicate WhatsApp message was sent.'
-                  : 'WhatsApp notification was skipped; no message was sent.',
-        result,
-        notification: updated.whatsappNotification,
-        attendeeNotifications: updated.attendeeNotifications,
-        adminNotification: updated.adminNotification,
-        booking: jsonRecord(updated),
       })
     } catch (error) {
       next(error)

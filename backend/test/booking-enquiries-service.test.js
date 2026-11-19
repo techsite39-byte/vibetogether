@@ -58,7 +58,7 @@ function createBookingModel(initialRecord = null) {
   }
 }
 
-test('initial booking save is temporary, unpaid, expiring, and prepares WhatsApp state', async () => {
+test('initial booking save is temporary, unpaid, and expiring', async () => {
   const model = createBookingModel()
   const before = Date.now()
   const result = await saveBookingEnquiry({
@@ -76,7 +76,6 @@ test('initial booking save is temporary, unpaid, expiring, and prepares WhatsApp
     femaleCount: 1,
     maleMemberNames: ['Arun Example', ''],
     femaleMemberNames: ['Mira Example'],
-    whatsappConsent: true,
     status: 'pending',
     createdAt: new Date(),
     source: 'Website booking journey',
@@ -90,14 +89,7 @@ test('initial booking save is temporary, unpaid, expiring, and prepares WhatsApp
   assert.equal(result.enquiry.email, 'jordan@example.com')
   assert.deepEqual(result.enquiry.maleMemberNames, ['Arun Example', ''])
   assert.deepEqual(result.enquiry.femaleMemberNames, ['Mira Example'])
-  assert.equal(result.enquiry.whatsappNotification.recipient, '+919876543210')
-  assert.equal(result.enquiry.whatsappNotification.bookingReference, '')
-  assert.equal(
-    result.enquiry.whatsappNotification.idempotencyKey,
-    `${result.enquiry.requestId}:booking_confirmation:primary`,
-  )
   assert.ok(result.enquiry.expiresAt.getTime() >= before + 7 * 24 * 60 * 60 * 1000 - 1000)
-  assert.equal(result.enquiry.whatsappNotification.status, 'skipped')
 
   const duplicate = await saveBookingEnquiry({
     ...result.enquiry,
@@ -105,10 +97,6 @@ test('initial booking save is temporary, unpaid, expiring, and prepares WhatsApp
   }, { bookingEnquiryModel: model })
   assert.equal(duplicate.duplicate, true)
   assert.equal(duplicate.enquiry.reference, result.enquiry.reference)
-  assert.equal(
-    duplicate.enquiry.whatsappNotification.idempotencyKey,
-    result.enquiry.whatsappNotification.idempotencyKey,
-  )
   await assert.rejects(
     saveBookingEnquiry({
       ...result.enquiry,
@@ -134,7 +122,6 @@ test('duplicate save does not invent a missing canonical reference', async () =>
     femaleCount: 1,
     maleMemberNames: ['Arun Example', ''],
     femaleMemberNames: ['Mira Example'],
-    whatsappConsent: true,
     status: 'pending',
     createdAt: new Date(),
     source: 'Website booking journey',

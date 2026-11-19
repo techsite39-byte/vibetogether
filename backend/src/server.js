@@ -9,7 +9,6 @@ import {
   markBookingEnquiryDemoPaid,
   markBookingEnquiryDemoFailed,
   submitBookingEnquiryUpiPayment,
-  optOutBookingWhatsApp,
   saveBookingEnquiry,
   verifyBookingEnquiryUpiPayment,
 } from './services/bookingEnquiries.js'
@@ -23,7 +22,6 @@ import { initializeAdminRecords } from './services/adminSetup.js'
 import { createCashfreePaymentService } from './services/cashfreePayments.js'
 import { createCashfreeRecoveryService } from './services/cashfreeRecovery.js'
 import { createDiwaliOfferService } from './services/diwaliOffer.js'
-import { createWhatsAppNotificationService } from './services/whatsappNotifications.js'
 import { DiwaliOffer } from './models/diwaliOffer.js'
 import { BookingEnquiry } from './models/bookingEnquiry.js'
 import { BookingResult } from './models/bookingResult.js'
@@ -58,22 +56,6 @@ const cashfreePayments = createCashfreePaymentService({
   diwaliOfferService,
 })
 const cashfreeRecovery = createCashfreeRecoveryService({ payments: cashfreePayments })
-const whatsappNotifications = createWhatsAppNotificationService({
-  phoneNumberId: config.whatsappPhoneNumberId,
-  accessToken: config.whatsappAccessToken,
-  businessAccountId: config.whatsappBusinessAccountId,
-  apiVersion: config.whatsappApiVersion,
-  bookingTemplate: config.whatsappBookingTemplate,
-  bookingTemplateLanguage: config.whatsappBookingTemplateLanguage,
-  adminPhoneNumber: config.whatsappAdminPhoneNumber,
-  notificationsEnabled: config.whatsappNotificationsEnabled,
-  successTemplateName: config.whatsappSuccessTemplateName,
-  failureTemplateName: config.whatsappFailureTemplateName,
-  webhookVerifyToken: config.whatsappWebhookVerifyToken,
-  appSecret: config.whatsappAppSecret,
-  successTicketParam: config.whatsappSuccessTicketParam,
-})
-
 const app = createApp({
   adminPasswordHash: config.adminPasswordHash,
   adminSessionSecret: config.adminSessionSecret,
@@ -95,7 +77,6 @@ const app = createApp({
     findByRequestId: findBookingEnquiry,
     findByReference: findBookingEnquiryByReference,
     resolveByReference: resolveBookingEnquiryByReference,
-    optOutWhatsApp: optOutBookingWhatsApp,
     markDemoPaid: markBookingEnquiryDemoPaid,
     markDemoFailed: markBookingEnquiryDemoFailed,
     submitUpiPayment: submitBookingEnquiryUpiPayment,
@@ -108,11 +89,6 @@ const app = createApp({
   paymentProvider: config.paymentProvider,
   upiId: config.upiId,
   upiPayeeName: config.upiPayeeName,
-  whatsappNotifications,
-  whatsappWebhookConfig: {
-    verifyToken: config.whatsappWebhookVerifyToken,
-    appSecret: config.whatsappAppSecret,
-  },
   diwaliOfferService,
   corsOrigins: config.corsOrigins,
   databaseReady: () => mongoose.connection.readyState === 1,
@@ -163,25 +139,8 @@ if (databaseInitialized) {
   const server = app.listen(config.port, host, () => {
     console.info(`Backend listening on ${host}:${config.port}`)
   })
-  void whatsappNotifications.processRetries().catch((error) => {
-    console.error('WhatsApp notification startup retry job failed.', {
-      name: error?.name ?? 'UnknownError',
-      code: error?.code ?? '',
-    })
-  })
-  const notificationRetryTimer = setInterval(() => {
-    void whatsappNotifications.processRetries().catch((error) => {
-      console.error('WhatsApp notification retry job failed.', {
-        name: error?.name ?? 'UnknownError',
-        code: error?.code ?? '',
-      })
-    })
-  }, 60_000)
-  notificationRetryTimer.unref()
-
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
-      clearInterval(notificationRetryTimer)
       server.close(async () => {
         await mongoose.disconnect()
         process.exitCode = 0

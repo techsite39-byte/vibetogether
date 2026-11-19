@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { BookingEnquiry } from '../src/models/bookingEnquiry.js'
 
-test('valid category booking passes model validation with optional WhatsApp consent omitted', () => {
+test('valid category booking passes model validation', () => {
   const enquiry = new BookingEnquiry({
     requestId: 'bfe94e41-29f1-4e31-bbcc-477302baa176',
     name: 'Browser Test',
@@ -25,7 +25,6 @@ test('valid category booking passes model validation with optional WhatsApp cons
     offerExpiresAt: new Date('2026-11-12T09:57:00.003Z'),
   })
 
-  assert.equal(enquiry.whatsappConsent, false)
   assert.equal(enquiry.paymentOrderAttemptNumber, 0)
   assert.deepEqual(enquiry.maleMemberNames, ['Member Example'])
   assert.deepEqual(enquiry.validateSync(), undefined)

@@ -12,7 +12,6 @@ import {
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/common/Button.jsx'
 import Container from '../components/common/Container.jsx'
-import WhatsAppLink from '../components/contact/WhatsAppLink.jsx'
 import FormField from '../components/common/FormField.jsx'
 import {
   bookingConfig,
@@ -535,15 +534,6 @@ export default function Booking() {
                 : 'No payment details are stored by this frontend'}
             </span>
           </div>
-          <WhatsAppLink
-            className="booking-summary__whatsapp"
-            label="Ask about this booking"
-            message={
-              event
-                ? `Hi VIBE TOGETHER, I need help with my booking for "${event.title}" (event ID: ${event.id}).`
-                : 'Hi VIBE TOGETHER, I have a question about booking an event.'
-            }
-          />
         </aside>
       </Container>
     </div>

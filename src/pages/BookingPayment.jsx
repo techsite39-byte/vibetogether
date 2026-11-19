@@ -351,35 +351,6 @@ export default function BookingPayment() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [bookingState.booking?.paymentStatus, refreshPaymentStatus, requestId])
 
-  // Real-time WhatsApp Notification polling
-  const whatsappBookingReference = bookingState.booking?.reference
-  const whatsappNotificationStatus = bookingState.booking?.whatsappNotification?.status
-
-  useEffect(() => {
-    if (
-      !whatsappBookingReference ||
-      !['pending', 'sent'].includes(whatsappNotificationStatus)
-    ) {
-      return undefined
-    }
-
-    let active = true
-    const timer = window.setInterval(async () => {
-      try {
-        const latest = await getBookingEnquiry(requestId)
-        if (active) {
-          setBookingState({ requestId, status: 'ready', booking: latest, error: '' })
-        }
-      } catch {
-        // Silent refresh until next cycle
-      }
-    }, 4000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [whatsappBookingReference, whatsappNotificationStatus, requestId])
-
   // Generate QR Code for verified ticket reference
   useEffect(() => {
     if (bookingState.booking?.reference) {
@@ -1275,10 +1246,6 @@ export default function BookingPayment() {
                     <div className="booking-payment__privilege-row">
                       <Check size={14} className="booking-payment__privilege-check" aria-hidden="true" />
                       <span>Priority Door Entry with instant digital QR pass</span>
-                    </div>
-                    <div className="booking-payment__privilege-row">
-                      <Check size={14} className="booking-payment__privilege-check" aria-hidden="true" />
-                      <span>Instant WhatsApp &amp; Email booking receipt confirmation</span>
                     </div>
                     <div className="booking-payment__privilege-row">
                       <Check size={14} className="booking-payment__privilege-check" aria-hidden="true" />

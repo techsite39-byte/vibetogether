@@ -59,8 +59,6 @@ export async function saveBookingEnquiry(enquiry, { bookingEnquiryModel = Bookin
   }
 
   try {
-    const notificationType = 'booking_confirmation'
-    const notificationRecipient = enquiry.whatsappConsent === true ? enquiry.mobile : ''
     const saved = await bookingEnquiryModel.create({
       ...enquiry,
       email: enquiry.email ?? '',
@@ -76,14 +74,6 @@ export async function saveBookingEnquiry(enquiry, { bookingEnquiryModel = Bookin
       paidAt: null,
       paymentVerifiedAt: null,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      whatsappNotification: {
-        messageType: notificationType,
-        recipient: notificationRecipient,
-        idempotencyKey: `${enquiry.requestId}:${notificationType}:primary`,
-        bookingReference: '',
-        status: 'skipped',
-        history: [],
-      },
     })
     return { enquiry: saved.toObject(), duplicate: false }
   } catch (error) {
@@ -165,40 +155,6 @@ export async function resolveBookingEnquiryByReference(
   return matches[0] ?? null
 }
 
-export async function optOutBookingWhatsApp(requestId) {
-  const enquiry = await BookingEnquiry.findOne({ requestId }).lean()
-  if (!enquiry) {
-    return null
-  }
-  const at = new Date()
-  const pending = enquiry.whatsappNotification?.status === 'pending' &&
-    enquiry.whatsappNotification?.inProgress !== true
-  const updates = {
-    whatsappConsent: false,
-    whatsappOptedOutAt: at,
-  }
-  if (pending) {
-    updates['whatsappNotification.status'] = 'skipped'
-    updates['whatsappNotification.inProgress'] = false
-    updates['whatsappNotification.failureReason'] = ''
-  }
-  const update = { $set: updates }
-  if (pending) {
-    update.$push = {
-      'whatsappNotification.history': {
-        status: 'skipped',
-        at,
-        source: 'system',
-        note: 'Customer opted out of WhatsApp updates.',
-      },
-    }
-  }
-  return BookingEnquiry.findOneAndUpdate(
-    { requestId },
-    update,
-    { new: true, runValidators: true },
-  ).lean()
-}
 
 export async function markBookingEnquiryDemoPaid(
   requestId,

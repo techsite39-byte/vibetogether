@@ -1,39 +1,11 @@
 import { Router } from 'express'
-import { isRealPaidBookingStatus } from '../../../src/utils/paymentStatus.js'
 import { isValidCashfreeWebhookSignature } from '../services/cashfreePayments.js'
-import {
-  getWhatsAppNotificationOutcome,
-  logWhatsAppNotification,
-  logWhatsAppNotificationResult,
-} from '../services/whatsappNotifications.js'
 
 export function createCashfreeWebhookRouter({
   payments,
-  notifications,
   secret = '',
 } = {}) {
   const router = Router()
-
-  async function notifyWithoutAffectingPayment(requestId, type, source = 'cashfree_webhook') {
-    try {
-      const result = await notifications?.notify?.(requestId, type, { source })
-      logWhatsAppNotificationResult(result, {
-        source,
-        notificationType: type,
-        identity: requestId,
-      })
-      return result
-    } catch (error) {
-      logWhatsAppNotification('UNCERTAIN', {
-        source,
-        notificationType: type,
-        identity: requestId,
-        reason: 'Notification processing failed before its outcome was confirmed',
-        errorDetails: error?.code ? `Processing error code ${error.code}` : 'Processing error',
-      })
-      return { failed: true, uncertain: true }
-    }
-  }
 
   router.post('/', async (request, response) => {
     if (!secret) {
@@ -74,44 +46,14 @@ export function createCashfreeWebhookRouter({
     }
 
     try {
-      const result = await payments.handleWebhook(
+      await payments.handleWebhook(
         payload,
         signature,
         timestamp,
         rawBody,
       )
 
-      let notificationResult = null
-      if (result?.action === 'confirmed' && isRealPaidBookingStatus(result.booking?.paymentStatus) && result.booking.reference) {
-        notificationResult = await notifyWithoutAffectingPayment(result.booking.requestId, 'payment_success')
-      } else if (
-        result?.action === 'failed' &&
-        result.booking?.paymentStatus === 'failed' &&
-        result.booking?.paymentFailureReason !== 'cancelled' &&
-        result.booking?.paymentFailureReason !== 'user_dropped' &&
-        payload?.type !== 'PAYMENT_USER_DROPPED_WEBHOOK'
-      ) {
-        notificationResult = await notifyWithoutAffectingPayment(result.booking.requestId, 'payment_failed')
-      } else {
-        logWhatsAppNotification('SKIPPED', {
-          source: 'cashfree_webhook',
-          notificationType: 'payment_assistance',
-          identity: result?.booking?.requestId ?? payload?.data?.payment?.cf_payment_id ?? payload?.type,
-          reason: result?.duplicate
-            ? 'Duplicate Cashfree webhook'
-            : result?.booking?.paymentFailureReason === 'cancelled' || payload?.type === 'PAYMENT_USER_DROPPED_WEBHOOK'
-              ? 'Customer cancelled payment'
-              : result?.booking?.paymentStatus === 'pending'
-                ? 'Payment still pending'
-                : 'Cashfree event is not notification eligible',
-        })
-      }
-
-      const notificationOutcome = getWhatsAppNotificationOutcome(notificationResult)
-      response.status(200).json({
-        received: true,
-        outcome: notificationOutcome,
-      })
+      response.status(200).json({ received: true })
     } catch (error) {
       const errorCode = Number(error?.code)
       const errorStatus = Number(error?.status)

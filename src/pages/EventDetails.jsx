@@ -15,7 +15,6 @@ import {
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/common/Button.jsx'
 import Container from '../components/common/Container.jsx'
-import WhatsAppLink from '../components/contact/WhatsAppLink.jsx'
 import EventCard from '../components/events/EventCard.jsx'
 import NotFound from './NotFound.jsx'
 import usePublicEvents from '../hooks/usePublicEvents.js'
@@ -529,11 +528,6 @@ export default function EventDetails() {
           <p className="event-booking__note">
             Booking and payment will be completed in a later step.
           </p>
-          <WhatsAppLink
-            className="event-booking__whatsapp"
-            label="Ask about this event"
-            message={`Hi VIBE TOGETHER, I have a question about "${event.title}" (${event.category}, ${formatEventDate(event.date)}).`}
-          />
         </aside>
       </Container>
 

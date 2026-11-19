@@ -317,20 +317,6 @@ export async function signOutAdmin() {
   }
 }
 
-/**
- * Retries a failed WhatsApp notification for a booking safely without sending duplicates.
- * Supports targeted resends: { target: 'primary' | 'attendee' | 'admin', attendeeIndex }
- */
-export function getWhatsAppRetryIdentifier(bookingEnquiry) {
-  return bookingEnquiry?.requestId || bookingEnquiry?.reference || bookingEnquiry?.id || ''
-}
-
-export async function retryWhatsAppNotification(identifier, options = {}) {
-  return adminRequest(`/admin/bookings/${encodeURIComponent(identifier)}/whatsapp/retry`, {
-    method: 'POST',
-    body: JSON.stringify(options),
-  })
-}
 
 export async function verifyUpiPayment(requestId, decision, rejectionReason = '') {
   return adminRequest(`/admin/upi-payments/${encodeURIComponent(requestId)}/decision`, {
