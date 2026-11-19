@@ -132,16 +132,32 @@ function mapWorkspace(workspace) {
   }
 }
 
+function extractScopeFromPath(path) {
+  if (typeof path !== 'string') return 'general'
+  const clean = path.replace(/^\/?admin\/?/, '').split('/')[0]
+  return clean || 'general'
+}
+
 export function AdminDataProvider({ children, actor }) {
   const [data, setData] = useState(emptyWorkspace)
   const [loading, setLoading] = useState(true)
   const [storageError, setStorageError] = useState('')
+  const [scopedErrors, setScopedErrors] = useState({})
 
   const location = useLocation()
   const clearStorageError = useCallback(() => setStorageError(''), [])
+  const clearScopeError = useCallback((scope) => {
+    setScopedErrors((current) => {
+      if (!current[scope]) return current
+      const next = { ...current }
+      delete next[scope]
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     setStorageError('')
+    setScopedErrors({})
   }, [location.pathname])
 
   const reload = useCallback(async (showLoading = true) => {
@@ -165,8 +181,9 @@ export function AdminDataProvider({ children, actor }) {
     void reload()
   }, [reload])
 
-  const mutate = useCallback(async (path, method, body, onSuccess, returnError = false) => {
-    setStorageError('')
+  const mutate = useCallback(async (path, method, body, onSuccess, returnError = false, customScope) => {
+    const scope = customScope || extractScopeFromPath(path)
+    clearScopeError(scope)
     try {
       const result = await adminRequest(path, {
         method,
@@ -176,13 +193,17 @@ export function AdminDataProvider({ children, actor }) {
         onSuccess(result)
       }
       await reload(false)
+      clearScopeError(scope)
       return returnError ? { success: true, error: '' } : true
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The admin update failed.'
-      setStorageError(message)
+      setScopedErrors((current) => ({
+        ...current,
+        [scope]: message,
+      }))
       return returnError ? { success: false, error: message } : false
     }
-  }, [reload])
+  }, [clearScopeError, reload])
 
   const updateUser = useCallback((userId, updates) => {
     const body = { ...updates }
@@ -356,6 +377,14 @@ export function AdminDataProvider({ children, actor }) {
         actor,
         loading,
         storageError,
+        scopedErrors,
+        eventError: scopedErrors.events || '',
+        bookingError: scopedErrors.bookings || '',
+        userError: scopedErrors.users || '',
+        organizerError: scopedErrors.organizers || '',
+        settingsError: scopedErrors.settings || '',
+        getScopeError: (scope) => scopedErrors[scope] || '',
+        clearScopeError,
         clearStorageError,
         reload,
         createRecord,

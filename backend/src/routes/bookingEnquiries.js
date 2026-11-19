@@ -10,6 +10,14 @@ import {
   FIXED_BOOKING_AMOUNT,
   calculateTicketPricing,
 } from '../services/diwaliOffer.js'
+import {
+  logWhatsAppNotification,
+  logWhatsAppNotificationResult,
+} from '../services/whatsappNotifications.js'
+import {
+  isRealPaidBookingStatus,
+  normalizeBookingPaymentStatus,
+} from '../../../src/utils/paymentStatus.js'
 
 const defaultOfferPricing = {
   regularPrice: FIXED_BOOKING_AMOUNT,
@@ -410,7 +418,7 @@ export function createBookingEnquiriesRouter({
       finalAmount: pricing?.finalAmount ?? enquiry.finalAmount ?? enquiry.paymentAmount ?? regularPrice * ticketQuantity,
       createdAt: enquiry.createdAt,
       status: enquiry.status,
-      paymentStatus: enquiry.paymentStatus ?? 'unpaid',
+      paymentStatus: normalizeBookingPaymentStatus(enquiry.paymentStatus ?? 'unpaid'),
       paymentAmount: pricing?.finalAmount ?? pricing?.paymentAmount ?? enquiry.paymentAmount ?? DIWALI_REGULAR_PRICE,
       paymentAmountPaise: pricing?.paymentAmountPaise ?? enquiry.paymentAmountPaise ?? DIWALI_REGULAR_PRICE * 100,
       regularPrice,
@@ -488,14 +496,24 @@ export function createBookingEnquiriesRouter({
     }
   }
 
-  async function notifyWithoutAffectingPayment(requestId, type) {
+  async function notifyWithoutAffectingPayment(requestId, type, source) {
     try {
-      await whatsappNotifications?.notify?.(requestId, type)
-    } catch (error) {
-      console.error('WhatsApp notification processing failed.', {
-        name: error?.name ?? 'UnknownError',
-        code: error?.code ?? '',
+      const result = await whatsappNotifications?.notify?.(requestId, type, { source })
+      logWhatsAppNotificationResult(result, {
+        source,
+        notificationType: type,
+        identity: requestId,
       })
+      return result
+    } catch (error) {
+      logWhatsAppNotification('REJECTED', {
+        source,
+        notificationType: type,
+        identity: requestId,
+        reason: 'Notification service threw',
+        errorDetails: error?.code ? `Processing error code ${error.code}` : 'Processing error',
+      })
+      return { failed: true }
     }
   }
 
@@ -504,7 +522,7 @@ export function createBookingEnquiriesRouter({
       enquiry &&
       (
         (enquiry.paymentOrderId && enquiry.paymentStatus !== 'failed') ||
-        ['paid', 'demo_paid'].includes(enquiry.paymentStatus) ||
+        ['paid', 'demo_paid'].includes(normalizeBookingPaymentStatus(enquiry.paymentStatus)) ||
         ['Submitted for Verification', 'Verified'].includes(enquiry.upiPayments?.at(-1)?.status)
       )
     ) {
@@ -589,11 +607,11 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found.' })
         return
       }
-      if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
+      if (isRealPaidBookingStatus(enquiry.paymentStatus) && enquiry.reference) {
+        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'booking_status_lookup')
         enquiry = await getUpdatedEnquiry(requestId, enquiry)
       } else if (enquiry.paymentStatus === 'failed') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'booking_status_lookup')
         enquiry = await getUpdatedEnquiry(requestId, enquiry)
       }
       let pricing = getStoredPricing(enquiry)
@@ -703,7 +721,7 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found or no longer payable.' })
         return
       }
-      await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
+      await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'demo_payment')
       response.status(200).json({
         message: 'Demo payment recorded. No real payment was processed.',
         duplicate: result.duplicate,
@@ -783,6 +801,12 @@ export function createBookingEnquiriesRouter({
         return
       }
       if (result.pending) {
+        logWhatsAppNotification('SKIPPED', {
+          source: 'cashfree_verification',
+          notificationType: 'payment_assistance',
+          identity: requestId,
+          reason: 'Payment still pending',
+        })
         response.status(202).json({
           message: 'The payment is still being processed by Cashfree.',
           pending: true,
@@ -790,14 +814,23 @@ export function createBookingEnquiriesRouter({
         })
         return
       }
-      if (result.booking.paymentStatus === 'paid') {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
+      if (isRealPaidBookingStatus(result.booking.paymentStatus)) {
+        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'cashfree_verification')
       } else if (
         result.failed &&
         result.booking.paymentStatus === 'failed' &&
         result.booking.paymentFailureReason !== 'cancelled'
       ) {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'cashfree_verification')
+      } else {
+        logWhatsAppNotification('SKIPPED', {
+          source: 'cashfree_verification',
+          notificationType: 'payment_assistance',
+          identity: requestId,
+          reason: result.booking.paymentFailureReason === 'cancelled'
+            ? 'Customer cancelled payment'
+            : 'Cashfree did not confirm a terminal payment failure',
+        })
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
       response.json({
@@ -824,10 +857,17 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found.' })
         return
       }
-      if (result.booking.paymentStatus === 'paid') {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation')
+      if (isRealPaidBookingStatus(result.booking.paymentStatus)) {
+        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'cashfree_status_check')
       } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'cashfree_status_check')
+      } else {
+        logWhatsAppNotification('SKIPPED', {
+          source: 'cashfree_status_check',
+          notificationType: 'payment_assistance',
+          identity: requestId,
+          reason: result.pending ? 'Payment still pending' : 'Payment status is not notification eligible',
+        })
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
       response.set('Cache-Control', 'no-store').json({
@@ -856,7 +896,14 @@ export function createBookingEnquiriesRouter({
         return
       }
       if (result.booking?.paymentStatus === 'failed' && outcome === 'failed') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'cashfree_failure_record')
+      } else {
+        logWhatsAppNotification('SKIPPED', {
+          source: 'cashfree_failure_record',
+          notificationType: 'payment_assistance',
+          identity: requestId,
+          reason: outcome === 'cancelled' ? 'Customer cancelled payment' : 'Failure was not confirmed',
+        })
       }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
       response.json({
@@ -893,7 +940,14 @@ export function createBookingEnquiriesRouter({
         return
       }
       if (enquiry.paymentStatus === 'failed') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance')
+        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'demo_payment_failure')
+      } else {
+        logWhatsAppNotification('SKIPPED', {
+          source: 'demo_payment_failure',
+          notificationType: 'payment_assistance',
+          identity: requestId,
+          reason: 'Payment failure was not recorded',
+        })
       }
       const booking = await getUpdatedEnquiry(requestId, enquiry)
       response.json({ booking: serializeEnquiry(booking) })

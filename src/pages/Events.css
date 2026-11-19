@@ -1,7 +1,7 @@
 .site-main--events,
 .site-main:has(.events-discovery),
 .site-main.site-main--events {
-  padding-block: 0 !important;
+  padding-block: 0;
 }
 
 .events-discovery {

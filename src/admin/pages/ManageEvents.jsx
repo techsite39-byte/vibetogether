@@ -37,8 +37,16 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [showUrlInput, setShowUrlInput] = useState(false)
-  const [failedPreview, setFailedPreview] = useState('')
+  const [previewFailed, setPreviewFailed] = useState(false)
   const previewImage = resolveMediaAssetUrl(image)
+  const prevImageRef = useRef(previewImage)
+
+  if (prevImageRef.current !== previewImage) {
+    prevImageRef.current = previewImage
+    if (previewFailed) {
+      setPreviewFailed(false)
+    }
+  }
 
   async function handleFile(event) {
     const file = event.target.files?.[0]
@@ -46,11 +54,11 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
 
     setUploading(true)
     setUploadError('')
-    setFailedPreview('')
+    setPreviewFailed(false)
     try {
       const result = await uploadMediaImage(file)
       if (result?.url) {
-        setFailedPreview('')
+        setPreviewFailed(false)
         onImageChange(result.url)
       } else {
         throw new Error('Image upload failed to return a valid URL.')
@@ -66,7 +74,7 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
   }
 
   function handleRemove() {
-    setFailedPreview('')
+    setPreviewFailed(false)
     onImageChange('')
   }
 
@@ -83,17 +91,19 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
       {image ? (
         <div className="admin-image-upload__preview-card">
           <div className="admin-image-upload__preview-img-wrap">
-            {failedPreview === previewImage ? (
-              <span className="admin-muted" role="status">
-                Poster preview unavailable. Use “Change image” to upload it again.
-              </span>
+            {previewFailed ? (
+              <div className="admin-image-upload__fallback" role="status" aria-label="Poster preview unavailable">
+                <Image size={24} className="admin-muted" aria-hidden="true" />
+                <span className="admin-muted">
+                  Poster preview unavailable. Use “Change image” to upload it again.
+                </span>
+              </div>
             ) : (
               <img
                 src={previewImage}
                 alt={imageAlt || 'Event poster preview'}
                 className="admin-image-upload__preview-img"
-                loading="lazy"
-                onError={() => setFailedPreview(previewImage)}
+                onError={() => setPreviewFailed(true)}
               />
             )}
           </div>
@@ -379,7 +389,7 @@ function NewEventDialog({ categories, onClose, onSave }) {
 }
 
 export default function ManageEvents() {
-  const { actor, categories, createRecord, deleteEvent, events, organizers, storageError, updateEvent } = useAdminData()
+  const { actor, categories, createRecord, deleteEvent, eventError, events, organizers, updateEvent } = useAdminData()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [organizer, setOrganizer] = useState('all')
@@ -398,28 +408,40 @@ export default function ManageEvents() {
       .filter((event) => [event.title, event.location, event.organizer].join(' ').toLocaleLowerCase().includes(term))
   }, [category, organizer, scopedEvents, search, status])
 
-  function changeStatus(event, nextStatus) {
+  async function changeStatus(event, nextStatus) {
     const action = nextStatus === 'rejected' ? 'Reject' : nextStatus === 'cancelled' ? 'Cancel' : 'Update'
     if (!window.confirm(`${action} the event "${event.title}"?`)) {
       return
     }
 
     try {
-      updateEvent(event.id, { status: nextStatus })
-      setError('')
+      const result = await updateEvent(event.id, { status: nextStatus })
+      if (result && typeof result === 'object' && result.success === false) {
+        setError(result.error || 'Event status could not be changed.')
+      } else if (result === false) {
+        setError('Event status could not be changed.')
+      } else {
+        setError('')
+      }
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Event status could not be changed.')
     }
   }
 
-  function removeEvent(event) {
+  async function removeEvent(event) {
     if (!window.confirm(`Delete the event "${event.title}"? This cannot be undone.`)) {
       return
     }
 
     try {
-      deleteEvent(event.id)
-      setError('')
+      const result = await deleteEvent(event.id)
+      if (result && typeof result === 'object' && result.success === false) {
+        setError(result.error || 'Event could not be deleted.')
+      } else if (result === false) {
+        setError('Event could not be deleted.')
+      } else {
+        setError('')
+      }
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Event could not be deleted.')
     }
@@ -433,7 +455,7 @@ export default function ManageEvents() {
         title="Event management"
         actions={<button className="admin-button admin-button--primary" onClick={() => setAddingEvent(true)} type="button"><Plus size={16} aria-hidden="true" /> Add event</button>}
       />
-      {(error || storageError) && <AdminNotice tone="error">{error || storageError}</AdminNotice>}
+      {(error || eventError) && <AdminNotice tone="error">{error || eventError}</AdminNotice>}
       <AdminPanel title={`${filteredEvents.length} events`}>
         <div className="admin-toolbar admin-toolbar--wrap">
           <label className="admin-search">
@@ -497,7 +519,7 @@ export default function ManageEvents() {
         </AdminTable>
         {!filteredEvents.length && <p className="admin-empty">No events match these filters.</p>}
       </AdminPanel>
-      {editingEvent && <EditEventDialog categories={categories} event={editingEvent} onClose={() => setEditingEvent(null)} onSave={updateEvent} storageError={storageError} />}
+      {editingEvent && <EditEventDialog categories={categories} event={editingEvent} onClose={() => setEditingEvent(null)} onSave={updateEvent} storageError={eventError || storageError} />}
       {addingEvent && <NewEventDialog categories={categories} onClose={() => setAddingEvent(false)} onSave={(record) => createRecord('events', record)} />}
     </div>
   )

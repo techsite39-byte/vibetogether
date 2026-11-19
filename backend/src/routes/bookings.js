@@ -3,6 +3,7 @@ import { Booking, BookingReferenceCounter } from '../models/adminRecords.js'
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { Event } from '../models/event.js'
 import { nextBookingReference } from '../services/bookingReferences.js'
+import { normalizeBookingPaymentStatus } from '../../../src/utils/paymentStatus.js'
 
 const requestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -70,7 +71,7 @@ function publicBooking(booking) {
     fees: booking.fees,
     total: booking.total,
     currency: booking.currency,
-    paymentStatus: booking.paymentStatus,
+    paymentStatus: normalizeBookingPaymentStatus(booking.paymentStatus),
     status: booking.status,
     createdAt: booking.createdAt,
     cancelledAt: booking.cancelledAt,

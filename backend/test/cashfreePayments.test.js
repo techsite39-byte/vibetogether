@@ -6,6 +6,7 @@ import {
   isValidCashfreeWebhookSignature,
   resolveCashfreeReturnUrl,
 } from '../src/services/cashfreePayments.js'
+import { BookingEnquiry } from '../src/models/bookingEnquiry.js'
 import { createMockBookingResultModel } from './bookingResultMocks.js'
 
 function createCashfreePaymentService(options = {}) {
@@ -15,6 +16,25 @@ function createCashfreePaymentService(options = {}) {
   })
 }
 
+function createMockUnmatchedPaymentModel() {
+  const records = new Map()
+  return {
+    records,
+    async findOne({ providerPaymentId }) {
+      return records.get(providerPaymentId) ?? null
+    },
+    async create(record) {
+      records.set(record.providerPaymentId, { ...record })
+    },
+    async updateOne({ _id }, update) {
+      const record = [...records.values()].find((item) => item._id === _id)
+      if (!record) return { acknowledged: true, matchedCount: 0 }
+      Object.assign(record, update.$set)
+      return { acknowledged: true, matchedCount: 1 }
+    },
+  }
+}
+
 describe('Cashfree Payments Integration', () => {
   const testAppId = '1527714905b6600c9e88011fc744177251'
   const testSecretKey = 'cashfree-webhook-test-secret'
@@ -22,6 +42,7 @@ describe('Cashfree Payments Integration', () => {
   function createMockEnquiry(initial = {}) {
     const doc = {
       requestId: 'req_test_001',
+      createdAt: new Date(),
       name: 'John Doe',
       mobile: '9876543210',
       email: 'john@example.com',
@@ -163,6 +184,127 @@ describe('Cashfree Payments Integration', () => {
   })
 
   describe('Production Cashfree order creation & HTTPS return_url', () => {
+    for (const paymentStatus of ['paid', 'SUCCESS', 'demo_paid', 'verified']) {
+      it(`does not create or verify a Cashfree order for completed ${paymentStatus} bookings`, async () => {
+        const enquiry = createMockEnquiry({
+          paymentStatus,
+          reference: 'REF_COMPLETED_PAYMENT',
+          expiresAt: new Date(Date.now() - 60_000),
+        })
+        let providerCalls = 0
+        const service = createCashfreePaymentService({
+          appId: testAppId,
+          secretKey: testSecretKey,
+          bookingEnquiryModel: {
+            async findOne() {
+              return enquiry
+            },
+          },
+          fetchFn: async () => {
+            providerCalls += 1
+            throw new Error('Completed bookings must not call Cashfree.')
+          },
+        })
+
+        const firstOrderAttempt = await service.createOrder(enquiry.requestId)
+        const repeatedOrderAttempt = await service.createOrder(enquiry.requestId)
+        const verification = await service.verifyPayment(enquiry.requestId)
+
+        assert.equal(firstOrderAttempt.alreadyPaid, true)
+        assert.equal(repeatedOrderAttempt.alreadyPaid, true)
+        assert.equal(verification.duplicate, true)
+        assert.equal(enquiry.paymentStatus, paymentStatus === 'demo_paid' ? 'demo_paid' : 'paid')
+        assert.equal(enquiry.expiresAt, undefined)
+        assert.equal(providerCalls, 0)
+      })
+    }
+
+    it('removes TTL expiry before creating or reusing an active Cashfree order', async () => {
+      const expiredAt = new Date(Date.now() - 60_000)
+      const enquiry = createMockEnquiry({ expiresAt: expiredAt })
+      let createCalls = 0
+      const service = createCashfreePaymentService({
+        appId: testAppId,
+        secretKey: testSecretKey,
+        bookingEnquiryModel: {
+          async findOne() {
+            return enquiry
+          },
+        },
+        fetchFn: async (_url, options) => {
+          if (options.method === 'GET') {
+            return {
+              ok: true,
+              json: async () => _url.includes('/payments') ? [] : { order_status: 'ACTIVE' },
+            }
+          }
+          createCalls += 1
+          assert.equal(enquiry.expiresAt, undefined)
+          const payload = JSON.parse(options.body)
+          return {
+            ok: true,
+            json: async () => ({
+              cf_order_id: 'cf_active_order',
+              order_id: payload.order_id,
+              payment_session_id: 'active-session',
+              order_amount: payload.order_amount,
+              order_currency: 'INR',
+            }),
+          }
+        },
+      })
+
+      const firstOrder = await service.createOrder(enquiry.requestId)
+      assert.equal(firstOrder.payment_session_id, 'active-session')
+      assert.equal(enquiry.expiresAt, undefined)
+
+      enquiry.expiresAt = expiredAt
+      const reusedOrder = await service.createOrder(enquiry.requestId)
+      assert.equal(reusedOrder.order_id, firstOrder.order_id)
+      assert.equal(enquiry.expiresAt, undefined)
+      assert.equal(createCalls, 1)
+
+      const verification = await service.verifyPayment(enquiry.requestId, {
+        order_id: firstOrder.order_id,
+      })
+      assert.equal(verification.pending, true)
+      assert.equal(enquiry.expiresAt, undefined)
+
+      const ttlIndex = BookingEnquiry.schema.indexes().find(
+        ([keys, options]) => keys.expiresAt === 1 && options.expireAfterSeconds === 0,
+      )
+      assert.ok(ttlIndex, 'booking enquiries use a zero-delay expiresAt TTL index')
+      const retainedBookings = [enquiry].filter(
+        (booking) => !booking.expiresAt || booking.expiresAt > new Date(),
+      )
+      assert.equal(retainedBookings.length, 1)
+    })
+
+    it('restores the original TTL deadline when Cashfree rejects order creation', async () => {
+      const originalExpiry = new Date(Date.now() + 60_000)
+      const enquiry = createMockEnquiry({ expiresAt: originalExpiry })
+      const service = createCashfreePaymentService({
+        appId: testAppId,
+        secretKey: testSecretKey,
+        bookingEnquiryModel: {
+          async findOne() {
+            return enquiry
+          },
+        },
+        fetchFn: async () => ({
+          ok: false,
+          status: 400,
+          json: async () => ({ message: 'Cashfree rejected the order' }),
+        }),
+      })
+
+      await assert.rejects(
+        service.createOrder(enquiry.requestId),
+        /Cashfree rejected the order/,
+      )
+      assert.equal(enquiry.expiresAt.getTime(), originalExpiry.getTime())
+    })
+
     it('creates Production Cashfree order with HTTPS return_url and rejects localhost', async () => {
       const enquiry = createMockEnquiry({
         requestId: 'req_prod_booking_789',
@@ -304,6 +446,62 @@ describe('Cashfree Payments Integration', () => {
   })
 
   describe('Payment verification & redirects', () => {
+    it('keeps a confirmed booking out of TTL expiry when result persistence fails', async () => {
+      const enquiry = createMockEnquiry({
+        expiresAt: new Date(Date.now() - 60_000),
+        paymentOrderId: 'VT_order_result_persistence_failure',
+        paymentAmount: 249,
+        paymentOrders: [{
+          orderId: 'VT_order_result_persistence_failure',
+          amount: 249,
+          status: 'created',
+        }],
+      })
+      const resultModel = {
+        findOneAndUpdate() {
+          return { lean: async () => { throw new Error('result store unavailable') } }
+        },
+      }
+      const service = createCashfreePaymentService({
+        appId: testAppId,
+        secretKey: testSecretKey,
+        bookingEnquiryModel: {
+          async findOne() {
+            return enquiry
+          },
+        },
+        bookingResultModel: resultModel,
+        allocateReference: async () => 'VT-REF-RESULT-FAILURE',
+        fetchFn: async (url) => ({
+          ok: true,
+          json: async () => url.includes('/payments')
+            ? [{
+                cf_payment_id: 'cf-payment-persist-failure',
+              order_id: 'VT_order_result_persistence_failure',
+                payment_status: 'SUCCESS',
+                payment_amount: 249,
+                payment_currency: 'INR',
+              }]
+            : { order_status: 'PAID' },
+        }),
+      })
+
+      await assert.rejects(
+        service.verifyPayment(enquiry.requestId, {
+          order_id: enquiry.paymentOrderId,
+        }),
+        /result store unavailable/,
+      )
+      assert.equal(enquiry.paymentStatus, 'paid')
+      assert.equal(enquiry.expiresAt, undefined)
+      assert.equal(
+        [enquiry].filter(
+          (booking) => !booking.expiresAt || booking.expiresAt > new Date(),
+        ).length,
+        1,
+      )
+    })
+
     it('verifies Cashfree payment, updates booking to paid and allocates reference idempotently', async () => {
       const enquiry = createMockEnquiry({
         paymentOrderId: 'VT_order_test_123',
@@ -338,6 +536,7 @@ describe('Cashfree Payments Integration', () => {
             json: async () => [
               {
                 cf_payment_id: 11223344,
+                order_id: 'VT_order_test_123',
                 payment_status: 'SUCCESS',
                 payment_amount: 597,
                 payment_currency: 'INR',
@@ -395,7 +594,7 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(result.booking.cfPaymentId, '11223344')
       assert.equal(result.booking.paymentOrderId, 'VT_order_test_123')
       assert.equal(allocatedCount, 1)
-      assert.equal(bookingResultModel.record.paymentStatus, 'SUCCESS')
+      assert.equal(bookingResultModel.record.paymentStatus, 'paid')
       assert.equal(bookingResultModel.record.requestId, enquiry.requestId)
       assert.equal(bookingResultModel.record.providerPaymentId, '11223344')
       assert.equal(bookingResultModel.record.amount, 597)
@@ -408,7 +607,7 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(repeatResult.duplicate, true)
       assert.equal(repeatResult.booking.reference, 'VT-REF-2026-001')
       assert.equal(allocatedCount, 1)
-      assert.equal(bookingResultModel.record.paymentStatus, 'SUCCESS')
+      assert.equal(bookingResultModel.record.paymentStatus, 'paid')
       assert.equal(bookingResultModel.writeCount, 2)
     })
 
@@ -425,7 +624,7 @@ describe('Cashfree Payments Integration', () => {
             payment_code: 'DECLINED',
           }],
           orderStatus: 'EXPIRED',
-          expectedStatus: 'FAILED',
+          expectedStatus: 'failed',
         },
         {
           name: 'pending payment',
@@ -464,7 +663,7 @@ describe('Cashfree Payments Integration', () => {
         })
 
         assert.equal(bookingResultModel.record?.paymentStatus ?? '', testCase.expectedStatus)
-        if (testCase.expectedStatus === 'FAILED') {
+        if (testCase.expectedStatus === 'failed') {
           assert.equal(result.failed, true)
           assert.equal(bookingResultModel.record.failureReason, 'Issuer declined')
           assert.equal(bookingResultModel.record.failureCode, 'DECLINED')
@@ -616,6 +815,7 @@ describe('Cashfree Payments Integration', () => {
     it('handles Cashfree Webhook PAYMENT_SUCCESS_WEBHOOK with signature validation', async () => {
       const enquiry = createMockEnquiry({
         paymentOrderId: 'VT_order_test_456',
+        expiresAt: new Date(Date.now() - 60_000),
         cfOrderId: 'cf_order_456',
         paymentProvider: 'cashfree',
         categoryId: 'fun-games',
@@ -689,6 +889,7 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(webhookResult.received, true)
       assert.equal(webhookResult.action, 'confirmed')
       assert.equal(webhookResult.booking.paymentStatus, 'paid')
+      assert.equal(webhookResult.booking.expiresAt, undefined)
       assert.equal(webhookResult.booking.paymentAmount, 597)
       assert.equal(webhookResult.booking.reference, 'VT-REF-HOOK-001')
       assert.equal(webhookResult.booking.cfPaymentId, '55667788')
@@ -701,13 +902,70 @@ describe('Cashfree Payments Integration', () => {
         rawBody,
       )
       assert.equal(duplicateResult.duplicate, true)
+      assert.equal(duplicateResult.booking.expiresAt, undefined)
       assert.equal(allocatedCount, 1)
-      assert.equal(bookingResultModel.record.paymentStatus, 'SUCCESS')
+      assert.equal(bookingResultModel.record.paymentStatus, 'paid')
       assert.equal(bookingResultModel.record.providerPaymentId, '55667788')
       assert.equal(bookingResultModel.writeCount, 2)
     })
 
-    it('does not confirm a success event whose payment amount does not match the booking', async () => {
+    it('durably records a late webhook without fabricating a missing booking', async () => {
+      const missingBookingResultModel = createMockBookingResultModel()
+      const unmatchedRecords = new Map()
+      const unmatchedPaymentModel = {
+        async findOne({ providerPaymentId }) {
+          return unmatchedRecords.get(providerPaymentId) ?? null
+        },
+        async create(record) {
+          unmatchedRecords.set(record.providerPaymentId, record)
+        },
+        async updateOne({ _id }, update) {
+          const record = [...unmatchedRecords.values()].find((item) => item._id === _id)
+          Object.assign(record, update.$set)
+        },
+      }
+      const service = createCashfreePaymentService({
+        appId: testAppId,
+        secretKey: testSecretKey,
+        unmatchedPaymentModel,
+        bookingEnquiryModel: {
+          async findOne() {
+            return null
+          },
+        },
+        bookingResultModel: missingBookingResultModel,
+      })
+      const payload = {
+        data: {
+          order: { order_id: 'VT_order_missing_booking', order_currency: 'INR' },
+          payment: {
+            cf_payment_id: 'cf-payment-late',
+            payment_status: 'SUCCESS',
+            payment_amount: 249,
+            payment_currency: 'INR',
+          },
+        },
+        type: 'PAYMENT_SUCCESS_WEBHOOK',
+      }
+      const rawBody = JSON.stringify(payload)
+      const timestamp = Math.floor(Date.now() / 1000).toString()
+      const signature = createHmac('sha256', testSecretKey)
+        .update(timestamp + rawBody)
+        .digest('base64')
+
+      const result = await service.handleWebhook(payload, signature, timestamp, rawBody)
+
+      assert.equal(result.received, true)
+      assert.equal(result.ignored, true)
+      assert.equal(result.reason, 'order_not_found')
+      assert.equal(result.unmatchedRecorded, true)
+      assert.equal(missingBookingResultModel.record, null)
+      assert.equal(missingBookingResultModel.writeCount, 0)
+      assert.equal(unmatchedRecords.size, 1)
+      assert.equal(unmatchedRecords.get('cf-payment-late').providerOrderId, 'VT_order_missing_booking')
+    })
+
+    it('records a successful event whose payment amount does not match the booking', async () => {
       const enquiry = createMockEnquiry({
         paymentOrderId: 'VT_order_test_amount',
         paymentProvider: 'cashfree',
@@ -715,6 +973,7 @@ describe('Cashfree Payments Integration', () => {
         paymentAmountPaise: 19_900,
         paymentOrderAmountPaise: 19_900,
       })
+      const unmatchedPaymentModel = createMockUnmatchedPaymentModel()
       const service = createCashfreePaymentService({
         appId: testAppId,
         secretKey: testSecretKey,
@@ -724,6 +983,7 @@ describe('Cashfree Payments Integration', () => {
             return enquiry
           },
         },
+        unmatchedPaymentModel,
         allocateReference: async () => 'VT-REF-INVALID-AMOUNT',
       })
       const payload = {
@@ -747,11 +1007,13 @@ describe('Cashfree Payments Integration', () => {
 
       assert.equal(result.ignored, true)
       assert.equal(result.reason, 'payment_confirmation_mismatch')
+      assert.equal(result.unmatchedRecorded, true)
+      assert.equal(unmatchedPaymentModel.records.size, 1)
       assert.equal(enquiry.paymentStatus, 'unpaid')
       assert.equal(enquiry.reference, undefined)
     })
 
-    it('rejects Cashfree success webhooks with missing or non-INR payment/order currency', async () => {
+    it('records Cashfree success webhooks with missing or non-INR payment/order currency', async () => {
       const invalidCurrencies = [
         { label: 'missing payment currency', payment_currency: undefined, order_currency: 'INR' },
         { label: 'non-INR payment currency', payment_currency: 'USD', order_currency: 'INR' },
@@ -774,6 +1036,7 @@ describe('Cashfree Payments Integration', () => {
             ? { paymentStatus: 'paid', reference: 'VT-REF-ALREADY-PAID' }
             : {}),
         })
+        const unmatchedPaymentModel = createMockUnmatchedPaymentModel()
         const service = createCashfreePaymentService({
           appId: testAppId,
           secretKey: testSecretKey,
@@ -782,6 +1045,7 @@ describe('Cashfree Payments Integration', () => {
               return enquiry
             },
           },
+          unmatchedPaymentModel,
           allocateReference: async () => 'VT-REF-INVALID-CURRENCY',
         })
         const payload = {
@@ -795,6 +1059,7 @@ describe('Cashfree Payments Integration', () => {
             },
             payment: {
               cf_payment_id: 334455 + index,
+              order_id: enquiry.paymentOrderId,
               payment_status: 'SUCCESS',
               payment_amount: 249,
               ...(currencies.payment_currency === undefined
@@ -814,6 +1079,8 @@ describe('Cashfree Payments Integration', () => {
 
         assert.equal(result.ignored, true, currencies.label)
         assert.equal(result.reason, 'payment_confirmation_mismatch', currencies.label)
+        assert.equal(result.unmatchedRecorded, true, currencies.label)
+        assert.equal(unmatchedPaymentModel.records.size, 1, currencies.label)
         assert.equal(
           enquiry.paymentStatus,
           currencies.existingPaid ? 'paid' : 'unpaid',
@@ -881,6 +1148,10 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(result.booking.paymentFailureReason, 'cancelled')
       assert.equal(result.booking.reference, undefined)
       assert.equal(result.booking.paymentOrderId, 'VT_order_test_789')
+      assert.equal(
+        result.booking.expiresAt.getTime(),
+        enquiry.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000,
+      )
       assert.equal(bookingResultModel.record, null)
 
       const failedPayload = {
@@ -918,7 +1189,11 @@ describe('Cashfree Payments Integration', () => {
 
       assert.equal(failedResult.action, 'failed')
       assert.equal(duplicateFailure.duplicate, true)
-      assert.equal(bookingResultModel.record.paymentStatus, 'FAILED')
+      assert.equal(
+        duplicateFailure.booking.expiresAt.getTime(),
+        result.booking.expiresAt.getTime(),
+      )
+      assert.equal(bookingResultModel.record.paymentStatus, 'failed')
       assert.equal(bookingResultModel.record.failureReason, 'Issuer declined')
       assert.equal(bookingResultModel.record.failureCode, 'DECLINED')
       assert.equal(bookingResultModel.writeCount, 2)

@@ -46,10 +46,14 @@ test('event image updates changed and cleared posters while omitting unchanged l
   assert.deepEqual(buildEventImageUpdate(' https://example.test/poster.webp ', 'https://example.test/poster.webp'), {})
 })
 
-test('uploaded media URLs resolve through the configured HTTPS API host', () => {
+test('uploaded media URLs resolve through the configured HTTPS and HTTP API hosts', () => {
   assert.equal(
     resolveMediaAssetUrl('/api/media/asset-id', 'https://api.example.test/api'),
     'https://api.example.test/api/media/asset-id',
+  )
+  assert.equal(
+    resolveMediaAssetUrl('/api/media/asset-id', 'http://localhost:5000/api'),
+    'http://localhost:5000/api/media/asset-id',
   )
   assert.equal(
     resolveMediaAssetUrl('/api/media/asset-id', '/api'),
@@ -62,6 +66,14 @@ test('uploaded media URLs resolve through the configured HTTPS API host', () => 
   assert.equal(
     resolveMediaAssetUrl('/legacy/poster.webp', 'https://api.example.test/api'),
     '/legacy/poster.webp',
+  )
+  assert.equal(
+    resolveMediaAssetUrl('', 'https://api.example.test/api'),
+    '',
+  )
+  assert.equal(
+    resolveMediaAssetUrl(null, 'https://api.example.test/api'),
+    null,
   )
 })
 

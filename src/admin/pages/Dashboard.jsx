@@ -19,6 +19,7 @@ import {
 } from '../components/AdminUI.jsx'
 import { useAdminData } from '../context/useAdminData.js'
 import { categorySeries, monthlySeries } from '../data/adminAnalytics.js'
+import { isRealPaidBookingStatus } from '../../utils/paymentStatus.js'
 
 function formatDateTime(date) {
   return new Intl.DateTimeFormat('en', {
@@ -39,8 +40,8 @@ export default function Dashboard() {
   const scopedBookings = isOrganizer
     ? bookings.filter((booking) => booking.organizerId === 'org-201')
     : bookings
-  const paidBookings = scopedBookings.filter(
-    (booking) => booking.paymentStatus === 'verified',
+  const paidBookings = scopedBookings.filter((booking) =>
+    isRealPaidBookingStatus(booking.paymentStatus),
   )
   const verifiedRevenue = paidBookings.reduce(
     (total, booking) => total + booking.amount,

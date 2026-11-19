@@ -470,6 +470,11 @@ code {
   padding-block: clamp(4rem, 10vw, 8rem);
 }
 
+.site-main--home,
+.site-main--events {
+  padding-block: 0;
+}
+
 .page-intro {
   display: grid;
   gap: var(--space-5);
@@ -654,6 +659,11 @@ code {
 
   .site-main {
     padding-block: 3rem 4rem;
+  }
+
+  .site-main--home,
+  .site-main--events {
+    padding-block: 0;
   }
 
   .site-header__inner {

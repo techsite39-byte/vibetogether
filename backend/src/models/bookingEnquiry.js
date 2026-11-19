@@ -299,7 +299,7 @@ const bookingEnquirySchema = new mongoose.Schema(
     paymentStatus: {
       type: String,
       required: true,
-      enum: ['unpaid', 'processing', 'failed', 'demo_paid', 'paid', 'refunded'],
+      enum: ['unpaid', 'processing', 'failed', 'FAILED', 'demo_paid', 'paid', 'SUCCESS', 'verified', 'refunded'],
       default: 'unpaid',
     },
     paymentAmount: {
@@ -481,8 +481,9 @@ const bookingEnquirySchema = new mongoose.Schema(
     },
   },
   {
-    collection: 'user-db',
+    collection: 'bookings-db',
     versionKey: false,
+    bufferCommands: false,
   },
 )
 
@@ -493,7 +494,20 @@ bookingEnquirySchema.index({ 'whatsappNotification.providerMessageId': 1 }, { sp
 bookingEnquirySchema.index({ 'attendeeNotifications.providerMessageId': 1 }, { sparse: true })
 bookingEnquirySchema.index({ 'adminNotification.providerMessageId': 1 }, { sparse: true })
 bookingEnquirySchema.index({ 'upiPayments.utr': 1 }, { unique: true, sparse: true })
+bookingEnquirySchema.index(
+  { cfPaymentId: 1 },
+  { unique: true, partialFilterExpression: { cfPaymentId: { $type: 'string', $gt: '' } } },
+)
 
+export { bookingEnquirySchema }
 export const BookingEnquiry =
   mongoose.models.BookingEnquiry ??
   mongoose.model('BookingEnquiry', bookingEnquirySchema)
+
+const legacyBookingEnquirySchema = bookingEnquirySchema.clone()
+legacyBookingEnquirySchema.clearIndexes()
+legacyBookingEnquirySchema.set('bufferCommands', false)
+
+export const LegacyBookingEnquiry =
+  mongoose.models.LegacyBookingEnquiry ??
+  mongoose.model('LegacyBookingEnquiry', legacyBookingEnquirySchema, 'user-db')

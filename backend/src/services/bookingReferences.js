@@ -17,6 +17,7 @@ export async function nextBookingReference({
   bookingModel = Booking,
   bookingEnquiryModel = BookingEnquiry,
   counterModel = BookingReferenceCounter,
+  session,
 } = {}) {
   if (
     typeof bookingModel.find === 'function' &&
@@ -24,9 +25,17 @@ export async function nextBookingReference({
     typeof counterModel.findOneAndUpdate === 'function'
   ) {
     const seedValue = FIRST_BOOKING_REFERENCE - 1
+    const bookingsQuery = bookingModel.find({ reference: /^\d+$/ }, 'reference')
+    const enquiriesQuery = bookingEnquiryModel.find({ reference: /^\d+$/ }, 'reference')
+    const bookingsWithSession = session && typeof bookingsQuery.session === 'function'
+      ? bookingsQuery.session(session)
+      : bookingsQuery
+    const enquiriesWithSession = session && typeof enquiriesQuery.session === 'function'
+      ? enquiriesQuery.session(session)
+      : enquiriesQuery
     const [bookings, enquiries] = await Promise.all([
-      bookingModel.find({ reference: /^\d+$/ }, 'reference').lean(),
-      bookingEnquiryModel.find({ reference: /^\d+$/ }, 'reference').lean(),
+      bookingsWithSession.lean(),
+      enquiriesWithSession.lean(),
     ])
     const maxExistingReference = [...bookings, ...enquiries].reduce((max, record) => {
       const value = numericReference(record.reference)
@@ -36,16 +45,17 @@ export async function nextBookingReference({
     await counterModel.findOneAndUpdate(
       { _id: 'booking-reference-counter' },
       { $setOnInsert: { _id: 'booking-reference-counter', value: seedValue } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, new: true, setDefaultsOnInsert: true, session },
     )
     await counterModel.updateOne(
       { _id: 'booking-reference-counter' },
       { $max: { value: maxExistingReference } },
+      { session },
     )
     const counter = await counterModel.findOneAndUpdate(
       { _id: 'booking-reference-counter' },
       { $inc: { value: 1 } },
-      { new: true },
+      { new: true, session },
     )
     if (!counter || !Number.isSafeInteger(counter.value)) {
       throw new Error('Booking reference generation failed.')

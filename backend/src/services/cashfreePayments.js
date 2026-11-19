@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
 import { BookingResult } from '../models/bookingResult.js'
+import { UnmatchedCashfreePayment } from '../models/unmatchedCashfreePayment.js'
 import { nextBookingReference } from './bookingReferences.js'
 import {
   DEFAULT_TICKET_TYPE,
@@ -8,10 +9,32 @@ import {
   calculateTicketPricing,
 } from './diwaliOffer.js'
 import { persistBookingResult } from './bookingResults.js'
+import {
+  isCompletedBookingPaymentStatus,
+  isRealPaidBookingStatus,
+  normalizeBookingPaymentStatus,
+} from '../../../src/utils/paymentStatus.js'
 
 const SANDBOX_URL = 'https://sandbox.cashfree.com/pg'
 const PRODUCTION_URL = 'https://api.cashfree.com/pg'
 const DEFAULT_API_VERSION = '2023-08-01'
+const bookingSessionLifetimeMs = 7 * 24 * 60 * 60 * 1000
+const unmatchedPaymentStatuses = new Set([
+  'SUCCESS',
+  'FAILED',
+  'PENDING',
+  'USER_DROPPED',
+  'CANCELLED',
+  'REFUNDED',
+  'REVERSED',
+])
+const unmatchedEventTypes = new Set([
+  'PAYMENT_SUCCESS_WEBHOOK',
+  'PAYMENT_FAILED_WEBHOOK',
+  'PAYMENT_USER_DROPPED_WEBHOOK',
+  'REFUND_STATUS_WEBHOOK',
+  'PAYMENT_REVERSED_WEBHOOK',
+])
 
 const defaultPricing = {
   paymentAmount: FIXED_BOOKING_AMOUNT,
@@ -32,6 +55,40 @@ const defaultPricing = {
 
 function serviceError(status, message) {
   return Object.assign(new Error(message), { status })
+}
+
+function removeBookingExpiry(enquiry) {
+  if (typeof enquiry.set === 'function') {
+    enquiry.set('expiresAt', undefined)
+  } else {
+    delete enquiry.expiresAt
+  }
+}
+
+async function preserveCompletedBooking(enquiry) {
+  const normalizedStatus = normalizeBookingPaymentStatus(enquiry.paymentStatus)
+  const statusChanged = normalizedStatus !== enquiry.paymentStatus
+  const hadExpiry = enquiry.expiresAt !== undefined
+
+  if (statusChanged) enquiry.paymentStatus = normalizedStatus
+  if (hadExpiry) removeBookingExpiry(enquiry)
+  if (statusChanged || hadExpiry) await enquiry.save()
+}
+
+async function preserveActiveCashfreeBooking(enquiry) {
+  if (!(enquiry.expiresAt instanceof Date)) return
+  removeBookingExpiry(enquiry)
+  await enquiry.save()
+}
+
+function restoreTemporaryBookingExpiry(enquiry) {
+  if (enquiry.expiresAt instanceof Date) return false
+  const createdAt = new Date(enquiry.createdAt)
+  if (!Number.isFinite(createdAt.getTime())) {
+    throw serviceError(500, 'Booking creation time is unavailable; payment expiry could not be restored.')
+  }
+  enquiry.expiresAt = new Date(createdAt.getTime() + bookingSessionLifetimeMs)
+  return true
 }
 
 /**
@@ -81,7 +138,9 @@ export function isValidCashfreeWebhookSignature(rawBody, signature, timestamp, s
       timingSafeEqual(actualBuffer, expectedBuffer)
     )
   } catch (err) {
-    console.error('[Cashfree Webhook] Signature verification failed:', err.message)
+    console.error('[Cashfree Webhook] Signature verification failed.', {
+      reason: 'signature_validation_error',
+    })
     return false
   }
 }
@@ -140,6 +199,7 @@ export function createCashfreePaymentService({
   frontendUrl = process.env.FRONTEND_URL || 'https://www.vibetogether.show',
   bookingEnquiryModel = BookingEnquiry,
   bookingResultModel = BookingResult,
+  unmatchedPaymentModel = UnmatchedCashfreePayment,
   allocateReference = nextBookingReference,
   diwaliOfferService,
   fetchFn = fetch,
@@ -155,6 +215,263 @@ export function createCashfreePaymentService({
       'x-api-version': apiVersion,
       'Content-Type': 'application/json',
       Accept: 'application/json',
+    }
+  }
+
+  async function verifyUnmatchedPayment({
+    providerOrderId,
+    providerPaymentId,
+    expectedAmount,
+    currency,
+  } = {}) {
+    if (!configured) {
+      throw serviceError(503, 'Cashfree payment verification is not configured.')
+    }
+
+    const orderId = String(providerOrderId ?? '')
+    const paymentId = String(providerPaymentId ?? '')
+    if (!orderId || !paymentId) {
+      return { verified: false, reasonCode: 'provider_identifiers_missing' }
+    }
+
+    let paymentsResponse
+    try {
+      paymentsResponse = await fetchFn(
+        `${baseUrl}/orders/${encodeURIComponent(orderId)}/payments`,
+        { method: 'GET', headers: getHeaders() },
+      )
+    } catch {
+      throw serviceError(503, 'Cashfree payment verification is temporarily unavailable.')
+    }
+    if (!paymentsResponse.ok) {
+      throw serviceError(503, 'Cashfree payment verification is temporarily unavailable.')
+    }
+
+    let payments
+    try {
+      payments = await paymentsResponse.json()
+    } catch {
+      throw serviceError(502, 'Cashfree returned an invalid payment verification response.')
+    }
+    if (!Array.isArray(payments)) {
+      throw serviceError(502, 'Cashfree returned an invalid payment verification response.')
+    }
+
+    const matches = payments.filter(
+      (payment) => String(payment?.cf_payment_id ?? '') === paymentId,
+    )
+    if (matches.length !== 1) {
+      return {
+        verified: false,
+        reasonCode: matches.length ? 'provider_payment_ambiguous' : 'provider_payment_not_found',
+      }
+    }
+
+    const payment = matches[0]
+    if (String(payment.order_id ?? '') !== orderId) {
+      return { verified: false, reasonCode: 'provider_order_mismatch' }
+    }
+    if (payment.payment_status !== 'SUCCESS') {
+      return { verified: false, reasonCode: 'provider_payment_not_successful' }
+    }
+    if (
+      Number(payment.payment_amount).toFixed(2) !== Number(expectedAmount).toFixed(2) ||
+      String(payment.payment_currency ?? '').toUpperCase() !== String(currency ?? '').toUpperCase() ||
+      String(currency ?? '').toUpperCase() !== 'INR'
+    ) {
+      return { verified: false, reasonCode: 'provider_amount_or_currency_mismatch' }
+    }
+
+    const reversalFields = [
+      payment.is_reversed,
+      payment.payment_reversed,
+      payment.reversed,
+    ]
+    const reversalStatus = String(
+      payment.payment_reversal_status ?? payment.reversal_status ?? '',
+    ).toUpperCase()
+    if (
+      reversalFields.some((value) => value === true) ||
+      (reversalStatus && !['NONE', 'NOT_REVERSED', ''].includes(reversalStatus))
+    ) {
+      return { verified: false, reasonCode: 'provider_payment_reversed' }
+    }
+
+    let refundsResponse
+    try {
+      refundsResponse = await fetchFn(
+        `${baseUrl}/orders/${encodeURIComponent(orderId)}/refunds`,
+        { method: 'GET', headers: getHeaders() },
+      )
+    } catch {
+      throw serviceError(503, 'Cashfree refund verification is temporarily unavailable.')
+    }
+    if (!refundsResponse.ok) {
+      throw serviceError(503, 'Cashfree refund verification is temporarily unavailable.')
+    }
+
+    let refunds
+    try {
+      refunds = await refundsResponse.json()
+    } catch {
+      throw serviceError(502, 'Cashfree returned an invalid refund verification response.')
+    }
+    const refundList = Array.isArray(refunds)
+      ? refunds
+      : Array.isArray(refunds?.data)
+        ? refunds.data
+        : Array.isArray(refunds?.refunds)
+          ? refunds.refunds
+        : null
+    if (!refundList) {
+      throw serviceError(502, 'Cashfree returned an invalid refund verification response.')
+    }
+    const hasRefundForPayment = refundList.some((refund) => {
+      const refundPaymentId = String(
+        refund?.cf_payment_id ?? refund?.payment_id ?? '',
+      )
+      return !refundPaymentId || refundPaymentId === paymentId
+    })
+    if (hasRefundForPayment) {
+      return { verified: false, reasonCode: 'provider_payment_refunded' }
+    }
+
+    const refundStatus = String(payment.refund_status ?? '').toUpperCase()
+    if (refundStatus && !['NONE', 'NOT_REFUNDED'].includes(refundStatus)) {
+      return { verified: false, reasonCode: 'provider_payment_refunded' }
+    }
+
+    return {
+      verified: true,
+      providerOrderId: orderId,
+      providerPaymentId: paymentId,
+      amount: Number(payment.payment_amount),
+      currency: String(payment.payment_currency).toUpperCase(),
+      providerStatus: payment.payment_status,
+    }
+  }
+
+  async function persistUnmatchedPayment({
+    orderId,
+    paymentId,
+    paymentData = {},
+    eventType = 'UNKNOWN',
+    eventTime,
+  }) {
+    if (!unmatchedPaymentModel) {
+      throw serviceError(503, 'Unmatched payment storage is unavailable.')
+    }
+
+    const now = new Date()
+    const parsedEventTime = eventTime ? new Date(eventTime) : null
+    const normalizedPaymentStatus = String(paymentData.payment_status ?? '').toUpperCase()
+    const normalizedEventType = String(eventType ?? '').toUpperCase()
+    const normalizedCurrency = String(paymentData.payment_currency ?? '').toUpperCase()
+    const input = {
+      providerOrderId: String(orderId),
+      providerPaymentId: String(paymentId),
+      amount: Number.isFinite(Number(paymentData.payment_amount))
+        ? Number(paymentData.payment_amount)
+        : 0,
+      currency: /^[A-Z]{3}$/.test(normalizedCurrency) ? normalizedCurrency : 'UNK',
+      providerStatus: unmatchedPaymentStatuses.has(normalizedPaymentStatus)
+        ? normalizedPaymentStatus
+        : 'UNKNOWN',
+      providerEventType: unmatchedEventTypes.has(normalizedEventType)
+        ? normalizedEventType
+        : 'UNKNOWN',
+      eventTime: parsedEventTime && Number.isFinite(parsedEventTime.getTime())
+        ? parsedEventTime
+        : null,
+      receivedAt: now,
+      lastSeenAt: now,
+      processingStatus: 'unmatched',
+    }
+
+    const findExisting = async () => {
+      const query = unmatchedPaymentModel.findOne({
+        providerPaymentId: input.providerPaymentId,
+      })
+      return typeof query?.lean === 'function' ? query.lean() : query
+    }
+    const updateExisting = async (existing) => {
+      const mismatch =
+        String(existing.providerOrderId) !== input.providerOrderId ||
+        Number(existing.amount) !== input.amount ||
+        String(existing.currency).toUpperCase() !== input.currency
+      const fields = { lastSeenAt: now }
+      if (mismatch) {
+        fields.processingStatus = 'review_required'
+        fields.reconciliationOutcome = existing.processingStatus === 'reconciled'
+          ? 'duplicate_metadata_mismatch_after_reconciliation'
+          : 'duplicate_metadata_mismatch'
+      } else if (!mismatch) {
+        fields.providerStatus = input.providerStatus
+        fields.providerEventType = input.providerEventType
+        fields.eventTime = input.eventTime
+      }
+      const updateResult = await unmatchedPaymentModel.updateOne(
+        { _id: existing._id },
+        { $set: fields },
+      )
+      if (
+        !updateResult ||
+        updateResult.acknowledged === false ||
+        updateResult.matchedCount === 0 ||
+        updateResult.n === 0
+      ) {
+        throw serviceError(503, 'Unmatched payment storage is temporarily unavailable.')
+      }
+      return { duplicate: true, conflict: mismatch }
+    }
+
+    const existing = await findExisting()
+    if (existing) return updateExisting(existing)
+
+    try {
+      await unmatchedPaymentModel.create(input)
+      return { duplicate: false, conflict: false }
+    } catch (error) {
+      if (error?.code !== 11000) throw error
+      const racedRecord = await findExisting()
+      if (!racedRecord) throw error
+      return updateExisting(racedRecord)
+    }
+  }
+
+  async function recordUnmatchedWebhook({
+    orderId,
+    paymentData,
+    eventType,
+    eventTime,
+    reason,
+  }) {
+    const paymentId = String(paymentData?.cf_payment_id ?? '')
+    if (!orderId || !paymentId) {
+      throw serviceError(
+        503,
+        'Cashfree successful payment is missing a stable order or payment identifier.',
+      )
+    }
+
+    const unmatched = await persistUnmatchedPayment({
+      orderId,
+      paymentId,
+      paymentData: paymentData ?? {},
+      eventType,
+      eventTime,
+    })
+    console.warn('[Cashfree Webhook] Unmatched payment recorded.', {
+      outcome: unmatched.conflict ? 'review_required' : 'recorded',
+      duplicate: unmatched.duplicate,
+    })
+    return {
+      received: true,
+      ignored: true,
+      reason,
+      unmatchedRecorded: true,
+      reviewRequired: unmatched.conflict,
+      duplicate: unmatched.duplicate,
     }
   }
 
@@ -231,10 +548,15 @@ export function createCashfreePaymentService({
     if (!enquiry) {
       throw serviceError(404, 'Booking enquiry not found.')
     }
-    if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+    if (isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
+      await preserveCompletedBooking(enquiry)
+      if (isRealPaidBookingStatus(enquiry.paymentStatus) && !enquiry.reference) {
+        throw serviceError(409, 'This booking is marked as paid but is missing its reference. Please contact support.')
+      }
       return {
         alreadyPaid: true,
-        reference: enquiry.reference,
+        demoPayment: enquiry.paymentStatus === 'demo_paid',
+        reference: enquiry.reference ?? '',
         booking: enquiry,
       }
     }
@@ -246,6 +568,7 @@ export function createCashfreePaymentService({
         (order) => String(order.orderId) === String(enquiry.paymentOrderId),
       )
       if (orderEntry?.status !== 'failed') {
+        await preserveActiveCashfreeBooking(enquiry)
         if (!enquiry.cfPaymentSessionId) {
           throw serviceError(409, 'An existing Cashfree order is being processed. Refresh its payment status before retrying.')
         }
@@ -297,6 +620,11 @@ export function createCashfreePaymentService({
       order_note: `Vibe Together - ${enquiry.event || 'Experience Reservation'}`,
     }
 
+    const previousExpiry = enquiry.expiresAt instanceof Date
+      ? new Date(enquiry.expiresAt)
+      : null
+    await preserveActiveCashfreeBooking(enquiry)
+
     let response
     try {
       response = await fetchFn(`${baseUrl}/orders`, {
@@ -305,15 +633,29 @@ export function createCashfreePaymentService({
         body: JSON.stringify(orderPayload),
       })
     } catch (err) {
-      console.error('[Cashfree] Order creation network error:', err.message)
+      console.error('[Cashfree] Order creation network error.', {
+        reason: 'provider_request_failed',
+      })
       throw serviceError(502, 'Could not reach Cashfree payment service. Please try again.')
     }
 
     const data = await response.json()
-    if (!response.ok || !data.payment_session_id) {
+    if (!response.ok) {
+      if (previousExpiry) {
+        enquiry.expiresAt = previousExpiry
+        await enquiry.save()
+      }
       const msg = data.message || 'Cashfree could not initiate the payment order.'
-      console.error('[Cashfree] Order creation failed:', data)
+      const providerErrorCode = Number(data.code ?? data.error_code)
+      console.error('[Cashfree] Order creation failed.', {
+        httpStatus: response.status,
+        providerErrorCode: Number.isSafeInteger(providerErrorCode) ? providerErrorCode : null,
+        reason: 'provider_rejected_order',
+      })
       throw serviceError(response.status >= 400 && response.status < 500 ? 400 : 502, msg)
+    }
+    if (!data.payment_session_id) {
+      throw serviceError(502, 'Cashfree could not initiate the payment order.')
     }
     if (
       String(data.order_id ?? '') !== orderId ||
@@ -382,6 +724,15 @@ export function createCashfreePaymentService({
     }
 
     const orderIdToVerify = order_id || enquiry.paymentOrderId
+    if (!orderIdToVerify && isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
+      await preserveCompletedBooking(enquiry)
+      return {
+        verified: isRealPaidBookingStatus(enquiry.paymentStatus),
+        duplicate: true,
+        demoPayment: enquiry.paymentStatus === 'demo_paid',
+        booking: enquiry,
+      }
+    }
     if (!orderIdToVerify) {
       throw serviceError(400, 'No active Cashfree order found for this booking enquiry.')
     }
@@ -395,13 +746,23 @@ export function createCashfreePaymentService({
     }
 
     // An idempotent success is only valid for a payment already bound to this booking.
-    if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+    if (isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
+      await preserveCompletedBooking(enquiry)
+      if (enquiry.paymentStatus === 'demo_paid') {
+        return { verified: false, duplicate: true, demoPayment: true, booking: enquiry }
+      }
+      if (!enquiry.reference) {
+        throw serviceError(409, 'This booking is marked as paid but is missing its reference. Please contact support.')
+      }
       if (
-        cf_payment_id &&
-        String(enquiry.cfPaymentId ?? '') !== String(cf_payment_id)
+        String(enquiry.paymentOrderId ?? '') !== orderIdString ||
+        !enquiry.cfPaymentId ||
+        (cf_payment_id && String(enquiry.cfPaymentId) !== String(cf_payment_id))
       ) {
         throw serviceError(400, 'Cashfree payment does not match this booking order.')
       }
+      removeBookingExpiry(enquiry)
+      await enquiry.save()
       await persistPaymentResult(enquiry, 'SUCCESS', {
         cf_payment_id: enquiry.cfPaymentId,
         order_id: orderIdString,
@@ -413,6 +774,13 @@ export function createCashfreePaymentService({
       }
     }
 
+    if (
+      ['unpaid', 'processing'].includes(enquiry.paymentStatus) &&
+      orderEntry?.status !== 'failed'
+    ) {
+      await preserveActiveCashfreeBooking(enquiry)
+    }
+
     // 1. Fetch payments for this order
     let paymentsResponse
     try {
@@ -421,7 +789,9 @@ export function createCashfreePaymentService({
         headers: getHeaders(),
       })
     } catch (err) {
-      console.error('[Cashfree] Verify payment network error:', err.message)
+      console.error('[Cashfree] Verify payment network error.', {
+        reason: 'provider_request_failed',
+      })
       throw serviceError(502, 'Could not verify payment status with Cashfree.')
     }
 
@@ -445,12 +815,16 @@ export function createCashfreePaymentService({
     }
 
     // Look for successful payment
-    const successfulPayment = Array.isArray(payments)
-      ? payments.find(
+    const successfulPayments = Array.isArray(payments)
+      ? payments.filter(
           (payment) =>
             payment.payment_status === 'SUCCESS' &&
+            String(payment.order_id ?? '') === orderIdString &&
             (!cf_payment_id || String(payment.cf_payment_id) === String(cf_payment_id)),
         )
+      : []
+    const successfulPayment = successfulPayments.length === 1
+      ? successfulPayments[0]
       : null
     const expectedAmount = Number(
       orderEntry?.amount ?? (matchesCurrentOrder ? enquiry.paymentAmount : Number.NaN),
@@ -490,6 +864,7 @@ export function createCashfreePaymentService({
         orderEntry.paymentId = enquiry.cfPaymentId
       }
 
+      removeBookingExpiry(enquiry)
       await enquiry.save()
       await persistPaymentResult(enquiry, 'SUCCESS', {
         ...paymentRecord,
@@ -528,6 +903,7 @@ export function createCashfreePaymentService({
           ? 'cancelled'
           : 'failed'
       enquiry.cfPaymentStatus = failedPayment.payment_status
+      restoreTemporaryBookingExpiry(enquiry)
       await enquiry.save()
       if (failedPayment.payment_status === 'FAILED') {
         await persistPaymentResult(enquiry, 'FAILED', {
@@ -553,10 +929,12 @@ export function createCashfreePaymentService({
       return null
     }
 
-    if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+    if (isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
+      await preserveCompletedBooking(enquiry)
       return {
         pending: false,
         duplicate: true,
+        demoPayment: enquiry.paymentStatus === 'demo_paid',
         booking: enquiry,
       }
     }
@@ -585,7 +963,8 @@ export function createCashfreePaymentService({
       throw serviceError(404, 'Booking enquiry not found.')
     }
 
-    if (enquiry.paymentStatus === 'paid') {
+    if (isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
+      await preserveCompletedBooking(enquiry)
       return { booking: enquiry }
     }
 
@@ -614,6 +993,7 @@ export function createCashfreePaymentService({
       orderEntry.status = 'failed'
     }
 
+    restoreTemporaryBookingExpiry(enquiry)
     await enquiry.save()
     return { booking: enquiry }
   }
@@ -633,9 +1013,18 @@ export function createCashfreePaymentService({
     const eventType = payload?.type
     const orderData = payload?.data?.order
     const paymentData = payload?.data?.payment
+    const isSuccessfulPayment =
+      eventType === 'PAYMENT_SUCCESS_WEBHOOK' &&
+      paymentData?.payment_status === 'SUCCESS'
 
     const orderId = orderData?.order_id || paymentData?.order_id
     if (!orderId) {
+      if (isSuccessfulPayment) {
+        throw serviceError(
+          503,
+          'Cashfree successful payment is missing a stable order identifier.',
+        )
+      }
       return { received: true, ignored: true, reason: 'missing_order_id' }
     }
 
@@ -654,21 +1043,46 @@ export function createCashfreePaymentService({
     })
 
     if (!enquiry) {
-      console.warn(`[Cashfree Webhook] No matching booking enquiry found for orderId: ${orderIdString}`)
-      return { received: true, ignored: true, reason: 'order_not_found' }
+      const paymentId = String(paymentData?.cf_payment_id ?? '')
+      if (!paymentId) {
+        console.warn('[Cashfree Webhook] Unmatched event has no payment identifier.')
+        if (isSuccessfulPayment) {
+          throw serviceError(
+            503,
+            'Cashfree successful payment is missing a stable payment identifier.',
+          )
+        }
+        return { received: true, ignored: true, reason: 'payment_identifier_missing' }
+      }
+      return recordUnmatchedWebhook({
+        orderId: String(paymentData?.order_id ?? orderIdString),
+        paymentData,
+        eventType,
+        eventTime: paymentData?.payment_time ?? payload?.event_time,
+        reason: 'order_not_found',
+      })
     }
 
     const paymentId = String(paymentData?.cf_payment_id ?? '')
     const paymentStatus = paymentData?.payment_status
     const orderEntry = enquiry.paymentOrders?.find((order) => order.orderId === orderIdString)
+    if (
+      ['unpaid', 'processing'].includes(enquiry.paymentStatus) &&
+      orderEntry?.status !== 'failed'
+    ) {
+      await preserveActiveCashfreeBooking(enquiry)
+    }
     const isCancelledPayment =
       eventType === 'PAYMENT_USER_DROPPED_WEBHOOK' ||
       ['USER_DROPPED', 'CANCELLED'].includes(paymentStatus)
     const isTerminalFailure = paymentStatus === 'FAILED' && !isCancelledPayment
-    const isSuccessfulPayment =
-      eventType === 'PAYMENT_SUCCESS_WEBHOOK' && paymentStatus === 'SUCCESS'
-
     if (isSuccessfulPayment) {
+      if (!paymentId) {
+        throw serviceError(
+          503,
+          'Cashfree successful payment is missing a stable payment identifier.',
+        )
+      }
       const receivedAmount = Number(paymentData?.payment_amount)
       const expectedAmount = Number(
         orderEntry?.amount ??
@@ -683,17 +1097,42 @@ export function createCashfreePaymentService({
       const currencyMatches =
         paymentData?.payment_currency === 'INR' &&
         orderData?.order_currency === 'INR'
-      if (!amountMatches || !currencyMatches || !paymentId) {
-        return { received: true, ignored: true, reason: 'payment_confirmation_mismatch' }
+      const providerOrderMatches =
+        !paymentData?.order_id ||
+        String(paymentData.order_id) === orderIdString
+      if (!amountMatches || !currencyMatches || !providerOrderMatches) {
+        return recordUnmatchedWebhook({
+          orderId: String(paymentData?.order_id ?? orderIdString),
+          paymentData,
+          eventType,
+          eventTime: paymentData?.payment_time ?? payload?.event_time,
+          reason: 'payment_confirmation_mismatch',
+        })
       }
 
-      if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
-        await persistPaymentResult(enquiry, 'SUCCESS', {
-          cf_payment_id: enquiry.cfPaymentId || paymentId,
-          order_id: orderIdString,
-          payment_currency: paymentData?.payment_currency || 'INR',
+      if (isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
+        if (
+          isRealPaidBookingStatus(enquiry.paymentStatus) &&
+          enquiry.reference &&
+          enquiry.paymentProvider === 'cashfree' &&
+          String(enquiry.paymentOrderId ?? '') === orderIdString &&
+          String(enquiry.cfPaymentId ?? '') === paymentId
+        ) {
+          await preserveCompletedBooking(enquiry)
+          await persistPaymentResult(enquiry, 'SUCCESS', {
+            cf_payment_id: enquiry.cfPaymentId,
+            order_id: orderIdString,
+            payment_currency: paymentData?.payment_currency || 'INR',
+          })
+          return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
+        }
+        return recordUnmatchedWebhook({
+          orderId: String(paymentData?.order_id ?? orderIdString),
+          paymentData,
+          eventType,
+          eventTime: paymentData?.payment_time ?? payload?.event_time,
+          reason: 'booking_payment_conflict',
         })
-        return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
       }
 
       // Confirm booking idempotently
@@ -702,6 +1141,11 @@ export function createCashfreePaymentService({
       }
       enquiry.paymentStatus = 'paid'
       enquiry.status = 'confirmed'
+      enquiry.paymentProvider = 'cashfree'
+      enquiry.paymentOrderId = orderIdString
+      enquiry.paymentAmount = receivedAmount
+      enquiry.paymentAmountPaise = Math.round(receivedAmount * 100)
+      enquiry.paymentOrderAmountPaise = Math.round(expectedAmount * 100)
       enquiry.cfPaymentId = String(paymentData?.cf_payment_id ?? '')
       enquiry.cfPaymentStatus = 'SUCCESS'
       enquiry.cfPaymentMethod =
@@ -717,6 +1161,7 @@ export function createCashfreePaymentService({
         orderEntry.paymentId = enquiry.cfPaymentId
       }
 
+      removeBookingExpiry(enquiry)
       await enquiry.save()
       await persistPaymentResult(enquiry, 'SUCCESS', {
         ...paymentData,
@@ -726,7 +1171,8 @@ export function createCashfreePaymentService({
     }
 
     if (isTerminalFailure || isCancelledPayment) {
-      if (enquiry.paymentStatus === 'paid' && enquiry.reference) {
+      if (isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
+        await preserveCompletedBooking(enquiry)
         return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
       }
       if (
@@ -735,6 +1181,9 @@ export function createCashfreePaymentService({
         enquiry.cfPaymentId === paymentId &&
         enquiry.cfPaymentStatus === paymentStatus
       ) {
+        if (restoreTemporaryBookingExpiry(enquiry)) {
+          await enquiry.save()
+        }
         if (isTerminalFailure) {
           await persistPaymentResult(enquiry, 'FAILED', {
             ...paymentData,
@@ -744,7 +1193,7 @@ export function createCashfreePaymentService({
         return { received: true, duplicate: true, booking: enquiry, action: 'duplicate' }
       }
 
-      if (enquiry.paymentStatus !== 'paid') {
+      if (!isCompletedBookingPaymentStatus(enquiry.paymentStatus)) {
         enquiry.paymentStatus = 'failed'
         enquiry.paymentFailureReason = isCancelledPayment ? 'cancelled' : 'failed'
         enquiry.cfPaymentId = paymentId
@@ -755,6 +1204,7 @@ export function createCashfreePaymentService({
           orderEntry.paymentId = paymentId
         }
 
+        restoreTemporaryBookingExpiry(enquiry)
         await enquiry.save()
         if (isTerminalFailure) {
           await persistPaymentResult(enquiry, 'FAILED', {
@@ -774,6 +1224,7 @@ export function createCashfreePaymentService({
     environment: isProduction ? 'production' : 'sandbox',
     createOrder,
     verifyPayment,
+    verifyUnmatchedPayment,
     checkStatus,
     recordFailure,
     handleWebhook,

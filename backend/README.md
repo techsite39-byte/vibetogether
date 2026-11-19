@@ -9,8 +9,8 @@ admin sessions.
 
 1. Install dependencies with `npm install` in this folder.
 2. Create `.env` in this folder and set `MONGODB_URI`.
-3. Set `MONGODB_DB_NAME` to the intended database (the current deployment
-   configuration uses `main`).
+3. Set `MONGODB_DB_NAME=main`. The current server explicitly requires the
+   `main` database; it fails startup if connected to a different database.
 4. Configure `CORS_ORIGIN` with the exact frontend origin(s).
 5. Configure `ADMIN_EMAIL` and `ADMIN_SESSION_SECRET` through the local
    environment or secret manager. In an interactive terminal, run
@@ -138,8 +138,10 @@ Cashfree API Secret Key. Verify that `CASHFREE_SECRET_KEY` in Render matches the
 API Secret Key generated under **Developers → API Keys**. The endpoint validates Cashfree's
 HMAC-SHA256 signature against the unparsed raw request body and verifies a recent timestamp
 window (10 minutes) to prevent replay attacks. It does not require customer authentication
-or browser CORS access. Valid test webhooks without a booking order are acknowledged without
-modifying booking records.
+or browser CORS access. A signed event with order and payment identifiers that cannot be
+matched to a booking is stored in `main.cashfree-unmatched-payments` using only provider
+order/payment IDs, amount, currency, status, event type, and timestamps. The provider payload
+and customer details are not retained.
 
 WhatsApp booking notifications use the official Meta Cloud API and are sent to
 the customer's consented, validated mobile number (not the business number).
@@ -149,64 +151,17 @@ Set `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_API_VERSION`,
 Meta webhook signatures. The configured phone number ID must be the Vibe
 Together sender in Meta; the recipient is always the customer's consented
 number from the booking form.
-Templates must be submitted and approved in Meta WhatsApp Manager, use
-`en_US`, and match the following body text and placeholder order.
-
-Success template:
-
-```text
-✨ VIBE TOGETHER – BOOKING CONFIRMATION ✨
-Hello {{1}}! 👋
-Thank you for choosing Vibe Together! 💜
-Your payment has been successfully completed and your booking has been registered.
-🎟️ YOUR BOOKING REFERENCE:
-{{2}}
-📋 BOOKING DETAILS
-Name: {{3}}
-Mobile: {{4}}
-Email: {{5}}
-Category: {{6}}
-Gender: {{7}}
-Booking Date: {{8}}
-💳 PAYMENT DETAILS
-{{9}}
-Payment Status: {{10}}
-📌 BOOKING STATUS: {{11}}
-Thank you for being part of Vibe Together!
-Your next story starts here! ✨
-🌐 https://www.vibetogether.show/
-VIBE TOGETHER
-Connect. Celebrate. Experience. 💜
-```
-
-`{{9}}` is populated from the finalized booking with regular price and amount
-paid, plus the Diwali offer price only when the booking actually received it.
-`{{11}}` is `Approved` or `Pending Approval`.
-
-Failure/payment-assistance template:
-
-```text
-✨ VIBE TOGETHER – PAYMENT ASSISTANCE ✨
-Hello {{1}}! 👋
-We noticed that your Vibe Together booking payment was not completed.
-Don't worry! You can try again.
-📋 YOUR BOOKING DETAILS
-Name: {{1}}
-Mobile: {{2}}
-Category: {{3}}
-💳 Payment Amount: {{4}}
-Payment Status: {{5}}
-Your booking has not yet been confirmed.
-Please return to Vibe Together and retry your payment to complete your booking.
-Need assistance? Contact our team.
-🌐 https://www.vibetogether.show/
-VIBE TOGETHER
-Your next story starts here! 💜
-```
-
-For the failure template, `{{1}}` is the customer name, `{{2}}` mobile,
-`{{3}}` category, `{{4}}` applicable amount, and `{{5}}` failed/cancelled
-payment status. Do not include a permanent booking reference.
+Payment notifications require the approved templates
+`vibetogether_payment_success` and `vibetogether_payment_failed` with language
+code `en`. The application rejects other template names or locales rather than
+sending a potentially unapproved template.
+Templates must be submitted and approved in Meta WhatsApp Manager. The success
+template parameters are customer/attendee name, booking reference, ticket
+quantity, numeric amount, and ticket type or confirmation URL. The failure
+template parameters are customer name, booking/request reference, numeric
+amount, and retry URL. Keep the approved positional placeholders aligned with
+these mappings; do not create or send a replacement template from this
+documentation.
 
 The Meta webhook endpoint is
 `https://vibetogether-ahgy.onrender.com/api/whatsapp/webhook`. Configure that
@@ -221,18 +176,116 @@ WhatsApp notification readiness. It never returns credentials. Template
 approval and recipient test allowlisting must still be confirmed in WhatsApp
 Manager.
 
+WhatsApp diagnostic records use the `[WhatsApp Notification]` event and include
+a safe correlation ID, notification source/type, and outcome. Outcomes include
+`SKIPPED` (with a reason), `ATTEMPTED` (immediately before the Meta request),
+`ACCEPTED` (with Meta's message ID, but not a delivery claim), and `REJECTED`
+(HTTP status, numeric Meta error code/subcode when present, a controlled internal
+reason, and retryability). Provider error messages and details are never logged;
+diagnostics omit recipient values and customer or booking data. `DELIVERED`,
+`READ`, and `DELIVERY_FAILED` are emitted only for
+matching signed status callbacks. Text-based admin alerts use `text` as the
+template and `not_applicable` as the language.
+
+Example:
+
+```text
+[WhatsApp Notification] {
+  event: 'whatsapp_notification',
+  outcome: 'ATTEMPTED',
+  source: 'cashfree_verification',
+  notificationType: 'booking_confirmation',
+  correlationId: '4f3a8c219d0e7b61',
+  template: 'vibe_booking_confirmation',
+  language: 'en'
+}
+```
+
+These logs never include provider error details, access tokens, authorization
+headers, customer names, phone numbers, email addresses, event names, booking
+references, message contents, or payment identifiers.
+
 ## Payment-first category bookings
 
 Category booking submissions are saved as seven-day temporary payment sessions
 with no permanent booking reference. In demo mode, the explicit simulator records
 `Demo Paid` and does not charge money. The atomic reference counter preserves the
 first reference `10812026501` and advances beyond all saved references.
+Legacy `SUCCESS` and `verified` payment statuses are normalized to `paid`;
+`demo_paid` remains distinct but terminal, and none of these completed statuses
+can create another Cashfree order. Migration removes `expiresAt` from completed
+bookings while leaving unpaid and pending expiry behavior unchanged.
 
 Provider-verified successes and provider-confirmed terminal failures are
 idempotently upserted by `requestId` into MongoDB `main.bookings-db`. Pending and
 cancelled attempts are not stored as failed results. Startup verifies the
 configured database and that the `bookings-db` collection already exists before
 initializing its unique request index.
+
+## Booking database cutover and migration
+
+The API connects to the MongoDB database named by `MONGODB_DB_NAME`; the current
+server requires this to be `main`. New booking enquiries and payment results use
+the `main.bookings-db` collection. Legacy booking enquiries are read from
+`main.user-db` by the admin compatibility path. The migration reads from
+`user-db` and writes to `bookings-db` within the configured database; it does
+not copy between database names.
+The legacy admin model intentionally declares no TTL or uniqueness indexes so
+application startup will not create the `bookings-db` indexes on `user-db`.
+This does not remove any index already present in MongoDB: before deployment,
+an authorized database operator must verify the live `user-db` TTL index and
+confirm paid legacy records are preserved. Do not change production indexes
+without separate approval.
+
+The server checks that `main.bookings-db` exists before it starts listening.
+It then initializes the booking enquiry and payment-result indexes. A missing
+target collection or an index creation failure prevents startup.
+
+Run both commands from `backend/` with the intended environment loaded. The
+migration script is not exposed as an npm script:
+
+```powershell
+node scripts/migrateBookingsToBookingsDb.js
+node scripts/migrateBookingsToBookingsDb.js --execute
+```
+
+The first command is a dry run by default and performs no writes, but it still
+connects to the configured MongoDB deployment. The second explicitly enables
+writes. Supplying `--dry-run` also keeps the script in read-only mode, even if
+`--execute` is present. Never run either command until the configured URI is
+confirmed to target an approved non-production environment.
+
+Before any execution, verify that `MONGODB_URI` points to the intended MongoDB
+deployment and `MONGODB_DB_NAME` is `main`. Confirm the source collection exists
+and its record count is expected. Take and test a restorable backup of both
+`main.user-db` and `main.bookings-db`, including their index definitions, and
+record pre-migration counts. Review the dry-run totals. The CLI reports counts
+for state conflicts and unmigrated records but does not print their individual
+identities; if either count is nonzero, stop and inspect those records with
+read-only queries before proceeding. After an approved execution, compare
+source and target counts and reconcile records by `requestId`, reference, and
+`_id`; the CLI's target count alone is not proof of completeness.
+
+Review the target index catalog before migration and startup. `BookingEnquiry`
+declares a unique sparse `reference` index, while the legacy `Booking` model
+also uses `bookings-db` and now declares the same unique sparse `reference`
+index. This aligns the model definitions, but does not change an index already
+stored in MongoDB. Inspect the deployed target's actual index catalog and
+reconcile any existing non-sparse `reference_1` index before relying on startup
+or migration. Review duplicate and null/empty reference values before changing
+the catalog. The migration removes blank references from inserted records, but
+does not reconcile existing index definitions or all pre-existing target data.
+The models also declare unique sparse `requestId` indexes, so verify existing
+identifiers and references do not violate the active unique constraints.
+
+The migration uses unordered bulk writes, has no transaction or rollback
+command, and can leave partial target writes if a non-duplicate-key error occurs.
+It retries once when all bulk write errors are duplicate-key races; other
+failures are reported and exit nonzero, but may follow successful writes in the
+same batch. The source collection is not modified. Keep the backup until
+post-migration reconciliation is complete; recovery from partial or incorrect
+target writes requires restoring the backup or a separately planned manual
+reconciliation. No production migration is implied by these instructions.
 
 Run `npm run bookings:reconcile` in the backend directory for a read-only summary
 of referenced unpaid records, demo/actual paid records, failed payment records,
@@ -258,7 +311,7 @@ deployment instead of appearing healthy with unavailable data APIs.
   is empty and fills fields missing from matching legacy records without
   replacing existing values.
 - `POST /api/booking-enquiries` validates and stores a temporary payment session
-  in the `user-db` collection under `MONGODB_DB_NAME`. The request uses `name`,
+  in the `bookings-db` collection under `MONGODB_DB_NAME`. The request uses `name`,
   optional `email`, `mobile`, `categoryId` or `eventId`, `gender`, and a UUID
   `requestId`. Temporary sessions have no reference and expire after seven days.
 - `GET /api/booking-enquiries/:requestId` returns the saved enquiry summary for
@@ -303,6 +356,31 @@ deployment instead of appearing healthy with unavailable data APIs.
   Existing collection names are retained for `events-db`, `user-db`,
   `admin-cred`, `testimonial-db`, and `gallery-db`; other missing domains use
   separate collections.
+- Super Admins can review unmatched Cashfree events at
+  `GET /api/admin/cashfree/unmatched-payments` and inspect one at
+  `GET /api/admin/cashfree/unmatched-payments/:eventId`. Reconciliation uses
+  `POST /api/admin/cashfree/unmatched-payments/:eventId/reconcile` with
+  `{ "requestId": "...", "caseReference": "CASE-1234", "reasonCode": "unmatched_webhook" }`.
+  Supported reason codes are `unmatched_webhook`, `late_payment`, and
+  `identity_confirmed`. The action independently checks the exact Cashfree order
+  and payment IDs, successful status, amount, INR currency, and refund/reversal
+  indicators before matching one existing booking. It never creates a booking or
+  sends a WhatsApp message. Booking, result, unmatched-event, and admin-audit
+  updates run in one MongoDB transaction; MongoDB must support transactions
+  (replica set or sharded cluster). The endpoint fails closed if a transaction
+  cannot be used.
+
+Before enabling reconciliation, verify that the production MongoDB deployment
+supports transactions and review existing non-empty `cfPaymentId` and Cashfree
+`providerPaymentId` values for duplicates. Startup creates unique partial indexes
+for those identifiers and will fail if existing duplicate data prevents index
+creation. The unmatched event collection and its unique payment-ID index are
+initialized at startup. A Super Admin should use the provider's verified payment
+evidence and the exact existing booking `requestId`, open a support case, and
+submit the case reference and controlled reason code. If identity is missing or
+ambiguous, leave the event for manual investigation; do not create a booking or
+mark one paid manually. Reconciliation requires live Cashfree verification and
+does not imply that any production event has been recovered.
 
 Booking requests are limited to five per IP per 15 minutes per server process.
 Public submission and sign-in rate limits are process-local. For multi-instance

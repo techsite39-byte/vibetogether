@@ -1,7 +1,8 @@
-import { BookingEnquiry } from '../models/bookingEnquiry.js'
+import { BookingEnquiry, LegacyBookingEnquiry } from '../models/bookingEnquiry.js'
 import { randomUUID } from 'node:crypto'
 import { nextBookingReference } from './bookingReferences.js'
 import { FIXED_BOOKING_AMOUNT } from './diwaliOffer.js'
+import { isCompletedBookingPaymentStatus } from '../../../src/utils/paymentStatus.js'
 
 const defaultPricing = {
   paymentAmount: FIXED_BOOKING_AMOUNT,
@@ -11,6 +12,13 @@ const defaultPricing = {
   diwaliOfferApplied: false,
   offerActivationAt: null,
   offerExpiresAt: null,
+}
+
+function sameMemberCount(existing, enquiry, field, gender) {
+  if (enquiry[field] == null) return true
+  const existingCount = existing[field] ??
+    (existing.gender === gender ? (existing.ticketQuantity ?? 1) : 0)
+  return existingCount === enquiry[field]
 }
 
 function sameRequest(existing, enquiry) {
@@ -23,8 +31,8 @@ function sameRequest(existing, enquiry) {
     (existing.ticketType ?? 'general-admission') === (enquiry.ticketType ?? 'general-admission') &&
     (existing.ticketQuantity ?? 1) === enquiry.ticketQuantity &&
     existing.gender === enquiry.gender &&
-    (existing.maleCount ?? (existing.gender === 'Male' ? (existing.ticketQuantity ?? 1) : 0)) === enquiry.maleCount &&
-    (existing.femaleCount ?? (existing.gender === 'Female' ? (existing.ticketQuantity ?? 1) : 0)) === enquiry.femaleCount &&
+    sameMemberCount(existing, enquiry, 'maleCount', 'Male') &&
+    sameMemberCount(existing, enquiry, 'femaleCount', 'Female') &&
     JSON.stringify(existing.maleMemberNames ?? Array(existing.maleCount ?? 0).fill('')) === JSON.stringify(enquiry.maleMemberNames ?? Array(enquiry.maleCount ?? 0).fill('')) &&
     JSON.stringify(existing.femaleMemberNames ?? Array(existing.femaleCount ?? 0).fill('')) === JSON.stringify(enquiry.femaleMemberNames ?? Array(enquiry.femaleCount ?? 0).fill('')) &&
     JSON.stringify(existing.maleMemberMobiles ?? Array(existing.maleCount ?? 0).fill('')) === JSON.stringify(enquiry.maleMemberMobiles ?? Array(enquiry.maleCount ?? 0).fill('')) &&
@@ -99,14 +107,19 @@ export async function findBookingEnquiry(requestId, bookingEnquiryModel = Bookin
   return bookingEnquiryModel.findOne({ requestId }).lean()
 }
 
-export async function findBookingEnquiryByReference(reference, bookingEnquiryModel = BookingEnquiry) {
+export async function findBookingEnquiryByReference(
+  reference,
+  bookingEnquiryModel = BookingEnquiry,
+  legacyBookingEnquiryModel = LegacyBookingEnquiry,
+) {
   if (!reference || typeof reference !== 'string') return null
   const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference.trim())
-  return bookingEnquiryModel.findOne(
-    isObjectId
-      ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
-      : { $or: [{ reference }, { requestId: reference }] }
-  ).lean()
+  const query = isObjectId
+    ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
+    : { $or: [{ reference }, { requestId: reference }] }
+  const found = await bookingEnquiryModel.findOne(query).lean()
+  if (found) return found
+  return legacyBookingEnquiryModel.findOne(query).lean()
 }
 
 export async function optOutBookingWhatsApp(requestId) {
@@ -301,7 +314,7 @@ export async function submitBookingEnquiryUpiPayment(
     !existing ||
     existing.status === 'cancelled' ||
     existing.reference ||
-    existing.paymentStatus === 'paid' ||
+    isCompletedBookingPaymentStatus(existing.paymentStatus) ||
     previousPayment?.status === 'Submitted for Verification' ||
     previousPayment?.status === 'Verified' ||
     existing.paymentOrderId ||

@@ -59,6 +59,17 @@ async function createHarness(t, role = 'super_admin') {
       }
     },
   }
+  const legacyBookingEnquiryModel = {
+    find() {
+      return { limit() { return this }, lean: async () => [] }
+    },
+    async findOne() {
+      return null
+    },
+    findOneAndDelete() {
+      return { lean: async () => null }
+    },
+  }
   const sessionModel = createSessionModel()
   const app = express()
   app.use(express.json())
@@ -71,6 +82,7 @@ async function createHarness(t, role = 'super_admin') {
   }))
   app.use('/api/admin', createAdminRouter({
     adminModel,
+    legacyBookingEnquiryModel,
     sessionModel,
     sessionSecret,
   }))

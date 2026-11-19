@@ -188,6 +188,15 @@ const whatsappFailureTemplateName = (
   process.env.WHATSAPP_FAILURE_TEMPLATE_NAME?.trim() ||
   'vibetogether_payment_failed'
 )
+if (whatsappBookingTemplateLanguage !== 'en') {
+  throw new Error('WHATSAPP_BOOKING_TEMPLATE_LANGUAGE must be en.')
+}
+if (
+  whatsappSuccessTemplateName !== 'vibetogether_payment_success' ||
+  whatsappFailureTemplateName !== 'vibetogether_payment_failed'
+) {
+  throw new Error('WhatsApp payment templates must use the approved VibeTogether template names.')
+}
 const whatsappSuccessTicketParam = (
   process.env.WHATSAPP_SUCCESS_TICKET_PARAM?.trim() ||
   'type'

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
 import { afterEach, test } from 'node:test'
 import { createApp } from '../src/app.js'
+import { createCashfreePaymentService } from '../src/services/cashfreePayments.js'
 
 const servers = []
 const webhookSecret = 'cashfree-webhook-test-secret'
@@ -127,4 +128,159 @@ test('accepts webhooks with application/*+json content-type on both primary and 
   assert.equal(received.length, 1)
   assert.equal(received[0].payload.type, 'PAYMENT_SUCCESS_WEBHOOK')
   assert.deepEqual(received[0].rawBody, Buffer.from(body))
+})
+
+test('logs Cashfree failure notification results and suppresses duplicate webhook sends', async () => {
+  const requestId = 'cashfree-payment-session-sensitive-id'
+  const notificationCalls = []
+  const logs = []
+  let seenFailure = false
+  const originalInfo = console.info
+  const originalError = console.error
+  console.info = (message, details) => logs.push({ message, details })
+  console.error = (message, details) => logs.push({ message, details })
+  const baseUrl = await startServer({
+    cashfreeSecretKey: webhookSecret,
+    cashfreePayments: {
+      async handleWebhook() {
+        if (seenFailure) {
+          return {
+            action: 'duplicate',
+            duplicate: true,
+            booking: { requestId, paymentStatus: 'failed', paymentFailureReason: 'failed' },
+          }
+        }
+        seenFailure = true
+        return {
+          action: 'failed',
+          booking: { requestId, paymentStatus: 'failed', paymentFailureReason: 'failed' },
+        }
+      },
+    },
+    whatsappNotifications: {
+      async notify(id, type, options) {
+        notificationCalls.push({ id, type, options })
+        return { failed: true }
+      },
+    },
+  })
+
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const body = JSON.stringify({
+        type: 'PAYMENT_FAILED_WEBHOOK',
+        data: { payment: { payment_status: 'FAILED', cf_payment_id: 'cf-test' } },
+      })
+      const headers = signedHeaders(body)
+      const response = await fetch(`${baseUrl}/api/payments/cashfree/webhook`, {
+        method: 'POST',
+        headers,
+        body,
+      })
+      assert.equal(response.status, 200)
+    }
+  } finally {
+    console.info = originalInfo
+    console.error = originalError
+  }
+
+  assert.equal(notificationCalls.length, 1)
+  assert.equal(notificationCalls[0].type, 'payment_assistance')
+  assert.equal(notificationCalls[0].options.source, 'cashfree_webhook')
+  assert.ok(logs.some(({ details }) =>
+    details?.stage === 'caller_result' && details.outcome === 'REJECTED' &&
+    details.source === 'cashfree_webhook',
+  ))
+  assert.ok(logs.some(({ details }) =>
+    details?.outcome === 'SKIPPED' && details.reason === 'Duplicate Cashfree webhook',
+  ))
+  assert.equal(JSON.stringify(logs).includes(requestId), false)
+})
+
+test('does not acknowledge an unmatched payment when durable storage fails', async () => {
+  const logs = []
+  const originalError = console.error
+  console.error = (...args) => logs.push(args)
+  let baseUrl
+  try {
+    const payments = createCashfreePaymentService({
+      appId: 'test-app',
+      secretKey: webhookSecret,
+      bookingEnquiryModel: { async findOne() { return null } },
+      unmatchedPaymentModel: {
+        async findOne() { return null },
+        async create() { throw new Error('injected unmatched store failure') },
+      },
+      fetchFn: async () => { throw new Error('Unexpected provider request') },
+    })
+    baseUrl = await startServer({
+      cashfreeSecretKey: webhookSecret,
+      cashfreePayments: payments,
+    })
+    const body = JSON.stringify({
+      type: 'PAYMENT_SUCCESS_WEBHOOK',
+      data: {
+        order: { order_id: 'private-order-id' },
+        payment: { cf_payment_id: 'private-payment-id', payment_status: 'SUCCESS' },
+      },
+    })
+    const response = await fetch(`${baseUrl}/api/payments/cashfree/webhook`, {
+      method: 'POST',
+      headers: signedHeaders(body),
+      body,
+    })
+    assert.equal(response.status, 503)
+    assert.deepEqual(await response.json(), {
+      message: 'Cashfree payment status could not be recorded.',
+    })
+  } finally {
+    console.error = originalError
+  }
+
+  const serializedLogs = JSON.stringify(logs)
+  assert.equal(serializedLogs.includes('private-order-id'), false)
+  assert.equal(serializedLogs.includes('private-payment-id'), false)
+  assert.equal(serializedLogs.includes('injected unmatched store failure'), false)
+})
+
+test('acknowledges an unmatched success only after durable event capture completes', async () => {
+  let persistedRecord = null
+  const payments = createCashfreePaymentService({
+    appId: 'test-app',
+    secretKey: webhookSecret,
+    bookingEnquiryModel: { async findOne() { return null } },
+    unmatchedPaymentModel: {
+      async findOne() { return null },
+      async create(record) {
+        persistedRecord = { ...record }
+      },
+    },
+    fetchFn: async () => { throw new Error('Unexpected provider request') },
+  })
+  const baseUrl = await startServer({
+    cashfreeSecretKey: webhookSecret,
+    cashfreePayments: payments,
+  })
+  const body = JSON.stringify({
+    type: 'PAYMENT_SUCCESS_WEBHOOK',
+    data: {
+      order: { order_id: 'stored-order-id' },
+      payment: {
+        cf_payment_id: 'stored-payment-id',
+        payment_status: 'SUCCESS',
+        payment_amount: 249,
+        payment_currency: 'INR',
+      },
+    },
+  })
+  const response = await fetch(`${baseUrl}/api/payments/cashfree/webhook`, {
+    method: 'POST',
+    headers: signedHeaders(body),
+    body,
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { received: true })
+  assert.equal(persistedRecord.providerOrderId, 'stored-order-id')
+  assert.equal(persistedRecord.providerPaymentId, 'stored-payment-id')
 })

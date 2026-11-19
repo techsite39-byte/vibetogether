@@ -33,7 +33,7 @@ const bookingResultSchema = new mongoose.Schema(
     providerOrderId: { type: String, maxlength: 100, default: '' },
     paymentStatus: {
       type: String,
-      enum: ['SUCCESS', 'FAILED'],
+      enum: ['SUCCESS', 'FAILED', 'paid', 'failed'],
       required: true,
     },
     bookingStatus: { type: String, required: true, maxlength: 30 },
@@ -45,10 +45,21 @@ const bookingResultSchema = new mongoose.Schema(
   {
     collection: 'bookings-db',
     versionKey: false,
+    strict: false,
   },
 )
 
 bookingResultSchema.index({ requestId: 1 }, { unique: true, sparse: true })
+bookingResultSchema.index(
+  { paymentProvider: 1, providerPaymentId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      paymentProvider: 'cashfree',
+      providerPaymentId: { $type: 'string', $gt: '' },
+    },
+  },
+)
 
 export const BookingResult =
   mongoose.models.BookingResult ??

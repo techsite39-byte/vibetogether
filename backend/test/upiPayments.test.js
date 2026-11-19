@@ -169,3 +169,21 @@ test('a rejected UPI submission records a reason and does not issue a booking re
   assert.equal(rejected.enquiry.reference, undefined)
   assert.ok(rejected.enquiry.upiPayments[0].adminVerifiedAt)
 })
+
+test('completed legacy payment statuses cannot submit another UPI payment', async () => {
+  for (const paymentStatus of ['paid', 'SUCCESS', 'demo_paid', 'verified']) {
+    const record = bookingRecord()
+    record.paymentStatus = paymentStatus
+    const model = createBookingModel(record)
+
+    await assert.rejects(
+      submitBookingEnquiryUpiPayment(
+        model.record.requestId,
+        { utr: '123456789012', upiId: 'test@upi', pricing },
+        { bookingEnquiryModel: model },
+      ),
+      (error) => error.status === 409,
+    )
+    assert.equal(model.record.upiPayments.length, 0)
+  }
+})

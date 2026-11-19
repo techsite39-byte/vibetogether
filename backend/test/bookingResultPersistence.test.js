@@ -14,7 +14,12 @@ test('targets the existing bookings-db collection with a unique request identifi
 })
 
 test('upserts terminal results once and never downgrades a confirmed success', async () => {
-  const bookingResultModel = createMockBookingResultModel()
+  const bookingResultModel = createMockBookingResultModel({
+    requestId: 'request-stable-1',
+    paymentStatus: 'unpaid',
+    expiresAt: new Date('2026-01-08T00:00:00.000Z'),
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  })
   const booking = {
     requestId: 'request-stable-1',
     reference: 'VT-REF-001',
@@ -51,4 +56,34 @@ test('upserts terminal results once and never downgrades a confirmed success', a
   assert.equal(bookingResultModel.record.eventName, 'Live Music')
   assert.equal(bookingResultModel.record.amount, 498)
   assert.equal(bookingResultModel.record.createdAt.toISOString(), '2026-01-01T00:00:00.000Z')
+  assert.equal('expiresAt' in bookingResultModel.record, false)
+})
+
+test('preserves enquiry payment status values when result data shares its document', async () => {
+  for (const [paymentStatus, resultStatus] of [['paid', 'SUCCESS'], ['failed', 'FAILED']]) {
+    const bookingResultModel = createMockBookingResultModel({
+      requestId: `request-${paymentStatus}`,
+      paymentStatus: 'unpaid',
+      expiresAt: new Date('2026-01-08T00:00:00.000Z'),
+    })
+    const booking = {
+      requestId: `request-${paymentStatus}`,
+      name: 'Test Attendee',
+      mobile: '+919876543210',
+      paymentAmount: 249,
+      paymentStatus,
+    }
+
+    await persistBookingResult(booking, {
+      paymentStatus: resultStatus,
+      paymentProvider: 'cashfree',
+      providerPaymentId: 'cf-payment-1',
+    }, { bookingResultModel })
+
+    assert.equal(bookingResultModel.record.paymentStatus, paymentStatus)
+    assert.equal(
+      'expiresAt' in bookingResultModel.record,
+      paymentStatus !== 'paid',
+    )
+  }
 })

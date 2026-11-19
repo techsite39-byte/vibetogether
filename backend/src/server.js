@@ -20,11 +20,20 @@ import {
 import mongoose from 'mongoose'
 import { initializeAdminRecords } from './services/adminSetup.js'
 import { createCashfreePaymentService } from './services/cashfreePayments.js'
+import { createCashfreeRecoveryService } from './services/cashfreeRecovery.js'
 import { createDiwaliOfferService } from './services/diwaliOffer.js'
 import { createWhatsAppNotificationService } from './services/whatsappNotifications.js'
 import { DiwaliOffer } from './models/diwaliOffer.js'
+import { BookingEnquiry } from './models/bookingEnquiry.js'
 import { BookingResult } from './models/bookingResult.js'
-import { AdminCredential, AdminSession, PasswordReset } from './models/adminRecords.js'
+import { UnmatchedCashfreePayment } from './models/unmatchedCashfreePayment.js'
+import {
+  ActivityLog,
+  AdminCredential,
+  AdminSession,
+  BookingReferenceCounter,
+  PasswordReset,
+} from './models/adminRecords.js'
 import {
   consumeGoogleOAuthTransaction,
   createGoogleOAuthTransaction,
@@ -47,6 +56,7 @@ const cashfreePayments = createCashfreePaymentService({
   frontendUrl: config.frontendUrl,
   diwaliOfferService,
 })
+const cashfreeRecovery = createCashfreeRecoveryService({ payments: cashfreePayments })
 const whatsappNotifications = createWhatsAppNotificationService({
   phoneNumberId: config.whatsappPhoneNumberId,
   accessToken: config.whatsappAccessToken,
@@ -90,6 +100,7 @@ const app = createApp({
     verifyUpiPayment: verifyBookingEnquiryUpiPayment,
   },
   cashfreePayments,
+  cashfreeRecovery,
   cashfreeConfigured: config.cashfreeConfigured,
   cashfreeSecretKey: config.cashfreeSecretKey,
   paymentProvider: config.paymentProvider,
@@ -126,7 +137,11 @@ try {
   if (!bookingsCollectionExists) {
     throw new Error('Required MongoDB collection "bookings-db" does not exist in database "main".')
   }
+  await BookingEnquiry.init()
   await BookingResult.init()
+  await UnmatchedCashfreePayment.init()
+  await ActivityLog.init()
+  await BookingReferenceCounter.init()
   await DiwaliOffer.init()
   await diwaliOfferService.getOffer()
   await ensureEventCatalog()

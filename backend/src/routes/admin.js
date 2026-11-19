@@ -15,14 +15,24 @@ import {
   Testimonial,
   User,
 } from '../models/adminRecords.js'
-import { BookingEnquiry } from '../models/bookingEnquiry.js'
+import { BookingEnquiry, LegacyBookingEnquiry } from '../models/bookingEnquiry.js'
+import { UnmatchedCashfreePayment } from '../models/unmatchedCashfreePayment.js'
+
 import { Event } from '../models/event.js'
 import { MediaAsset } from '../models/mediaAsset.js'
+import {
+  logWhatsAppNotification,
+  logWhatsAppNotificationResult,
+} from '../services/whatsappNotifications.js'
 import {
   isBuiltInEventId,
   markBuiltInEventDeleted,
 } from '../services/events.js'
 import { hashAdminPassword } from '../auth/adminAuth.js'
+import {
+  isCompletedBookingPaymentStatus,
+  normalizeBookingPaymentStatus,
+} from '../../../src/utils/paymentStatus.js'
 
 const resourceModels = {
   users: User,
@@ -530,7 +540,7 @@ function bookingFromEnquiry(enquiry) {
     offerActivationAt: enquiry.offerActivationAt ?? null,
     offerExpiresAt: enquiry.offerExpiresAt ?? null,
     currency: 'INR',
-    paymentStatus: enquiry.paymentStatus,
+    paymentStatus: normalizeBookingPaymentStatus(enquiry.paymentStatus || 'unpaid'),
     paymentProvider: enquiry.paymentProvider ?? '',
     paymentReference: enquiry.paymentReference ?? '',
     paymentOrderId: enquiry.paymentOrderId ?? '',
@@ -695,20 +705,83 @@ function bookingEnquiryMatchedBy(enquiry, identifier) {
   return 'repository-match'
 }
 
-export function mergeBookingRecords(bookings, enquiries) {
-  return [
-    ...bookings.map((item) => ({ ...jsonRecord(item), source: 'booking' })),
-    ...enquiries.map(bookingFromEnquiry),
-  ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+export function mergeBookingRecords(bookings = [], enquiries = [], legacyEnquiries = []) {
+  const seen = new Set()
+  const records = []
+
+  const add = (formatted) => {
+    if (!formatted) return
+    const identities = [
+      ['requestId', formatted.requestId],
+      ['reference', formatted.reference],
+      ['id', formatted.id],
+    ]
+      .filter(([, identity]) => identity != null && String(identity).trim() !== '')
+      .map(([field, identity]) => `${field}:${String(identity)}`)
+    if (!identities.length || identities.some((identity) => seen.has(identity))) return
+    identities.forEach((identity) => seen.add(identity))
+    records.push(formatted)
+  }
+
+  for (const item of enquiries) {
+    add(bookingFromEnquiry(item))
+  }
+  for (const item of legacyEnquiries) {
+    add(bookingFromEnquiry(item))
+  }
+  for (const item of bookings) {
+    add({ ...jsonRecord(item), source: 'booking' })
+  }
+
+  return records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 }
 
-async function listBookings(request) {
+export function summarizeBookingRecords(bookings = [], enquiries = [], legacyEnquiries = []) {
+  const records = mergeBookingRecords(bookings, enquiries, legacyEnquiries)
+  const statuses = {}
+  const monthlyCounts = new Map()
+
+  for (const record of records) {
+    const status = record.status || 'unknown'
+    statuses[status] = (statuses[status] ?? 0) + 1
+
+    const createdAt = new Date(record.createdAt)
+    if (!Number.isFinite(createdAt.getTime())) continue
+    const month = `${createdAt.getUTCFullYear()}-${String(createdAt.getUTCMonth() + 1).padStart(2, '0')}`
+    monthlyCounts.set(month, (monthlyCounts.get(month) ?? 0) + 1)
+  }
+
+  return {
+    records,
+    counts: {
+      bookings: records.filter(
+        (record) =>
+          record.source === 'booking' ||
+          (record.source === 'booking-enquiry' && String(record.reference ?? '').trim()),
+      ).length,
+      bookingEnquiries: records.filter(
+        (record) => record.source === 'booking-enquiry' && String(record.reference ?? '').trim(),
+      ).length,
+    },
+    bookingStatuses: statuses,
+    bookingTrends: [...monthlyCounts]
+      .sort(([first], [second]) => first.localeCompare(second))
+      .slice(-12)
+      .map(([label, value]) => ({ label, value })),
+    recentBookings: records.slice(0, 5).map(jsonRecord),
+  }
+}
+
+async function listBookings(request, legacyBookingEnquiryModel = LegacyBookingEnquiry) {
   const { page, pageSize } = parsePage(request)
-  const [bookings, enquiries] = await Promise.all([
+  const [bookings, enquiries, legacyEnquiries] = await Promise.all([
     Booking.find({}).sort({ createdAt: -1 }).lean(),
     BookingEnquiry.find({}).sort({ createdAt: -1 }).lean(),
+    legacyBookingEnquiryModel
+      ? legacyBookingEnquiryModel.find({}).sort({ createdAt: -1 }).lean()
+      : Promise.resolve([]),
   ])
-  let items = mergeBookingRecords(bookings, enquiries)
+  let items = mergeBookingRecords(bookings, enquiries, legacyEnquiries)
   const status = typeof request.query.status === 'string'
     ? request.query.status.trim()
     : ''
@@ -759,13 +832,17 @@ async function listBookings(request) {
   }
 }
 
-async function getWorkspace({ diwaliOfferService } = {}) {
+async function getWorkspace({
+  diwaliOfferService,
+  legacyBookingEnquiryModel = LegacyBookingEnquiry,
+} = {}) {
   const [
     users,
     organizers,
     events,
     bookings,
     bookingEnquiries,
+    legacyBookingEnquiries,
     categories,
     testimonials,
     subscribers,
@@ -781,6 +858,9 @@ async function getWorkspace({ diwaliOfferService } = {}) {
     Event.find({}).sort({ date: 1 }).limit(500).lean(),
     Booking.find({}).sort({ createdAt: -1 }).limit(500).lean(),
     BookingEnquiry.find({}).sort({ createdAt: -1 }).limit(500).lean(),
+    legacyBookingEnquiryModel
+      ? legacyBookingEnquiryModel.find({}).sort({ createdAt: -1 }).limit(500).lean()
+      : Promise.resolve([]),
     Category.find({}).sort({ title: 1 }).limit(500).lean(),
     Testimonial.find({}).sort({ createdAt: -1 }).limit(500).lean(),
     Subscriber.find({}).sort({ createdAt: -1 }).limit(500).lean(),
@@ -796,7 +876,7 @@ async function getWorkspace({ diwaliOfferService } = {}) {
     users: users.map(jsonRecord),
     organizers: organizers.map(jsonRecord),
     events: events.map(jsonRecord),
-    bookings: mergeBookingRecords(bookings, bookingEnquiries),
+    bookings: mergeBookingRecords(bookings, bookingEnquiries, legacyBookingEnquiries),
     categories: categories.map(jsonRecord),
     testimonials: testimonials.map(jsonRecord),
     subscribers: subscribers.map(jsonRecord),
@@ -809,33 +889,34 @@ async function getWorkspace({ diwaliOfferService } = {}) {
   }
 }
 
-async function getOverview() {
+async function getOverview(legacyBookingEnquiryModel = LegacyBookingEnquiry) {
   const [
     users,
     organizers,
     events,
-    bookings,
-    bookingEnquiries,
     categories,
     testimonials,
     subscribers,
     enquiries,
-    recentBookings,
+    bookingRecords,
+    bookingEnquiryRecords,
+    legacyBookingEnquiryRecords,
     recentUsers,
     activity,
     monthlyUsers,
-    monthlyBookings,
   ] = await Promise.all([
     User.countDocuments(),
     Organizer.countDocuments(),
     Event.countDocuments(),
-    Booking.countDocuments(),
-    BookingEnquiry.countDocuments({ reference: { $exists: true, $ne: '' } }),
     Category.countDocuments(),
     Testimonial.countDocuments(),
     Subscriber.countDocuments({ status: 'subscribed' }),
     Enquiry.countDocuments({ status: 'pending' }),
-    Booking.find({}).sort({ createdAt: -1 }).limit(5).lean(),
+    Booking.find({}).sort({ createdAt: -1 }).lean(),
+    BookingEnquiry.find({}).sort({ createdAt: -1 }).lean(),
+    legacyBookingEnquiryModel
+      ? legacyBookingEnquiryModel.find({}).sort({ createdAt: -1 }).lean()
+      : Promise.resolve([]),
     User.find({}).sort({ createdAt: -1 }).limit(5).lean(),
     ActivityLog.find({}).sort({ createdAt: -1 }).limit(5).lean(),
     User.aggregate([
@@ -843,34 +924,32 @@ async function getOverview() {
       { $sort: { _id: 1 } },
       { $limit: 12 },
     ]),
-    Booking.aggregate([
-      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } }, count: { $sum: 1 } } },
-      { $sort: { _id: 1 } },
-      { $limit: 12 },
-    ]),
   ])
-  const [bookingStatuses, eventStatuses] = await Promise.all([
-    Booking.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
-    Event.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+  const eventStatuses = await Event.aggregate([
+    { $group: { _id: '$status', count: { $sum: 1 } } },
   ])
+  const bookingSummary = summarizeBookingRecords(
+    bookingRecords,
+    bookingEnquiryRecords,
+    legacyBookingEnquiryRecords,
+  )
 
   return {
     counts: {
       users,
       organizers,
       events,
-      bookings: bookings + bookingEnquiries,
-      bookingEnquiries,
+      ...bookingSummary.counts,
       categories,
       testimonials,
       subscribers,
       pendingEnquiries: enquiries,
     },
-    bookingStatuses: Object.fromEntries(bookingStatuses.map(({ _id, count }) => [_id, count])),
+    bookingStatuses: bookingSummary.bookingStatuses,
     eventStatuses: Object.fromEntries(eventStatuses.map(({ _id, count }) => [_id, count])),
     userGrowth: monthlyUsers.map(({ _id, count }) => ({ label: _id, value: count })),
-    bookingTrends: monthlyBookings.map(({ _id, count }) => ({ label: _id, value: count })),
-    recentBookings: recentBookings.map(jsonRecord),
+    bookingTrends: bookingSummary.bookingTrends,
+    recentBookings: bookingSummary.recentBookings,
     recentUsers: recentUsers.map(jsonRecord),
     recentActivity: activity.map(jsonRecord),
   }
@@ -880,7 +959,10 @@ export function createAdminRouter({
   sessionSecret,
   adminModel = AdminCredential,
   sessionModel = AdminSession,
+  legacyBookingEnquiryModel = LegacyBookingEnquiry,
   bookingEnquiryRepository,
+  cashfreeRecovery,
+  unmatchedPaymentModel = UnmatchedCashfreePayment,
   diwaliOfferService,
   whatsappNotifications,
 }) {
@@ -902,7 +984,7 @@ export function createAdminRouter({
 
   router.get('/workspace', async (_request, response, next) => {
     try {
-      response.json(await getWorkspace({ diwaliOfferService }))
+      response.json(await getWorkspace({ diwaliOfferService, legacyBookingEnquiryModel }))
     } catch (error) {
       next(error)
     }
@@ -910,9 +992,152 @@ export function createAdminRouter({
 
   router.get('/overview', async (_request, response, next) => {
     try {
-      response.json(await getOverview())
+      response.json(await getOverview(legacyBookingEnquiryModel))
     } catch (error) {
       next(error)
+    }
+  })
+
+  const serializeUnmatchedCashfreePayment = (record) => ({
+    id: String(record._id),
+    providerOrderId: record.providerOrderId,
+    providerPaymentId: record.providerPaymentId,
+    amount: record.amount,
+    currency: record.currency,
+    providerStatus: record.providerStatus,
+    providerEventType: record.providerEventType,
+    eventTime: record.eventTime ?? null,
+    processingStatus: record.processingStatus,
+    receivedAt: record.receivedAt,
+    lastSeenAt: record.lastSeenAt,
+    reconciledAt: record.reconciledAt ?? null,
+    reconciledBy: record.reconciledBy ?? '',
+    caseReference: record.caseReference ?? '',
+    reconciliationReason: record.reconciliationReason ?? '',
+    reconciliationOutcome: record.reconciliationOutcome ?? '',
+    matchedRequestId: record.matchedRequestId ?? '',
+    lastAttemptedAt: record.lastAttemptedAt ?? null,
+    lastAttemptedBy: record.lastAttemptedBy ?? '',
+    lastAttemptCaseReference: record.lastAttemptCaseReference ?? '',
+    lastAttemptReason: record.lastAttemptReason ?? '',
+    lastAttemptOutcome: record.lastAttemptOutcome ?? '',
+  })
+
+  router.get('/cashfree/unmatched-payments', async (request, response, next) => {
+    try {
+      if (!requireSuperAdmin(request, response)) return
+      const { page, pageSize } = parsePage(request)
+      const status = typeof request.query.status === 'string'
+        ? request.query.status.trim()
+        : ''
+      const allowedStatuses = new Set([
+        'unmatched',
+        'review_required',
+        'reconciliation_failed',
+        'reconciled',
+      ])
+      if (status && !allowedStatuses.has(status)) {
+        response.status(400).json({ message: 'Invalid unmatched payment status.' })
+        return
+      }
+
+      const filter = status ? { processingStatus: status } : {}
+      const [items, total] = await Promise.all([
+        unmatchedPaymentModel.find(filter)
+          .sort({ receivedAt: -1 })
+          .skip((page - 1) * pageSize)
+          .limit(pageSize)
+          .lean(),
+        unmatchedPaymentModel.countDocuments(filter),
+      ])
+      response.json({
+        items: items.map(serializeUnmatchedCashfreePayment),
+        page,
+        pageSize,
+        total,
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.get('/cashfree/unmatched-payments/:eventId', async (request, response, next) => {
+    try {
+      if (!requireSuperAdmin(request, response)) return
+      if (!mongoose.Types.ObjectId.isValid(request.params.eventId)) {
+        response.status(404).json({ message: 'Unmatched Cashfree payment was not found.' })
+        return
+      }
+      const record = await unmatchedPaymentModel.findById(request.params.eventId).lean()
+      if (!record) {
+        response.status(404).json({ message: 'Unmatched Cashfree payment was not found.' })
+        return
+      }
+      response.json({ item: serializeUnmatchedCashfreePayment(record) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/cashfree/unmatched-payments/:eventId/reconcile', async (request, response, next) => {
+    try {
+      if (!requireSuperAdmin(request, response)) return
+      if (!mongoose.Types.ObjectId.isValid(request.params.eventId)) {
+        response.status(404).json({ message: 'Unmatched Cashfree payment was not found.' })
+        return
+      }
+      if (typeof cashfreeRecovery?.reconcile !== 'function') {
+        response.status(503).json({ message: 'Cashfree reconciliation is unavailable.' })
+        return
+      }
+
+      const requestId = typeof request.body?.requestId === 'string'
+        ? request.body.requestId.trim()
+        : ''
+      const caseReference = typeof request.body?.caseReference === 'string'
+        ? request.body.caseReference.trim().toUpperCase()
+        : ''
+      const reasonCode = typeof request.body?.reasonCode === 'string'
+        ? request.body.reasonCode.trim()
+        : ''
+      if (
+        !requestId ||
+        requestId.length > 80 ||
+        !/^(?:CASE|CS|INC)-\d{3,8}$/.test(caseReference) ||
+        !['unmatched_webhook', 'late_payment', 'identity_confirmed'].includes(reasonCode)
+      ) {
+        response.status(400).json({
+          message: 'A valid booking request ID, case reference, and reconciliation reason are required.',
+        })
+        return
+      }
+
+      const result = await cashfreeRecovery.reconcile({
+        eventId: request.params.eventId,
+        requestId,
+        actor: request.admin,
+        caseReference,
+        reasonCode,
+      })
+      response.status(result.reconciled ? 200 : 409).json(result)
+    } catch (error) {
+      const errorCode = Number(error?.code)
+      const errorStatus = Number(error?.status)
+      const status = Number.isInteger(errorStatus) && errorStatus >= 400 && errorStatus <= 599
+        ? errorStatus
+        : 500
+      const message = status < 500 && typeof error?.message === 'string'
+        ? error.message
+        : 'Cashfree reconciliation could not be completed.'
+      const safeError = Object.assign(new Error(message), {
+        status,
+        code: Number.isSafeInteger(errorCode) ? errorCode : null,
+      })
+      console.error('[Admin Cashfree recovery] Request failed.', {
+        status,
+        code: safeError.code,
+      })
+      next(safeError)
     }
   })
 
@@ -932,7 +1157,7 @@ export function createAdminRouter({
 
   router.get('/bookings', async (request, response, next) => {
     try {
-      response.json(await listBookings(request))
+      response.json(await listBookings(request, legacyBookingEnquiryModel))
     } catch (error) {
       next(error)
     }
@@ -1031,6 +1256,12 @@ export function createAdminRouter({
           target,
           attendeeIndex,
           force: true,
+          source: 'admin_manual_retry',
+        })
+        logWhatsAppNotificationResult(result?.result ?? result, {
+          source: 'admin_manual_retry',
+          notificationType: target === 'admin' ? 'admin_alert' : target === 'attendee' ? 'booking_confirmation' : 'payment_assistance',
+          identity: enquiry.requestId,
         })
         const updated = await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
         response.json({
@@ -1045,6 +1276,12 @@ export function createAdminRouter({
       }
 
       if (!enquiry.whatsappConsent) {
+        logWhatsAppNotification('SKIPPED', {
+          source: 'admin_manual_retry',
+          notificationType: 'payment_assistance',
+          identity: enquiry.requestId,
+          reason: enquiry.whatsappOptedOutAt ? 'Customer opted out' : 'Customer consent missing',
+        })
         response.status(400).json({ message: 'Customer has not provided WhatsApp notification consent.' })
         return
       }
@@ -1058,9 +1295,18 @@ export function createAdminRouter({
         })
         return
       }
-      const isPaid = ['paid', 'verified', 'demo_paid'].includes(enquiry.paymentStatus)
+      const isPaid = isCompletedBookingPaymentStatus(enquiry.paymentStatus)
       const type = isPaid ? 'booking_confirmation' : 'payment_assistance'
-      const result = await whatsappNotifications?.notify?.(enquiry.requestId, type, { force: true, retry: true })
+      const result = await whatsappNotifications?.notify?.(enquiry.requestId, type, {
+        force: true,
+        retry: true,
+        source: 'admin_manual_retry',
+      })
+      logWhatsAppNotificationResult(result, {
+        source: 'admin_manual_retry',
+        notificationType: type,
+        identity: enquiry.requestId,
+      })
       const updated = await bookingEnquiryRepository?.findByReference?.(identifier) ?? enquiry
       response.json({
         message: result?.uncertain
@@ -1208,74 +1454,165 @@ export function createAdminRouter({
     }
   })
 
+  const runBookingLookupQuery = async (model, query) => {
+    if (!model || typeof model.find !== 'function') return []
+    try {
+      const cursor = model.find(query)
+      if (typeof cursor?.limit === 'function') {
+        cursor.limit(2)
+      }
+      if (typeof cursor?.lean === 'function') {
+        return await cursor.lean()
+      }
+      if (typeof cursor?.exec === 'function') {
+        return await cursor.exec()
+      }
+      return (await Promise.resolve(cursor)) ?? []
+    } catch {
+      return []
+    }
+  }
+
   router.patch('/bookings/:reference', async (request, response, next) => {
     try {
-      const { reference } = request.params
+      const reference = request.params.reference?.trim?.() ?? ''
+      if (!reference) {
+        response.status(404).json({ message: 'Booking record was not found.' })
+        return
+      }
       const status = request.body?.status
       if (!bookingStatusValues.includes(status)) {
         response.status(400).json({ message: 'Choose a supported booking status.' })
         return
       }
 
-      const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference?.trim?.() ?? '')
-      let booking = await Booking.findOne(
-        isObjectId ? { $or: [{ reference }, { _id: reference.trim() }] } : { reference }
-      ).exec()
-      if (booking) {
-        if (booking.status === 'cancelled' && status !== 'cancelled') {
-          response.status(409).json({ message: 'A cancelled booking cannot be reactivated.' })
-          return
-        }
-        if (status === 'cancelled' && booking.status !== 'cancelled') {
-          if (booking.paymentStatus !== 'not_required') {
-            response.status(409).json({ message: 'Paid bookings must be cancelled by the payment service.' })
-            return
-          }
-          const cancelledAt = new Date()
-          const cancelled = await Booking.findOneAndUpdate(
-            isObjectId
-              ? { $or: [{ reference }, { _id: reference.trim() }], status: { $ne: 'cancelled' }, paymentStatus: 'not_required' }
-              : { reference, status: { $ne: 'cancelled' }, paymentStatus: 'not_required' },
-            { $set: { status: 'cancelled', cancelledAt } },
-            { new: true },
-          ).exec()
-          if (cancelled) {
-            await Event.updateOne(
-              { id: cancelled.eventId },
-              { $inc: { seatsAvailable: cancelled.ticketCount } },
-            )
-            booking = cancelled
-          } else {
-            booking = await Booking.findOne(
-              isObjectId ? { $or: [{ reference }, { _id: reference.trim() }] } : { reference }
-            ).exec()
-            if (!booking || booking.status !== 'cancelled') {
-              response.status(409).json({ message: 'The booking status changed. Refresh and retry.' })
-              return
-            }
-          }
-        } else {
-          booking.status = status
-          await booking.save()
-        }
-        await writeAudit(request, 'Booking status changed', 'booking', reference, `Booking status changed to ${status}.`)
-        response.json({ item: { ...jsonRecord(booking), source: 'booking' } })
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference)
+      const bookingQuery = isObjectId
+        ? { $or: [{ reference }, { requestId: reference }, { _id: reference }] }
+        : { $or: [{ reference }, { requestId: reference }] }
+      const enquiryQuery = isObjectId
+        ? { $or: [{ reference }, { requestId: reference }, { _id: reference }] }
+        : { $or: [{ reference }, { requestId: reference }] }
+
+      const shouldQueryLegacy =
+        legacyBookingEnquiryModel &&
+        (legacyBookingEnquiryModel !== LegacyBookingEnquiry || mongoose.connection?.readyState === 1)
+
+      const [bookingMatches, enquiryMatches, legacyMatches] = await Promise.all([
+        runBookingLookupQuery(Booking, bookingQuery),
+        runBookingLookupQuery(BookingEnquiry, enquiryQuery),
+        shouldQueryLegacy ? runBookingLookupQuery(legacyBookingEnquiryModel, enquiryQuery) : Promise.resolve([]),
+      ])
+
+      const isSameRecord =
+        bookingMatches.length === 1 &&
+        enquiryMatches.length === 1 &&
+        String(bookingMatches[0]._id) === String(enquiryMatches[0]._id)
+
+      const isSameLegacyRecord =
+        bookingMatches.length === 1 &&
+        legacyMatches.length === 1 &&
+        String(bookingMatches[0]._id) === String(legacyMatches[0]._id)
+
+      const activeEnquiries = enquiryMatches.length ? enquiryMatches : legacyMatches
+      const isLegacy = !enquiryMatches.length && legacyMatches.length > 0
+
+      if (
+        bookingMatches.length > 1 ||
+        activeEnquiries.length > 1 ||
+        (!isSameRecord && !isSameLegacyRecord && bookingMatches.length && activeEnquiries.length)
+      ) {
+        response.status(409).json({
+          message: 'This booking identifier matches multiple records; no record was updated.',
+        })
         return
       }
 
-      const enquiry = await BookingEnquiry.findOne(
-        isObjectId
-          ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
-          : { $or: [{ reference }, { requestId: reference }] }
-      ).exec()
-      if (!enquiry) {
+      let booking = bookingMatches[0] ?? null
+      const enquiry = activeEnquiries[0] ?? null
+
+      if (!booking && !enquiry) {
         response.status(404).json({ message: 'Booking record was not found.' })
         return
       }
-      enquiry.status = status
-      await enquiry.save()
-      await writeAudit(request, 'Booking enquiry status changed', 'booking-enquiry', reference, `Booking enquiry status changed to ${status}.`)
-      response.json({ item: bookingFromEnquiry(enquiry.toObject()) })
+
+      if (enquiry && !booking) {
+        if (enquiry.status === 'cancelled' && status !== 'cancelled') {
+          response.status(409).json({ message: 'A cancelled booking cannot be reactivated.' })
+          return
+        }
+        if (typeof enquiry.save === 'function') {
+          enquiry.status = status
+          await enquiry.save()
+        } else if (isLegacy && legacyBookingEnquiryModel && typeof legacyBookingEnquiryModel.updateOne === 'function') {
+          await legacyBookingEnquiryModel.updateOne({ _id: enquiry._id }, { $set: { status } })
+          enquiry.status = status
+        } else if (typeof BookingEnquiry.updateOne === 'function') {
+          await BookingEnquiry.updateOne({ _id: enquiry._id }, { $set: { status } })
+          enquiry.status = status
+        }
+        await writeAudit(request, 'Booking enquiry status changed', 'booking-enquiry', reference, `Booking enquiry status changed to ${status}.`)
+        const enquiryObj = typeof enquiry.toObject === 'function' ? enquiry.toObject() : enquiry
+        response.json({ item: bookingFromEnquiry(enquiryObj) })
+        return
+      }
+
+      if (booking.status === 'cancelled' && status !== 'cancelled') {
+        response.status(409).json({ message: 'A cancelled booking cannot be reactivated.' })
+        return
+      }
+      if (status === 'cancelled' && booking.status !== 'cancelled') {
+        if (booking.paymentStatus !== 'not_required') {
+          response.status(409).json({ message: 'Paid bookings must be cancelled by the payment service.' })
+          return
+        }
+        const cancelledAt = new Date()
+        const cancelled = await Booking.findOneAndUpdate(
+          { ...bookingQuery, status: { $ne: 'cancelled' }, paymentStatus: 'not_required' },
+          { $set: { status: 'cancelled', cancelledAt } },
+          { new: true },
+        ).exec()
+        if (cancelled) {
+          await Event.updateOne(
+            { id: cancelled.eventId },
+            { $inc: { seatsAvailable: cancelled.ticketCount } },
+          )
+          booking = cancelled
+        } else {
+          const recheckList = await runQuery(Booking, bookingQuery)
+          const recheck = recheckList[0] ?? null
+          if (!recheck || recheck.status !== 'cancelled') {
+            response.status(409).json({ message: 'The booking status changed. Refresh and retry.' })
+            return
+          }
+          booking = recheck
+        }
+      } else {
+        if (typeof booking.save === 'function') {
+          booking.status = status
+          await booking.save()
+        } else if (typeof Booking.updateOne === 'function') {
+          await Booking.updateOne({ _id: booking._id }, { $set: { status } })
+          booking.status = status
+        }
+      }
+
+      if (enquiry) {
+        if (typeof enquiry.save === 'function') {
+          enquiry.status = status
+          await enquiry.save()
+        } else if (isLegacy && legacyBookingEnquiryModel && typeof legacyBookingEnquiryModel.updateOne === 'function') {
+          await legacyBookingEnquiryModel.updateOne({ _id: enquiry._id }, { $set: { status } })
+          enquiry.status = status
+        } else if (typeof BookingEnquiry.updateOne === 'function') {
+          await BookingEnquiry.updateOne({ _id: enquiry._id }, { $set: { status } })
+          enquiry.status = status
+        }
+      }
+
+      await writeAudit(request, 'Booking status changed', 'booking', reference, `Booking status changed to ${status}.`)
+      response.json({ item: { ...jsonRecord(booking), source: 'booking' } })
+      return
     } catch (error) {
       next(error)
     }
@@ -1286,29 +1623,56 @@ export function createAdminRouter({
       return
     }
     try {
-      const { reference } = request.params
-      const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference?.trim?.() ?? '')
-      const bookingQuery = (
-        isObjectId ? { $or: [{ reference }, { _id: reference.trim() }] } : { reference }
-      )
-      const enquiryQuery = (
-        isObjectId
-          ? { $or: [{ reference }, { requestId: reference }, { _id: reference.trim() }] }
-          : { $or: [{ reference }, { requestId: reference }] }
-      )
-      const [bookingMatches, enquiryMatches] = await Promise.all([
-        Booking.find(bookingQuery).limit(2).lean(),
-        BookingEnquiry.find(enquiryQuery).limit(2).lean(),
+      const reference = request.params.reference?.trim?.() ?? ''
+      if (!reference) {
+        response.status(404).json({ message: 'Booking record was not found.' })
+        return
+      }
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(reference)
+      const bookingQuery = isObjectId
+        ? { $or: [{ reference }, { requestId: reference }, { _id: reference }] }
+        : { $or: [{ reference }, { requestId: reference }] }
+      const enquiryQuery = isObjectId
+        ? { $or: [{ reference }, { requestId: reference }, { _id: reference }] }
+        : { $or: [{ reference }, { requestId: reference }] }
+
+      const shouldQueryLegacy =
+        legacyBookingEnquiryModel &&
+        (legacyBookingEnquiryModel !== LegacyBookingEnquiry || mongoose.connection?.readyState === 1)
+
+      const [bookingMatches, enquiryMatches, legacyMatches] = await Promise.all([
+        runBookingLookupQuery(Booking, bookingQuery),
+        runBookingLookupQuery(BookingEnquiry, enquiryQuery),
+        shouldQueryLegacy
+          ? runBookingLookupQuery(legacyBookingEnquiryModel, enquiryQuery)
+          : Promise.resolve([]),
       ])
 
-      if (bookingMatches.length > 1 || enquiryMatches.length > 1 || (bookingMatches.length && enquiryMatches.length)) {
+      const isSameRecord =
+        bookingMatches.length === 1 &&
+        enquiryMatches.length === 1 &&
+        String(bookingMatches[0]._id) === String(enquiryMatches[0]._id)
+
+      const isSameLegacyRecord =
+        bookingMatches.length === 1 &&
+        legacyMatches.length === 1 &&
+        String(bookingMatches[0]._id) === String(legacyMatches[0]._id)
+
+      const activeEnquiries = enquiryMatches.length ? enquiryMatches : legacyMatches
+      const isLegacy = !enquiryMatches.length && legacyMatches.length > 0
+
+      if (
+        bookingMatches.length > 1 ||
+        activeEnquiries.length > 1 ||
+        (!isSameRecord && !isSameLegacyRecord && bookingMatches.length && activeEnquiries.length)
+      ) {
         response.status(409).json({
           message: 'This booking identifier matches multiple records; no record was deleted.',
         })
         return
       }
       const booking = bookingMatches[0] ?? null
-      const enquiry = enquiryMatches[0] ?? null
+      const enquiry = activeEnquiries[0] ?? null
       if (!booking && !enquiry) {
         response.status(404).json({ message: 'Booking record was not found.' })
         return
@@ -1334,7 +1698,9 @@ export function createAdminRouter({
       }
       const deleted = booking
         ? await Booking.findOneAndDelete(conditionalFilter).lean()
-        : await BookingEnquiry.findOneAndDelete(conditionalFilter).lean()
+        : isLegacy && legacyBookingEnquiryModel
+          ? await legacyBookingEnquiryModel.findOneAndDelete(conditionalFilter).lean()
+          : await BookingEnquiry.findOneAndDelete(conditionalFilter).lean()
       if (!deleted) {
         response.status(409).json({
           message: 'The booking payment state changed or financial evidence appeared. Refresh and retry.',

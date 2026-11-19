@@ -7,6 +7,7 @@ function createModel(name, collection, definition, indexes = []) {
     collection,
     timestamps: true,
     versionKey: false,
+    bufferCommands: false,
   })
 
   indexes.forEach(([fields, options]) => schema.index(fields, options))
@@ -150,7 +151,7 @@ export const Booking = createModel(
     status: { type: String, enum: ['pending', 'confirmed', 'cancelled'], default: 'confirmed' },
     cancelledAt: { type: Date, default: null },
   },
-  [[{ reference: 1 }, { unique: true }], [{ requestId: 1 }, { unique: true, sparse: true }], [{ eventId: 1, status: 1 }], [{ createdAt: -1 }]],
+  [[{ reference: 1 }, { unique: true, sparse: true }], [{ requestId: 1 }, { unique: true, sparse: true }], [{ eventId: 1, status: 1 }], [{ createdAt: -1 }]],
 )
 
 export const Category = createModel(

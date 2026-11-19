@@ -54,10 +54,15 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
   }
   const lookupIdentifiers = []
   const notificationCalls = []
+  const legacyEnquiryModel = {
+    findOne() {
+      return { lean: async () => null }
+    },
+  }
   const bookingEnquiryRepository = {
     findByReference(identifier) {
       lookupIdentifiers.push(identifier)
-      return findBookingEnquiryByReference(identifier, enquiryModel)
+      return findBookingEnquiryByReference(identifier, enquiryModel, legacyEnquiryModel)
     },
   }
   const password = 'correct-horse-battery-staple'
@@ -134,8 +139,10 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
   const diagnostics = []
   const originalInfo = console.info
   const originalWarn = console.warn
+  const originalError = console.error
   console.info = (message, details) => diagnostics.push({ level: 'info', message, details })
   console.warn = (message, details) => diagnostics.push({ level: 'warn', message, details })
+  console.error = (message, details) => diagnostics.push({ level: 'error', message, details })
   try {
     const response = await fetch(`${baseUrl}/api/admin/bookings/${requestId}/whatsapp/retry`, {
       method: 'POST',
@@ -154,17 +161,24 @@ test('primary retry looks up an enquiry by requestId and logs no raw identifier'
   } finally {
     console.info = originalInfo
     console.warn = originalWarn
+    console.error = originalError
   }
 
   assert.deepEqual(lookupIdentifiers, [requestId, requestId, 'not-a-real-reference'])
   assert.deepEqual(notificationCalls, [{
     id: requestId,
-    options: { target: 'primary', attendeeIndex: undefined, force: true },
+    options: { target: 'primary', attendeeIndex: undefined, force: true, source: 'admin_manual_retry' },
   }])
   assert.deepEqual(
-    diagnostics.map(({ level, details }) => [level, details.matchedBy ?? details.identifierType]),
+    diagnostics.filter(({ details }) => details.event !== 'whatsapp_notification')
+      .map(({ level, details }) => [level, details.matchedBy ?? details.identifierType]),
     [['info', 'requestId'], ['warn', 'bookingReference']],
   )
+  assert.ok(diagnostics.some(({ level, details }) =>
+    level === 'error' && details.event === 'whatsapp_notification' &&
+    details.stage === 'caller_result' && details.outcome === 'REJECTED' &&
+    details.source === 'admin_manual_retry',
+  ))
   assert.equal(JSON.stringify(diagnostics).includes(requestId), false)
   assert.equal(JSON.stringify(diagnostics).includes(enquiry.mobile), false)
 })

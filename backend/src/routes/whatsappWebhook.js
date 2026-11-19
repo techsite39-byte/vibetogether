@@ -1,5 +1,8 @@
 import { Router } from 'express'
-import { isValidWhatsAppWebhookSignature } from '../services/whatsappNotifications.js'
+import {
+  isValidWhatsAppWebhookSignature,
+  logWhatsAppNotification,
+} from '../services/whatsappNotifications.js'
 import { config } from '../config/env.js'
 
 export function createWhatsAppWebhookRouter({
@@ -66,14 +69,21 @@ export function createWhatsAppWebhookRouter({
           // 1. Process Status Updates (sent, delivered, read, failed)
           const statuses = value.statuses ?? []
           for (const item of statuses) {
-            await notifications.recordWebhookStatus({
+            const result = await notifications.recordWebhookStatus({
               messageId: item.id,
               status: item.status,
               timestamp: item.timestamp,
               recipientId: item.recipient_id,
               error: item.errors?.[0]?.code,
-              errorMessage: item.errors?.[0]?.message || item.errors?.[0]?.title,
             })
+            if (!result) {
+              logWhatsAppNotification('SKIPPED', {
+                source: 'whatsapp_status_webhook',
+                notificationType: 'unknown',
+                identity: item.id,
+                reason: 'Status callback did not match a stored notification',
+              })
+            }
           }
 
           // 2. Process Incoming Messages (customer queries, opt-outs)
@@ -95,8 +105,13 @@ export function createWhatsAppWebhookRouter({
       }
 
       response.status(200).json({ received: true })
-    } catch (err) {
-      console.error('WhatsApp webhook processing error:', err.message)
+    } catch {
+      logWhatsAppNotification('REJECTED', {
+        source: 'whatsapp_status_webhook',
+        notificationType: 'unknown',
+        identity: 'webhook-processing-error',
+        reason: 'WhatsApp webhook processing failed',
+      })
       response.status(500).json({ message: 'Webhook processing encountered an error.' })
     }
   })

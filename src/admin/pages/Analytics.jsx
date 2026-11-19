@@ -9,6 +9,7 @@ import { AdminBarChart, AdminTrendChart } from '../components/AdminCharts.jsx'
 import { AdminPageHeader, AdminPanel, AdminStatCard, AdminTable } from '../components/AdminUI.jsx'
 import { useAdminData } from '../context/useAdminData.js'
 import { categorySeries, monthlySeries } from '../data/adminAnalytics.js'
+import { isRealPaidBookingStatus } from '../../utils/paymentStatus.js'
 
 export default function Analytics() {
   const { actor, bookings, events, organizers, users } = useAdminData()
@@ -16,14 +17,14 @@ export default function Analytics() {
   const scopedEvents = organizerId ? events.filter((event) => event.organizerId === organizerId) : events
   const scopedBookings = organizerId ? bookings.filter((booking) => booking.organizerId === organizerId) : bookings
   const revenue = scopedBookings
-    .filter((booking) => booking.paymentStatus === 'verified')
+    .filter((booking) => isRealPaidBookingStatus(booking.paymentStatus))
     .reduce((total, booking) => total + booking.amount, 0)
   const categoryItems = useMemo(() => categorySeries(scopedEvents), [scopedEvents])
   const userGrowth = monthlySeries(users)
   const eventCreation = monthlySeries(scopedEvents)
   const bookingTrends = monthlySeries(scopedBookings)
   const revenueTrends = monthlySeries(
-    scopedBookings.filter((booking) => booking.paymentStatus === 'verified'),
+    scopedBookings.filter((booking) => isRealPaidBookingStatus(booking.paymentStatus)),
     (booking) => booking.amount ?? booking.total ?? 0,
   )
   const topEvents = [...scopedEvents]

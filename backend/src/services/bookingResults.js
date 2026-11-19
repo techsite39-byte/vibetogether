@@ -28,7 +28,9 @@ function createResult(booking, details, now) {
     paymentProvider: details.paymentProvider,
     providerPaymentId: details.providerPaymentId || '',
     providerOrderId: details.providerOrderId || '',
-    paymentStatus: details.paymentStatus,
+    paymentStatus: ['paid', 'failed'].includes(booking.paymentStatus)
+      ? booking.paymentStatus
+      : details.paymentStatus,
     bookingStatus: booking.status || 'pending',
     failureReason: details.paymentStatus === 'FAILED'
       ? details.failureReason || booking.paymentFailureReason || 'failed'
@@ -43,6 +45,7 @@ export async function persistBookingResult(
   details,
   {
     bookingResultModel = BookingResult,
+    session,
     now = new Date(),
   } = {},
 ) {
@@ -57,9 +60,9 @@ export async function persistBookingResult(
   if (details.paymentStatus === 'FAILED') {
     const updated = await execute(
       bookingResultModel.findOneAndUpdate(
-        { ...identity, paymentStatus: { $ne: 'SUCCESS' } },
+        { ...identity, paymentStatus: { $nin: ['SUCCESS', 'paid'] } },
         { $set: fields },
-        { new: true, runValidators: true },
+        { new: true, runValidators: true, session },
       ),
     )
     if (updated) return updated
@@ -75,29 +78,37 @@ export async function persistBookingResult(
               createdAt,
             },
           },
-          { new: true, upsert: true, runValidators: true },
+          { new: true, upsert: true, runValidators: true, session },
         ),
       )
     } catch (error) {
       if (error?.code !== 11000) throw error
-      const existing = await execute(bookingResultModel.findOne(identity))
+      const existingQuery = bookingResultModel.findOne(identity)
+      const existing = await execute(
+        session && typeof existingQuery?.session === 'function'
+          ? existingQuery.session(session)
+          : existingQuery,
+      )
       if (!existing) throw error
       return existing
     }
+  }
+
+  const successUpdate = {
+    $set: fields,
+    $unset: { expiresAt: 1 },
+    $setOnInsert: {
+      requestId: booking.requestId,
+      createdAt,
+    },
   }
 
   try {
     return await execute(
       bookingResultModel.findOneAndUpdate(
         identity,
-        {
-          $set: fields,
-          $setOnInsert: {
-            requestId: booking.requestId,
-            createdAt,
-          },
-        },
-        { new: true, upsert: true, runValidators: true },
+        successUpdate,
+        { new: true, upsert: true, runValidators: true, session },
       ),
     )
   } catch (error) {
@@ -105,8 +116,8 @@ export async function persistBookingResult(
     const updated = await execute(
       bookingResultModel.findOneAndUpdate(
         identity,
-        { $set: fields },
-        { new: true, runValidators: true },
+        { $set: fields, $unset: { expiresAt: 1 } },
+        { new: true, runValidators: true, session },
       ),
     )
     if (!updated) throw error

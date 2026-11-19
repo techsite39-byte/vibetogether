@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mergeBookingRecords } from '../src/routes/admin.js'
+import {
+  mergeBookingRecords,
+  summarizeBookingRecords,
+} from '../src/routes/admin.js'
 
 test('admin booking records include saved enquiries before payment', () => {
   const enquiry = {
@@ -32,4 +35,60 @@ test('admin booking records include saved enquiries before payment', () => {
   assert.deepEqual(booking.maleMemberNames, ['Alex'])
   assert.deepEqual(booking.femaleMemberNames, ['Sam'])
   assert.equal(booking.paymentStatus, 'unpaid')
+})
+
+test('admin booking merge deduplicates shared request and reference identities across collections', () => {
+  const currentEnquiry = {
+    requestId: 'request-current',
+    reference: 'VT-100',
+    name: 'Current booking',
+    createdAt: new Date('2026-11-12T12:00:00Z'),
+  }
+  const legacyEnquiry = {
+    requestId: 'request-legacy',
+    reference: 'VT-100',
+    name: 'Duplicate legacy record',
+    createdAt: new Date('2026-11-11T12:00:00Z'),
+  }
+  const booking = {
+    requestId: 'request-current',
+    reference: 'VT-100',
+    customer: 'Duplicate booking collection record',
+    createdAt: new Date('2026-11-10T12:00:00Z'),
+  }
+
+  const records = mergeBookingRecords([booking], [currentEnquiry], [legacyEnquiry])
+
+  assert.equal(records.length, 1)
+  assert.equal(records[0].customer, 'Current booking')
+
+  const identityCollision = mergeBookingRecords([], [
+    { requestId: 'request-1', reference: 'request-2', name: 'First' },
+    { requestId: 'request-2', reference: 'VT-200', name: 'Second' },
+  ])
+  assert.equal(identityCollision.length, 2)
+})
+
+test('admin overview summarizes unique records from current and legacy collections', () => {
+  const summary = summarizeBookingRecords(
+    [{ reference: 'VT-200', status: 'confirmed', createdAt: new Date('2026-11-10T12:00:00Z') }],
+    [{
+      requestId: 'request-current',
+      reference: 'VT-200',
+      status: 'confirmed',
+      createdAt: new Date('2026-11-12T12:00:00Z'),
+    }],
+    [{
+      requestId: 'request-legacy',
+      reference: 'VT-201',
+      status: 'pending',
+      createdAt: new Date('2026-11-11T12:00:00Z'),
+    }],
+  )
+
+  assert.equal(summary.counts.bookings, 2)
+  assert.equal(summary.counts.bookingEnquiries, 2)
+  assert.deepEqual(summary.bookingStatuses, { confirmed: 1, pending: 1 })
+  assert.deepEqual(summary.bookingTrends, [{ label: '2026-11', value: 2 }])
+  assert.equal(summary.recentBookings[1].requestId, 'request-legacy')
 })

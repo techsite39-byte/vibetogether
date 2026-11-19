@@ -426,6 +426,7 @@ function BookingDetails({ booking, event, organizer, onClose, onBookingUpdated }
 export default function ManageBookings() {
   const {
     actor,
+    bookingError,
     bookings,
     events,
     organizers,
@@ -565,7 +566,7 @@ export default function ManageBookings() {
     }
     setActionSuccess('')
     const saved = await updateBooking(bookingIdentifier, { status: 'cancelled' })
-    setActionError(saved ? '' : storageError)
+    setActionError(saved ? '' : bookingError || storageError || 'The booking could not be cancelled.')
   }
 
   async function removeBooking(booking) {

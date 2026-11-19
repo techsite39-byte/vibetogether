@@ -1,3 +1,5 @@
+import { isRealPaidBookingStatus } from './paymentStatus.js'
+
 function plainText(value) {
   return String(value ?? '').replace(/[\r\n]+/g, ' ')
 }
@@ -14,7 +16,7 @@ export function downloadBookingTicket(booking) {
     `Email: ${plainText(booking.attendee.email)}`,
     `Tickets: ${booking.ticketCount}`,
     `Payment status: ${plainText(booking.paymentStatus)}`,
-    ...(booking.paymentStatus === 'paid' && Number.isFinite(paidAmount)
+    ...(isRealPaidBookingStatus(booking.paymentStatus) && Number.isFinite(paidAmount)
       ? [`Amount paid: ₹${paidAmount} ${plainText(booking.currency ?? 'INR')}`]
       : []),
     `Booking status: ${plainText(booking.status)}`,

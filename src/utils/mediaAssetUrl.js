@@ -4,11 +4,18 @@ export function resolveMediaAssetUrl(url, apiBaseUrl = API_BASE_URL) {
   if (
     typeof url !== 'string' ||
     !url.startsWith('/api/media/') ||
+    typeof apiBaseUrl !== 'string' ||
     apiBaseUrl.startsWith('/')
   ) {
     return url
   }
 
-  const apiUrl = new URL(apiBaseUrl)
-  return apiUrl.protocol === 'https:' ? new URL(url, apiUrl).toString() : url
+  try {
+    const apiUrl = new URL(apiBaseUrl)
+    return apiUrl.protocol === 'https:' || apiUrl.protocol === 'http:'
+      ? new URL(url, apiUrl).toString()
+      : url
+  } catch {
+    return url
+  }
 }

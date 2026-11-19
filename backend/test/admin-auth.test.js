@@ -42,10 +42,12 @@ async function startAuthServer(options) {
       adminModel: options.model,
       sessionModel,
       sessionSecret: options.sessionSecret,
+      unmatchedPaymentModel: options.unmatchedPaymentModel,
+      cashfreeRecovery: options.cashfreeRecovery,
     }))
   }
   app.use((error, _request, response, _next) => {
-    response.status(error.status ?? 500).end()
+    response.status(error.status ?? 500).json({ message: error.message })
   })
   const server = app.listen(0)
   servers.push(server)
@@ -186,6 +188,281 @@ test('authenticates admins, restores sessions, and enforces CSRF on logout', asy
     headers: { Cookie: `vt_admin_session=${expiredPayload}.${expiredSignature}` },
   })
   assert.equal(expiredSession.status, 401)
+})
+
+test('requires authentication for Cashfree unmatched-payment review and reconciliation', async () => {
+  const baseUrl = await startAuthServer({
+    model: {},
+    protectRoutes: true,
+    sessionSecret: 'a-session-secret-with-more-than-thirty-two-characters',
+  })
+
+  const listResponse = await fetch(`${baseUrl}/api/admin/cashfree/unmatched-payments`)
+  assert.equal(listResponse.status, 401)
+
+  const detailResponse = await fetch(
+    `${baseUrl}/api/admin/cashfree/unmatched-payments/507f1f77bcf86cd799439011`,
+  )
+  assert.equal(detailResponse.status, 401)
+
+  const reconcileResponse = await fetch(
+    `${baseUrl}/api/admin/cashfree/unmatched-payments/507f1f77bcf86cd799439011/reconcile`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestId: 'request-1',
+        caseReference: 'CASE-1234',
+        reasonCode: 'unmatched_webhook',
+      }),
+    },
+  )
+  assert.equal(reconcileResponse.status, 401)
+})
+
+test('limits Cashfree unmatched-payment review to Super Admins', async () => {
+  const password = 'correct-horse-battery-staple'
+  const passwordHash = await hashAdminPassword(password)
+  const admin = {
+    _id: '507f1f77bcf86cd799439012',
+    username: 'operator@example.test',
+    role: 'admin',
+    active: true,
+    passwordHash,
+    async save() {},
+  }
+  const model = {
+    findOne() {
+      return { select: () => ({ exec: async () => admin }) }
+    },
+    findById(id) {
+      return {
+        select: () => ({
+          lean: async () => id === admin._id ? {
+            _id: admin._id,
+            username: admin.username,
+            role: admin.role,
+            active: admin.active,
+          } : null,
+        }),
+      }
+    },
+  }
+  const baseUrl = await startAuthServer({
+    bootstrapPasswordHash: passwordHash,
+    model,
+    protectRoutes: true,
+    sessionSecret: 'a-session-secret-with-more-than-thirty-two-characters',
+    username: admin.username,
+  })
+
+  const login = await fetch(`${baseUrl}/api/admin/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: admin.username, password }),
+  })
+  assert.equal(login.status, 200)
+  const loginPayload = await login.json()
+  const cookies = login.headers.getSetCookie?.() ?? [login.headers.get('set-cookie') ?? '']
+  const cookieHeader = cookies.map((cookie) => cookie.split(';', 1)[0]).join('; ')
+  const response = await fetch(`${baseUrl}/api/admin/cashfree/unmatched-payments`, {
+    headers: { Cookie: cookieHeader },
+  })
+  assert.equal(response.status, 403)
+
+  const detailResponse = await fetch(
+    `${baseUrl}/api/admin/cashfree/unmatched-payments/507f1f77bcf86cd799439011`,
+    { headers: { Cookie: cookieHeader } },
+  )
+  assert.equal(detailResponse.status, 403)
+
+  const reconcileUrl = `${baseUrl}/api/admin/cashfree/unmatched-payments/507f1f77bcf86cd799439011/reconcile`
+  const csrfFailure = await fetch(reconcileUrl, {
+    method: 'POST',
+    headers: {
+      Cookie: cookieHeader,
+      Origin: 'http://localhost:5173',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requestId: 'request-1',
+      caseReference: 'CASE-1234',
+      reasonCode: 'unmatched_webhook',
+    }),
+  })
+  assert.equal(csrfFailure.status, 403)
+
+  const roleFailure = await fetch(reconcileUrl, {
+    method: 'POST',
+    headers: {
+      Cookie: cookieHeader,
+      Origin: 'http://localhost:5173',
+      'X-CSRF-Token': loginPayload.csrfToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requestId: 'request-1',
+      caseReference: 'CASE-1234',
+      reasonCode: 'unmatched_webhook',
+    }),
+  })
+  assert.equal(roleFailure.status, 403)
+})
+
+test('allows authorized Super Admin review and CSRF-protected reconciliation only', async () => {
+  const password = 'correct-horse-battery-staple'
+  const passwordHash = await hashAdminPassword(password)
+  const admin = {
+    _id: '507f1f77bcf86cd799439013',
+    username: 'super@example.test',
+    role: 'super_admin',
+    active: true,
+    passwordHash,
+    async save() {},
+  }
+  const record = {
+    _id: '507f1f77bcf86cd799439014',
+    providerOrderId: 'order-safe',
+    providerPaymentId: 'payment-safe',
+    amount: 249,
+    currency: 'INR',
+    providerStatus: 'SUCCESS',
+    providerEventType: 'PAYMENT_SUCCESS_WEBHOOK',
+    processingStatus: 'unmatched',
+    receivedAt: new Date('2026-01-01T00:00:00.000Z'),
+    lastSeenAt: new Date('2026-01-01T00:00:00.000Z'),
+  }
+  const model = {
+    findOne() {
+      return { select: () => ({ exec: async () => admin }) }
+    },
+    findById(id) {
+      return {
+        select: () => ({
+          lean: async () => id === admin._id ? {
+            _id: admin._id,
+            username: admin.username,
+            role: admin.role,
+            active: admin.active,
+          } : null,
+        }),
+      }
+    },
+  }
+  const unmatchedPaymentModel = {
+    find() {
+      const query = {
+        sort() { return this },
+        skip() { return this },
+        limit() { return this },
+        lean: async () => [record],
+      }
+      return query
+    },
+    async countDocuments() { return 1 },
+    findById(id) {
+      return { lean: async () => id === record._id ? record : null }
+    },
+  }
+  const reconcileCalls = []
+  const cashfreeRecovery = {
+    async reconcile(input) {
+      reconcileCalls.push(input)
+      return { reconciled: true, outcome: 'reconciled', requestId: input.requestId }
+    },
+  }
+  const baseUrl = await startAuthServer({
+    bootstrapPasswordHash: passwordHash,
+    model,
+    protectRoutes: true,
+    sessionSecret: 'a-session-secret-with-more-than-thirty-two-characters',
+    username: admin.username,
+    unmatchedPaymentModel,
+    cashfreeRecovery,
+  })
+  const login = await fetch(`${baseUrl}/api/admin/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: admin.username, password }),
+  })
+  assert.equal(login.status, 200)
+  const loginPayload = await login.json()
+  const cookies = login.headers.getSetCookie?.() ?? [login.headers.get('set-cookie') ?? '']
+  const cookieHeader = cookies.map((cookie) => cookie.split(';', 1)[0]).join('; ')
+  const listResponse = await fetch(`${baseUrl}/api/admin/cashfree/unmatched-payments`, {
+    headers: { Cookie: cookieHeader },
+  })
+  assert.equal(listResponse.status, 200)
+  const listPayload = await listResponse.json()
+  assert.equal(listPayload.items[0].providerPaymentId, record.providerPaymentId)
+  assert.equal(listPayload.items[0].id, record._id)
+
+  const detailResponse = await fetch(
+    `${baseUrl}/api/admin/cashfree/unmatched-payments/${record._id}`,
+    { headers: { Cookie: cookieHeader } },
+  )
+  assert.equal(detailResponse.status, 200)
+  assert.equal((await detailResponse.json()).item.providerOrderId, record.providerOrderId)
+
+  const reconcileUrl = `${baseUrl}/api/admin/cashfree/unmatched-payments/${record._id}/reconcile`
+  const body = JSON.stringify({
+    requestId: 'request-1',
+    caseReference: 'CASE-1234',
+    reasonCode: 'unmatched_webhook',
+  })
+  const csrfFailure = await fetch(reconcileUrl, {
+    method: 'POST',
+    headers: { Cookie: cookieHeader, Origin: 'http://localhost:5173', 'Content-Type': 'application/json' },
+    body,
+  })
+  assert.equal(csrfFailure.status, 403)
+  assert.equal(reconcileCalls.length, 0)
+
+  const validationFailure = await fetch(reconcileUrl, {
+    method: 'POST',
+    headers: {
+      Cookie: cookieHeader,
+      Origin: 'http://localhost:5173',
+      'X-CSRF-Token': loginPayload.csrfToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requestId: '', caseReference: 'bad', reasonCode: 'unknown' }),
+  })
+  assert.equal(validationFailure.status, 400)
+  assert.equal(reconcileCalls.length, 0)
+
+  const reconcileResponse = await fetch(reconcileUrl, {
+    method: 'POST',
+    headers: {
+      Cookie: cookieHeader,
+      Origin: 'http://localhost:5173',
+      'X-CSRF-Token': loginPayload.csrfToken,
+      'Content-Type': 'application/json',
+    },
+    body,
+  })
+  assert.equal(reconcileResponse.status, 200)
+  assert.equal((await reconcileResponse.json()).outcome, 'reconciled')
+  assert.equal(reconcileCalls.length, 1)
+  assert.equal(reconcileCalls[0].actor.id, admin._id)
+
+  cashfreeRecovery.reconcile = async () => {
+    throw new Error('private provider response and persistence detail')
+  }
+  const errorResponse = await fetch(reconcileUrl, {
+    method: 'POST',
+    headers: {
+      Cookie: cookieHeader,
+      Origin: 'http://localhost:5173',
+      'X-CSRF-Token': loginPayload.csrfToken,
+      'Content-Type': 'application/json',
+    },
+    body,
+  })
+  assert.equal(errorResponse.status, 500)
+  const errorPayload = await errorResponse.json()
+  assert.equal(errorPayload.message, 'Cashfree reconciliation could not be completed.')
+  assert.equal(JSON.stringify(errorPayload).includes('private provider'), false)
 })
 
 test('rejects invalid credentials and reports unconfigured auth', async () => {

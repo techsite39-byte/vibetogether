@@ -1,8 +1,95 @@
-import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto'
+import { randomUUID, createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import { BookingEnquiry } from '../models/bookingEnquiry.js'
+import {
+  isCompletedBookingPaymentStatus,
+  isRealPaidBookingStatus,
+} from '../../../src/utils/paymentStatus.js'
 
 const retryableHttpStatuses = new Set([429, 500, 502, 503, 504])
+const diagnosticOutcomes = new Set([
+  'SKIPPED',
+  'ATTEMPTED',
+  'ACCEPTED',
+  'REJECTED',
+  'DELIVERED',
+  'READ',
+  'DELIVERY_FAILED',
+])
+const diagnosticSources = new Set([
+  'application',
+  'booking_status_lookup',
+  'demo_payment',
+  'cashfree_verification',
+  'cashfree_status_check',
+  'cashfree_failure_record',
+  'demo_payment_failure',
+  'cashfree_webhook',
+  'admin_manual_retry',
+  'automatic_retry',
+  'whatsapp_status_webhook',
+  'notification_persistence',
+])
+const diagnosticNotificationTypes = new Set([
+  'booking_confirmation',
+  'payment_assistance',
+  'admin_alert',
+  'unknown',
+])
+const diagnosticStages = new Set(['caller_result', 'delivery_status'])
+const diagnosticDeliveryStatuses = new Set(['sent', 'delivered', 'read', 'failed'])
+const diagnosticReasons = new Set([
+  'Customer consent missing',
+  'Customer opted out',
+  'Invalid mobile number',
+  'Invalid attendee mobile number',
+  'Attendee mobile number missing',
+  'Attendee consent missing',
+  'Invalid admin mobile number',
+  'Admin WhatsApp number not configured',
+  'WhatsApp configuration missing',
+  'Payment still pending',
+  'Payment already completed',
+  'Payment success not confirmed',
+  'Demo payment; no real payment was processed.',
+  'Previous provider response uncertain; automatic retry withheld',
+  'Duplicate notification',
+  'Duplicate notification; already delivered',
+  'Duplicate notification; previous attempt was skipped',
+  'Duplicate notification; retry is not due',
+  'Duplicate notification; attendee already sent',
+  'Duplicate notification; admin alert already sent',
+  'Notification already in progress',
+  'Duplicate recipient matches primary customer',
+  'Duplicate recipient number',
+  'Attendee not found',
+  'Booking not found',
+  'Customer cancelled payment',
+  'Failure was not confirmed',
+  'Cashfree did not confirm a terminal payment failure',
+  'Cashfree event is not notification eligible',
+  'Payment status is not notification eligible',
+  'Payment failure was not recorded',
+  'Notification service threw',
+  'Notification service returned accepted',
+  'Notification service returned failed',
+  'Notification skipped',
+  'Notification service returned no send result',
+  'Provider response uncertain',
+  'Meta rejected notification',
+  'Meta accepted; delivery not yet confirmed',
+  'Text window rejected; attempting approved template fallback',
+  'Attendee notification state persistence failed',
+  'Attendee notification processing failed',
+  'Admin notification processing failed',
+  'WhatsApp delivery failed',
+  'WhatsApp delivered status confirmed',
+  'WhatsApp read status confirmed',
+  'Status callback did not match a stored notification',
+  'WhatsApp webhook processing failed',
+  'Duplicate Cashfree webhook',
+  'Notification outcome recorded',
+])
 
 export function normalizeWhatsAppRecipient(value, defaultCountry = 'IN') {
   if (typeof value !== 'string') return ''
@@ -22,15 +109,85 @@ export function normalizeWhatsAppRecipient(value, defaultCountry = 'IN') {
   return ''
 }
 
-export function maskPhone(value) {
-  if (typeof value !== 'string' || !value.trim()) return '—'
-  const trimmed = value.trim()
-  const digitsOnly = trimmed.replace(/\D/g, '')
-  if (digitsOnly.length <= 4) return '****'
-  const prefix = trimmed.startsWith('+') ? '+' : ''
-  const start = digitsOnly.slice(0, Math.min(3, Math.floor(digitsOnly.length / 3)))
-  const end = digitsOnly.slice(-Math.min(4, Math.floor(digitsOnly.length / 3)))
-  return `${prefix}${start}****${end}`
+function allowlistedValue(value, allowedValues, fallback) {
+  return typeof value === 'string' && allowedValues.has(value) ? value : fallback
+}
+
+function isSafeTemplateName(value) {
+  return typeof value === 'string' && /^[a-zA-Z0-9_]{1,128}$/.test(value)
+}
+
+function isSafeLanguage(value) {
+  return value === 'not_applicable' || (
+    typeof value === 'string' && /^[a-z]{2}(?:_[A-Z]{2})?$/.test(value)
+  )
+}
+
+export function createWhatsAppCorrelationId(identity) {
+  return createHash('sha256').update(String(identity ?? '')).digest('hex').slice(0, 16)
+}
+
+export function logWhatsAppNotification(outcome, context = {}) {
+  const identity = context.identity ?? `${context.source ?? 'application'}:${context.notificationType ?? 'unknown'}`
+  const details = {
+    event: 'whatsapp_notification',
+    outcome: allowlistedValue(outcome, diagnosticOutcomes, 'REJECTED'),
+    source: allowlistedValue(context.source, diagnosticSources, 'application'),
+    notificationType: allowlistedValue(context.notificationType, diagnosticNotificationTypes, 'unknown'),
+    correlationId: createWhatsAppCorrelationId(identity),
+  }
+
+  if (diagnosticStages.has(context.stage)) details.stage = context.stage
+  if (context.reason !== undefined) {
+    details.reason = allowlistedValue(context.reason, diagnosticReasons, 'Notification outcome recorded')
+  }
+  if (isSafeTemplateName(context.template)) details.template = context.template
+  if (isSafeLanguage(context.language)) details.language = context.language
+  if (typeof context.messageId === 'string' && /^wamid\.[A-Za-z0-9._-]{1,256}$/.test(context.messageId)) {
+    details.messageId = context.messageId
+  }
+  if (typeof context.deliveryTimestamp === 'string') {
+    const deliveryDate = new Date(context.deliveryTimestamp)
+    if (Number.isFinite(deliveryDate.getTime())) {
+      details.deliveryTimestamp = deliveryDate.toISOString()
+    }
+  }
+  if (diagnosticDeliveryStatuses.has(context.deliveryStatus)) details.deliveryStatus = context.deliveryStatus
+  if (Number.isInteger(context.httpStatus) && context.httpStatus >= 100 && context.httpStatus <= 599) {
+    details.httpStatus = context.httpStatus
+  }
+  if (Number.isSafeInteger(context.metaErrorCode)) details.metaErrorCode = context.metaErrorCode
+  if (Number.isSafeInteger(context.metaErrorSubcode)) details.metaErrorSubcode = context.metaErrorSubcode
+  if (typeof context.retryable === 'boolean') details.retryable = context.retryable
+
+  const log = ['REJECTED', 'DELIVERY_FAILED'].includes(outcome) ? console.error : console.info
+  log.call(console, '[WhatsApp Notification]', details)
+  return details.correlationId
+}
+
+export function logWhatsAppNotificationResult(result, context = {}) {
+  const outcome = result?.sent
+    ? 'ACCEPTED'
+    : result?.failed
+      ? 'REJECTED'
+      : 'SKIPPED'
+  const reason = result?.sent
+    ? 'Notification service returned accepted'
+    : result?.failed
+      ? 'Notification service returned failed'
+      : result?.pending
+        ? 'Payment still pending'
+        : result?.duplicate
+          ? 'Duplicate notification'
+          : result?.skipped
+            ? 'Notification skipped'
+            : 'Notification service returned no send result'
+
+  return logWhatsAppNotification(outcome, {
+    ...context,
+    stage: 'caller_result',
+    reason: context.reason ?? reason,
+  })
 }
 
 export function formatBookingDate(value) {
@@ -410,6 +567,15 @@ export function createWhatsAppService({
   const effectiveApiVersion = apiVersion || 'v22.0'
   const activeTemplateName = successTemplateName || bookingTemplate || 'vibetogether_payment_success'
   const activeFailureTemplateName = failureTemplateName || 'vibetogether_payment_failed'
+  if (bookingTemplateLanguage !== 'en') {
+    throw new Error('WhatsApp payment templates must use the approved en language.')
+  }
+  if (
+    activeTemplateName !== 'vibetogether_payment_success' ||
+    activeFailureTemplateName !== 'vibetogether_payment_failed'
+  ) {
+    throw new Error('WhatsApp payment templates must use the approved VibeTogether template names.')
+  }
 
   const missingNotificationConfiguration = [
     ['WHATSAPP_PHONE_NUMBER_ID', phoneNumberId],
@@ -471,7 +637,17 @@ export function createWhatsAppService({
     return bookingEnquiryModel.findOne({ requestId }).lean()
   }
 
-  async function postWhatsAppGraph(payload) {
+  function logSkipped(booking, type, source, reason, identity = '') {
+    logWhatsAppNotification('SKIPPED', {
+      source,
+      notificationType: type,
+      identity: identity || `${booking?.requestId ?? 'unknown'}:${type}:${reason}`,
+      reason,
+    })
+  }
+
+  async function postWhatsAppGraph(payload, context = {}) {
+    logWhatsAppNotification('ATTEMPTED', context)
     const response = await fetchImpl(
       `https://graph.facebook.com/${effectiveApiVersion}/${phoneNumberId}/messages`,
       {
@@ -580,17 +756,18 @@ export function createWhatsAppService({
   }
 
   // Send to primary customer
-  async function sendPrimaryConfirmation(booking, { retry = false, force = false, targetType = null } = {}) {
+  async function sendPrimaryConfirmation(booking, { retry = false, force = false, targetType = null, source = 'application' } = {}) {
     const requestId = booking.requestId
-    const effectiveType = targetType || (['paid', 'verified', 'demo_paid'].includes(booking.paymentStatus) ? 'booking_confirmation' : 'payment_assistance')
+    const effectiveType = targetType || (isCompletedBookingPaymentStatus(booking.paymentStatus) ? 'booking_confirmation' : 'payment_assistance')
     const isSuccess = effectiveType === 'booking_confirmation'
     const type = effectiveType
-
     if (!isSuccess) {
-      if (['paid', 'verified'].includes(booking.paymentStatus) && Boolean(booking.reference)) {
+      if (isRealPaidBookingStatus(booking.paymentStatus) && Boolean(booking.reference)) {
+        logSkipped(booking, type, source, 'Payment already completed')
         return { booking, duplicate: true, alreadyPaid: true }
       }
       if (booking.paymentStatus !== 'failed') {
+        logSkipped(booking, type, source, 'Payment still pending')
         return { booking, pending: true }
       }
     }
@@ -616,13 +793,16 @@ export function createWhatsAppService({
         },
         { new: true, runValidators: true },
       ).lean()
+      logSkipped(booking, type, source, 'Demo payment; no real payment was processed.')
       return { booking: skipped ?? booking, skipped: true }
     }
 
-    if (isSuccess && !(booking.paymentStatus === 'paid' && booking.reference)) {
+    if (isSuccess && !(isRealPaidBookingStatus(booking.paymentStatus) && booking.reference)) {
       if (booking.paymentStatus === 'pending' || !booking.paymentStatus) {
+        logSkipped(booking, type, source, 'Payment still pending')
         return { booking, pending: true }
       }
+      logSkipped(booking, type, source, 'Payment success not confirmed')
       return { booking, skipped: true }
     }
 
@@ -632,6 +812,13 @@ export function createWhatsAppService({
 
     if (!booking.whatsappConsent) {
       const skipped = await setSkipped(booking, idempotencyKey, 'Skipped – no WhatsApp notification consent.')
+      logSkipped(
+        booking,
+        type,
+        source,
+        booking.whatsappOptedOutAt ? 'Customer opted out' : 'Customer consent missing',
+        idempotencyKey,
+      )
       return { booking: skipped ?? booking, skipped: true }
     }
 
@@ -640,12 +827,14 @@ export function createWhatsAppService({
       previousNotification.status === 'failed' &&
       previousNotification.failureReason?.includes('response was uncertain')
     ) {
+      logSkipped(booking, type, source, 'Previous provider response uncertain; automatic retry withheld', idempotencyKey)
       return { booking, duplicate: true, uncertain: true }
     }
 
     const recipient = normalizeWhatsAppRecipient(booking.mobile)
     if (!recipient) {
       const invalid = await setUnavailable(booking, type, idempotencyKey, 'The saved mobile number is not a valid WhatsApp recipient.')
+      logSkipped(booking, type, source, 'Invalid mobile number', idempotencyKey)
       return { booking: invalid ?? booking, failed: true }
     }
 
@@ -657,14 +846,21 @@ export function createWhatsAppService({
         'WhatsApp Cloud API or approved templates are not configured.',
         true,
       )
+      logSkipped(booking, type, source, 'WhatsApp configuration missing', idempotencyKey)
       return { booking: unavailable ?? booking, failed: true }
     }
 
     if (previousNotification.idempotencyKey === idempotencyKey) {
       if (['delivered', 'read'].includes(previousNotification.status)) {
+        logSkipped(booking, type, source, 'Duplicate notification; already delivered', idempotencyKey)
         return { booking, duplicate: true, alreadyDelivered: true }
       }
-      if (previousNotification.status === 'sent' || previousNotification.inProgress) {
+      if (previousNotification.inProgress) {
+        logSkipped(booking, type, source, 'Notification already in progress', idempotencyKey)
+        return { booking, duplicate: true }
+      }
+      if (previousNotification.status === 'sent') {
+        logSkipped(booking, type, source, 'Duplicate notification', idempotencyKey)
         return { booking, duplicate: true }
       }
       if (
@@ -672,13 +868,16 @@ export function createWhatsAppService({
         previousNotification.status === 'failed' &&
         previousNotification.failureReason?.includes('response was uncertain')
       ) {
+        logSkipped(booking, type, source, 'Previous provider response uncertain; automatic retry withheld', idempotencyKey)
         return { booking, duplicate: true, uncertain: true }
       }
       if (!force) {
         if (previousNotification.status === 'skipped') {
+          logSkipped(booking, type, source, 'Duplicate notification; previous attempt was skipped', idempotencyKey)
           return { booking, duplicate: true }
         }
         if (!retry || !previousNotification.retryable || new Date(previousNotification.nextRetryAt) > now()) {
+          logSkipped(booking, type, source, 'Duplicate notification; retry is not due', idempotencyKey)
           return { booking, duplicate: true }
         }
       }
@@ -728,6 +927,7 @@ export function createWhatsAppService({
     ).lean()
 
     if (!claimed) {
+      logSkipped(booking, type, source, 'Notification already in progress', idempotencyKey)
       return { booking: await getBooking(requestId), duplicate: true }
     }
 
@@ -757,14 +957,22 @@ export function createWhatsAppService({
 
     let graphResult
     try {
-      graphResult = await postWhatsAppGraph(payload)
-    } catch (error) {
-      console.error('[WhatsApp API] Network timeout or connection error.', {
-        bookingId: booking.requestId,
-        bookingReference: booking.reference || '',
-        recipient: maskPhone(recipient),
+      graphResult = await postWhatsAppGraph(payload, {
+        source,
+        notificationType: type,
+        identity: idempotencyKey,
         template: templateName,
-        error: error instanceof Error ? error.message : String(error),
+        language: bookingTemplateLanguage,
+      })
+    } catch {
+      logWhatsAppNotification('REJECTED', {
+        source,
+        notificationType: type,
+        identity: idempotencyKey,
+        template: templateName,
+        language: bookingTemplateLanguage,
+        reason: 'Provider response uncertain',
+        retryable: false,
       })
       const reason = 'WhatsApp provider response was uncertain; automatic retry was withheld to prevent duplicate messages.'
       const failed = await bookingEnquiryModel.findOneAndUpdate(
@@ -787,18 +995,19 @@ export function createWhatsAppService({
 
     const { ok, status, body } = graphResult
     if (!ok || typeof body.messages?.[0]?.id !== 'string') {
-      console.error('[WhatsApp API] Message rejected by Meta.', {
-        status,
+      const retryable = retryableHttpStatuses.has(status)
+      logWhatsAppNotification('REJECTED', {
+        source,
+        notificationType: type,
+        identity: idempotencyKey,
+        template: templateName,
+        language: bookingTemplateLanguage,
+        httpStatus: status,
         metaErrorCode: body?.error?.code,
         metaErrorSubcode: body?.error?.error_subcode,
-        metaErrorMessage: body?.error?.message,
-        metaErrorDetails: body?.error?.error_data?.details || body?.error?.message,
-        bookingId: booking.requestId,
-        bookingReference: booking.reference || '',
-        recipient: maskPhone(recipient),
-        template: templateName,
+        reason: 'Meta rejected notification',
+        retryable,
       })
-      const retryable = retryableHttpStatuses.has(status)
       const attempts = claimed.whatsappNotification?.attemptCount ?? 1
       const delayMinutes = Math.min(60, 2 ** Math.min(attempts, 5))
       const reason = safeFailureReason(status, body, [accessToken])
@@ -824,13 +1033,15 @@ export function createWhatsAppService({
     }
 
     const messageId = body.messages[0].id
-    console.info('[WhatsApp API] Message accepted by Meta.', {
-      status,
-      messageId,
-      bookingId: booking.requestId,
-      bookingReference: booking.reference || '',
-      recipient: maskPhone(recipient),
+    logWhatsAppNotification('ACCEPTED', {
+      source,
+      notificationType: type,
+      identity: idempotencyKey,
       template: templateName,
+      language: bookingTemplateLanguage,
+      httpStatus: status,
+      messageId,
+      reason: 'Meta accepted; delivery not yet confirmed',
     })
     const sentAt = now()
     const sent = await bookingEnquiryModel.findOneAndUpdate(
@@ -856,13 +1067,23 @@ export function createWhatsAppService({
   }
 
   // Send confirmation to an individual attendee
-  async function sendAttendeeConfirmation(booking, attendee, { force = false } = {}) {
-    if (!configured) return { skipped: true, reason: 'unconfigured' }
-    if (!attendee.mobile) return { skipped: true, reason: 'no_mobile' }
-    if (attendee.whatsappConsent === false) return { skipped: true, reason: 'no_consent' }
-
+  async function sendAttendeeConfirmation(booking, attendee, { force = false, source = 'application' } = {}) {
     const requestId = booking.requestId
     const idempotencyKey = `${requestId}:booking_confirmation:${booking.reference}:attendee:${attendee.gender}:${attendee.index}:${attendee.mobile}`
+    const identity = idempotencyKey || `${requestId}:booking_confirmation:attendee:${attendee.index}`
+
+    if (!configured) {
+      logSkipped(booking, 'booking_confirmation', source, 'WhatsApp configuration missing', identity)
+      return { skipped: true, reason: 'unconfigured' }
+    }
+    if (!attendee.mobile) {
+      logSkipped(booking, 'booking_confirmation', source, attendee.rawMobile ? 'Invalid mobile number' : 'Attendee mobile number missing', identity)
+      return { skipped: true, reason: attendee.rawMobile ? 'invalid_mobile_number' : 'no_mobile' }
+    }
+    if (attendee.whatsappConsent === false) {
+      logSkipped(booking, 'booking_confirmation', source, 'Attendee consent missing', identity)
+      return { skipped: true, reason: 'no_consent' }
+    }
 
     // Check if already delivered/sent
     const existingIndex = booking.attendeeNotifications?.findIndex(
@@ -871,6 +1092,7 @@ export function createWhatsAppService({
     const existing = existingIndex !== -1 ? booking.attendeeNotifications?.[existingIndex] : null
 
     if (!force && existing && ['sent', 'delivered', 'read'].includes(existing.status)) {
+      logSkipped(booking, 'booking_confirmation', source, 'Duplicate notification; attendee already sent', idempotencyKey)
       return { skipped: true, duplicate: true, alreadyDelivered: true }
     }
 
@@ -900,9 +1122,23 @@ export function createWhatsAppService({
 
     let graphResult
     try {
-      graphResult = await postWhatsAppGraph(payload)
-    } catch (error) {
-      console.error('[WhatsApp] Failed to dispatch attendee confirmation:', attendee.name, error)
+      graphResult = await postWhatsAppGraph(payload, {
+        source,
+        notificationType: 'booking_confirmation',
+        identity: idempotencyKey,
+        template: templateName,
+        language: bookingTemplateLanguage,
+      })
+    } catch {
+      logWhatsAppNotification('REJECTED', {
+        source,
+        notificationType: 'booking_confirmation',
+        identity: idempotencyKey,
+        template: templateName,
+        language: bookingTemplateLanguage,
+        reason: 'Provider response uncertain',
+        retryable: false,
+      })
       const record = {
         attendeeIndex: attendee.index,
         name: attendee.name,
@@ -923,26 +1159,29 @@ export function createWhatsAppService({
     const notificationStatus = ok && messageId ? 'sent' : 'failed'
     const failureReason = notificationStatus === 'failed' ? safeFailureReason(status, body, [accessToken]) : ''
 
-    if (ok && messageId) {
-      console.info('[WhatsApp API] Attendee message accepted by Meta.', {
-        status,
-        messageId,
-        bookingId: booking.requestId,
-        attendeeName: attendee.name,
-        recipient: maskPhone(attendee.mobile),
+    if (notificationStatus === 'sent') {
+      logWhatsAppNotification('ACCEPTED', {
+        source,
+        notificationType: 'booking_confirmation',
+        identity: idempotencyKey,
         template: templateName,
+        language: bookingTemplateLanguage,
+        httpStatus: status,
+        messageId,
+        reason: 'Meta accepted; delivery not yet confirmed',
       })
     } else {
-      console.error('[WhatsApp API] Attendee message rejected by Meta.', {
-        status,
+      logWhatsAppNotification('REJECTED', {
+        source,
+        notificationType: 'booking_confirmation',
+        identity: idempotencyKey,
+        template: templateName,
+        language: bookingTemplateLanguage,
+        httpStatus: status,
         metaErrorCode: body?.error?.code,
         metaErrorSubcode: body?.error?.error_subcode,
-        metaErrorMessage: body?.error?.message,
-        metaErrorDetails: body?.error?.error_data?.details || body?.error?.message,
-        bookingId: booking.requestId,
-        attendeeName: attendee.name,
-        recipient: maskPhone(attendee.mobile),
-        template: templateName,
+        reason: 'Meta rejected notification',
+        retryable: retryableHttpStatuses.has(status),
       })
     }
 
@@ -983,22 +1222,34 @@ export function createWhatsAppService({
         },
         { new: true, runValidators: true },
       )
-    } catch (err) {
-      console.error('[WhatsApp] Error updating attendee notification in DB:', err)
+    } catch {
+      logWhatsAppNotification('REJECTED', {
+        source: record.idempotencyKey ? 'notification_persistence' : 'application',
+        notificationType: 'booking_confirmation',
+        identity: record.idempotencyKey || requestId,
+        reason: 'Attendee notification state persistence failed',
+      })
     }
   }
 
   // Send admin alert
-  async function sendAdminAlert(booking, { force = false } = {}) {
-    if (!configured || !adminPhoneNumber) return { skipped: true, reason: 'unconfigured' }
+  async function sendAdminAlert(booking, { force = false, source = 'application' } = {}) {
+    if (!configured || !adminPhoneNumber) {
+      logSkipped(booking, 'admin_alert', source, 'WhatsApp configuration missing')
+      return { skipped: true, reason: 'unconfigured' }
+    }
     const adminRecipient = normalizeWhatsAppRecipient(adminPhoneNumber)
-    if (!adminRecipient) return { skipped: true, reason: 'invalid_admin_phone' }
+    if (!adminRecipient) {
+      logSkipped(booking, 'admin_alert', source, 'Invalid admin mobile number')
+      return { skipped: true, reason: 'invalid_admin_phone' }
+    }
 
     const requestId = booking.requestId
     const idempotencyKey = `${requestId}:booking_confirmation:${booking.reference}:admin:${adminRecipient}`
 
     const previous = booking.adminNotification
     if (!force && previous && ['sent', 'delivered'].includes(previous.status)) {
+      logSkipped(booking, 'admin_alert', source, 'Duplicate notification; admin alert already sent', idempotencyKey)
       return { skipped: true, duplicate: true }
     }
 
@@ -1017,10 +1268,29 @@ export function createWhatsAppService({
     }
 
     let graphResult
+    let activeAdminTemplate = 'text'
     try {
-      graphResult = await postWhatsAppGraph(payload)
+      graphResult = await postWhatsAppGraph(payload, {
+        source,
+        notificationType: 'admin_alert',
+        identity: idempotencyKey,
+        template: 'text',
+        language: 'not_applicable',
+      })
       // If Meta rejects standard text with 131047 (outside 24h window), fallback to utility template
       if (!graphResult.ok && graphResult.body?.error?.code === 131047) {
+        logWhatsAppNotification('REJECTED', {
+          source,
+          notificationType: 'admin_alert',
+          identity: idempotencyKey,
+          template: 'text',
+          language: 'not_applicable',
+          httpStatus: graphResult.status,
+          metaErrorCode: graphResult.body?.error?.code,
+          metaErrorSubcode: graphResult.body?.error?.error_subcode,
+          reason: 'Text window rejected; attempting approved template fallback',
+          retryable: false,
+        })
         const fallbackPayload = {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
@@ -1037,10 +1307,25 @@ export function createWhatsAppService({
           },
           biz_opaque_callback_data: idempotencyKey,
         }
-        graphResult = await postWhatsAppGraph(fallbackPayload)
+        activeAdminTemplate = activeTemplateName
+        graphResult = await postWhatsAppGraph(fallbackPayload, {
+          source,
+          notificationType: 'admin_alert',
+          identity: idempotencyKey,
+          template: activeTemplateName,
+          language: bookingTemplateLanguage,
+        })
       }
-    } catch (error) {
-      console.error('[WhatsApp] Error sending admin alert:', error)
+    } catch {
+      logWhatsAppNotification('REJECTED', {
+        source,
+        notificationType: 'admin_alert',
+        identity: idempotencyKey,
+        template: activeAdminTemplate,
+        language: activeAdminTemplate === 'text' ? 'not_applicable' : bookingTemplateLanguage,
+        reason: 'Provider response uncertain',
+        retryable: false,
+      })
       await bookingEnquiryModel.findOneAndUpdate(
         { requestId },
         {
@@ -1060,22 +1345,29 @@ export function createWhatsAppService({
     const notificationStatus = ok && messageId ? 'sent' : 'failed'
     const failureReason = notificationStatus === 'failed' ? safeFailureReason(status, body, [accessToken]) : ''
 
-    if (ok && messageId) {
-      console.info('[WhatsApp API] Admin alert accepted by Meta.', {
-        status,
+    if (notificationStatus === 'sent') {
+      logWhatsAppNotification('ACCEPTED', {
+        source,
+        notificationType: 'admin_alert',
+        identity: idempotencyKey,
+        template: activeAdminTemplate,
+        language: activeAdminTemplate === 'text' ? 'not_applicable' : bookingTemplateLanguage,
+        httpStatus: status,
         messageId,
-        bookingId: booking.requestId,
-        recipient: maskPhone(adminRecipient),
+        reason: 'Meta accepted; delivery not yet confirmed',
       })
     } else {
-      console.error('[WhatsApp API] Admin alert rejected by Meta.', {
-        status,
+      logWhatsAppNotification('REJECTED', {
+        source,
+        notificationType: 'admin_alert',
+        identity: idempotencyKey,
+        template: activeAdminTemplate,
+        language: activeAdminTemplate === 'text' ? 'not_applicable' : bookingTemplateLanguage,
+        httpStatus: status,
         metaErrorCode: body?.error?.code,
         metaErrorSubcode: body?.error?.error_subcode,
-        metaErrorMessage: body?.error?.message,
-        metaErrorDetails: body?.error?.error_data?.details || body?.error?.message,
-        bookingId: booking.requestId,
-        recipient: maskPhone(adminRecipient),
+        reason: 'Meta rejected notification',
+        retryable: retryableHttpStatuses.has(status),
       })
     }
 
@@ -1104,7 +1396,16 @@ export function createWhatsAppService({
   // Unified send logic for a booking confirmation event
   async function send(requestId, type, options = {}) {
     const booking = await getBooking(requestId)
-    if (!booking) return null
+    const source = options.source ?? 'application'
+    if (!booking) {
+      logWhatsAppNotification('SKIPPED', {
+        source,
+        notificationType: type,
+        identity: requestId,
+        reason: 'Booking not found',
+      })
+      return null
+    }
 
     const isSuccess = type === 'booking_confirmation'
     if (!isSuccess) {
@@ -1116,7 +1417,7 @@ export function createWhatsAppService({
     const primaryResult = await sendPrimaryConfirmation(booking, { ...options, targetType: type })
 
     // 2. If payment is paid and reference allocated, dispatch to consented attendees
-    if (booking.paymentStatus === 'paid' && booking.reference && configured) {
+    if (isRealPaidBookingStatus(booking.paymentStatus) && booking.reference && configured) {
       const attendees = getEligibleAttendees(booking)
       const primaryRecipient = normalizeWhatsAppRecipient(booking.mobile)
       const sentNumbers = new Set(primaryRecipient ? [primaryRecipient] : [])
@@ -1124,6 +1425,15 @@ export function createWhatsAppService({
       for (const attendee of attendees) {
         // Must have valid mobile and not opted out
         if (!attendee.mobile || attendee.whatsappConsent === false) {
+          logSkipped(
+            booking,
+            'booking_confirmation',
+            source,
+            !attendee.mobile
+              ? (attendee.rawMobile ? 'Invalid attendee mobile number' : 'Attendee mobile number missing')
+              : 'Attendee consent missing',
+            `${booking.requestId}:booking_confirmation:attendee:${attendee.gender}:${attendee.index}`,
+          )
           continue
         }
         // If identical name and phone to primary, skip duplicate
@@ -1131,18 +1441,37 @@ export function createWhatsAppService({
           attendee.mobile === primaryRecipient &&
           attendee.name.trim().toLowerCase() === (booking.name || '').trim().toLowerCase()
         ) {
+          logSkipped(
+            booking,
+            'booking_confirmation',
+            source,
+            'Duplicate recipient matches primary customer',
+            `${booking.requestId}:booking_confirmation:attendee:${attendee.gender}:${attendee.index}`,
+          )
           continue
         }
         // Avoid sending duplicate identical message to the exact same phone number in same booking
         if (sentNumbers.has(attendee.mobile) && !options.force) {
+          logSkipped(
+            booking,
+            'booking_confirmation',
+            source,
+            'Duplicate recipient number',
+            `${booking.requestId}:booking_confirmation:attendee:${attendee.gender}:${attendee.index}`,
+          )
           continue
         }
 
         try {
           await sendAttendeeConfirmation(booking, attendee, options)
           sentNumbers.add(attendee.mobile)
-        } catch (err) {
-          console.error('[WhatsApp] Error in attendee confirmation:', attendee.name, err)
+        } catch {
+          logWhatsAppNotification('REJECTED', {
+            source,
+            notificationType: 'booking_confirmation',
+            identity: `${booking.requestId}:booking_confirmation:attendee:${attendee.gender}:${attendee.index}`,
+            reason: 'Attendee notification processing failed',
+          })
         }
       }
 
@@ -1150,29 +1479,64 @@ export function createWhatsAppService({
       if (adminPhoneNumber) {
         try {
           await sendAdminAlert(booking, options)
-        } catch (err) {
-          console.error('[WhatsApp] Error in admin alert:', err)
+        } catch {
+          logWhatsAppNotification('REJECTED', {
+            source,
+            notificationType: 'admin_alert',
+            identity: `${booking.requestId}:admin_alert`,
+            reason: 'Admin notification processing failed',
+          })
         }
+      } else {
+        logSkipped(booking, 'admin_alert', source, 'Admin WhatsApp number not configured')
       }
+    } else if (isRealPaidBookingStatus(booking.paymentStatus) && booking.reference) {
+      for (const attendee of getEligibleAttendees(booking)) {
+        logSkipped(
+          booking,
+          'booking_confirmation',
+          source,
+          !attendee.mobile
+            ? (attendee.rawMobile ? 'Invalid attendee mobile number' : 'Attendee mobile number missing')
+            : attendee.whatsappConsent === false
+              ? 'Attendee consent missing'
+              : 'WhatsApp configuration missing',
+          `${booking.requestId}:booking_confirmation:attendee:${attendee.gender}:${attendee.index}`,
+        )
+      }
+      logSkipped(
+        booking,
+        'admin_alert',
+        source,
+        adminPhoneNumber ? 'WhatsApp configuration missing' : 'Admin WhatsApp number not configured',
+      )
     }
 
     return primaryResult
   }
 
   // Admin manual resend action for a specific target
-  async function resendNotification(requestId, { target = 'primary', attendeeIndex = 0, force = true } = {}) {
+  async function resendNotification(requestId, { target = 'primary', attendeeIndex = 0, force = true, source = 'admin_manual_retry' } = {}) {
     const booking = await getBooking(requestId)
     if (!booking) {
+      logWhatsAppNotification('SKIPPED', {
+        source,
+        notificationType: target === 'admin' ? 'admin_alert' : target === 'attendee' ? 'booking_confirmation' : 'payment_assistance',
+        identity: requestId,
+        reason: 'Booking not found',
+      })
       throw new Error('Booking not found.')
     }
-    const isPaid = ['paid', 'verified', 'demo_paid'].includes(booking.paymentStatus)
+    const isPaid = isCompletedBookingPaymentStatus(booking.paymentStatus)
 
     if (target === 'primary') {
       if (!booking.whatsappConsent) {
+        logSkipped(booking, isPaid ? 'booking_confirmation' : 'payment_assistance', source,
+          booking.whatsappOptedOutAt ? 'Customer opted out' : 'Customer consent missing')
         return { success: false, message: 'Primary customer has not provided WhatsApp consent.' }
       }
       const type = isPaid ? 'booking_confirmation' : 'payment_assistance'
-      const result = await sendPrimaryConfirmation(booking, { force, retry: true })
+      const result = await sendPrimaryConfirmation(booking, { force, retry: true, source })
       return { success: Boolean(result?.sent), result, message: result?.sent ? 'Primary WhatsApp sent.' : result?.failureReason || 'Failed to send.' }
     }
 
@@ -1180,26 +1544,31 @@ export function createWhatsAppService({
       const attendees = getEligibleAttendees(booking)
       const attendee = attendees.find((a) => a.index === attendeeIndex)
       if (!attendee) {
+        logSkipped(booking, 'booking_confirmation', source, 'Attendee not found', `${booking.requestId}:attendee:${attendeeIndex}`)
         return { success: false, message: `Attendee with index ${attendeeIndex} not found.` }
       }
       if (!attendee.rawMobile) {
+        logSkipped(booking, 'booking_confirmation', source, 'Attendee mobile number missing', `${booking.requestId}:attendee:${attendeeIndex}`)
         return { success: false, message: `No mobile number was entered for ${attendee.name}.` }
       }
       if (!attendee.mobile) {
+        logSkipped(booking, 'booking_confirmation', source, 'Invalid attendee mobile number', `${booking.requestId}:attendee:${attendeeIndex}`)
         return { success: false, message: `The mobile number entered for ${attendee.name} is invalid.` }
       }
       if (!attendee.whatsappConsent) {
+        logSkipped(booking, 'booking_confirmation', source, 'Attendee consent missing', `${booking.requestId}:attendee:${attendeeIndex}`)
         return { success: false, message: `${attendee.name} has not consented to WhatsApp updates.` }
       }
-      const result = await sendAttendeeConfirmation(booking, attendee, { force: true })
+      const result = await sendAttendeeConfirmation(booking, attendee, { force: true, source })
       return { success: Boolean(result?.sent), result, message: result?.sent ? `WhatsApp sent to ${attendee.name}.` : result?.error || 'Failed to send.' }
     }
 
     if (target === 'admin') {
       if (!adminPhoneNumber) {
+        logSkipped(booking, 'admin_alert', source, 'Admin WhatsApp number not configured')
         return { success: false, message: 'WHATSAPP_ADMIN_PHONE_NUMBER is not configured.' }
       }
-      const result = await sendAdminAlert(booking, { force: true })
+      const result = await sendAdminAlert(booking, { force: true, source })
       return {
         success: Boolean(result?.sent),
         result,
@@ -1220,7 +1589,14 @@ export function createWhatsAppService({
   }
 
   async function processRetries() {
-    if (!configured) return 0
+    if (!configured) {
+      logWhatsAppNotification('SKIPPED', {
+        source: 'automatic_retry',
+        notificationType: 'payment_assistance',
+        reason: 'WhatsApp configuration missing',
+      })
+      return 0
+    }
     const due = await bookingEnquiryModel.find({
       'whatsappNotification.status': 'failed',
       'whatsappNotification.retryable': true,
@@ -1229,7 +1605,13 @@ export function createWhatsAppService({
     }).select('requestId whatsappNotification.messageType').limit(25).lean()
     let retried = 0
     for (const booking of due) {
-      await send(booking.requestId, booking.whatsappNotification.messageType, { retry: true })
+      const type = booking.whatsappNotification.messageType
+      const result = await send(booking.requestId, type, { retry: true, source: 'automatic_retry' })
+      logWhatsAppNotificationResult(result, {
+        source: 'automatic_retry',
+        notificationType: type,
+        identity: booking.whatsappNotification.idempotencyKey || `${booking.requestId}:${type}:automatic_retry`,
+      })
       retried += 1
     }
     return retried
@@ -1285,18 +1667,28 @@ export function createWhatsAppService({
         update.$set['whatsappNotification.failureReason'] = safeNote
         update.$set['whatsappNotification.retryable'] = false
         update.$set['whatsappNotification.nextRetryAt'] = null
-        console.error('[WhatsApp API Webhook] Asynchronous delivery failure recorded.', {
-          messageId,
-          bookingId: booking.requestId,
-          recipient: maskPhone(booking.whatsappNotification?.recipient),
-          error,
-        })
       }
-      return bookingEnquiryModel.findOneAndUpdate(
+      const updated = await bookingEnquiryModel.findOneAndUpdate(
         { requestId: booking.requestId, 'whatsappNotification.providerMessageId': messageId },
         update,
         { new: true, runValidators: true },
       ).lean()
+      if (updated && ['delivered', 'read', 'failed'].includes(status)) {
+        logWhatsAppNotification(
+          status === 'delivered' ? 'DELIVERED' : status === 'read' ? 'READ' : 'DELIVERY_FAILED',
+          {
+            source: 'whatsapp_status_webhook',
+            notificationType: booking.whatsappNotification?.messageType ?? 'booking_confirmation',
+            identity: messageId,
+            stage: 'delivery_status',
+            messageId,
+            deliveryTimestamp: at.toISOString(),
+            deliveryStatus: status,
+            reason: status === 'failed' ? 'WhatsApp delivery failed' : `WhatsApp ${status} status confirmed`,
+          },
+        )
+      }
+      return updated
     }
 
     const eventKey = `${messageId}:${status}:${timestamp ?? 'unknown'}`
@@ -1322,11 +1714,27 @@ export function createWhatsAppService({
       if (status === 'failed') {
         updateSet['attendeeNotifications.$.failureReason'] = safeNote
       }
-      return bookingEnquiryModel.findOneAndUpdate(
+      const updated = await bookingEnquiryModel.findOneAndUpdate(
         { requestId: attendeeBooking.requestId, 'attendeeNotifications.providerMessageId': messageId },
         { $set: updateSet },
         { new: true },
       ).lean()
+      if (updated && ['delivered', 'read', 'failed'].includes(status)) {
+        logWhatsAppNotification(
+          status === 'delivered' ? 'DELIVERED' : status === 'read' ? 'READ' : 'DELIVERY_FAILED',
+          {
+            source: 'whatsapp_status_webhook',
+            notificationType: 'booking_confirmation',
+            identity: messageId,
+            stage: 'delivery_status',
+            messageId,
+            deliveryTimestamp: at.toISOString(),
+            deliveryStatus: status,
+            reason: status === 'failed' ? 'WhatsApp delivery failed' : `WhatsApp ${status} status confirmed`,
+          },
+        )
+      }
+      return updated
     }
 
     // Check admin notification match
@@ -1344,11 +1752,27 @@ export function createWhatsAppService({
       if (status === 'failed') {
         updateSet['adminNotification.failureReason'] = safeNote
       }
-      return bookingEnquiryModel.findOneAndUpdate(
+      const updated = await bookingEnquiryModel.findOneAndUpdate(
         { requestId: adminBooking.requestId, 'adminNotification.providerMessageId': messageId },
         { $set: updateSet },
         { new: true },
       ).lean()
+      if (updated && ['delivered', 'read', 'failed'].includes(status)) {
+        logWhatsAppNotification(
+          status === 'delivered' ? 'DELIVERED' : status === 'read' ? 'READ' : 'DELIVERY_FAILED',
+          {
+            source: 'whatsapp_status_webhook',
+            notificationType: 'admin_alert',
+            identity: messageId,
+            stage: 'delivery_status',
+            messageId,
+            deliveryTimestamp: at.toISOString(),
+            deliveryStatus: status,
+            reason: status === 'failed' ? 'WhatsApp delivery failed' : `WhatsApp ${status} status confirmed`,
+          },
+        )
+      }
+      return updated
     }
 
     return null

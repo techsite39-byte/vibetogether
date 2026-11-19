@@ -774,9 +774,18 @@ test('creates a Cashfree checkout session through the booking route with mocked 
   })
 })
 
-test('Cashfree verification notifies only for confirmed failures and preserves success behavior', async () => {
+test('Cashfree verification notifies only for confirmed failures and preserves success behavior', async (t) => {
   let verification
   const notifications = []
+  const notificationLogs = []
+  const originalInfo = console.info
+  const originalError = console.error
+  console.info = (message, details) => notificationLogs.push({ level: 'info', message, details })
+  console.error = (message, details) => notificationLogs.push({ level: 'error', message, details })
+  t.after(() => {
+    console.info = originalInfo
+    console.error = originalError
+  })
   const { baseUrl } = await startTestServer({
     cashfreeConfigured: true,
     cashfreePayments: {
@@ -787,6 +796,7 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
     whatsappNotifications: {
       async notify(requestId, type) {
         notifications.push({ requestId, type })
+        return type === 'booking_confirmation' ? { sent: true } : { failed: true }
       },
     },
   })
@@ -866,6 +876,11 @@ test('Cashfree verification notifies only for confirmed failures and preserves s
     { requestId, type: 'payment_assistance' },
     { requestId, type: 'booking_confirmation' },
   ])
+  assert.ok(notificationLogs.some(({ details }) =>
+    details?.stage === 'caller_result' && details.source === 'cashfree_verification' &&
+    details.notificationType === 'payment_assistance' && details.outcome === 'REJECTED',
+  ))
+  assert.equal(JSON.stringify(notificationLogs).includes(requestId), false)
 })
 
 test('failed and cancelled demo payments have no reference and can retry the same session', async () => {

@@ -6,6 +6,9 @@ export {
   buildAdminAlertMessage,
   templateBodyParameters,
   formatBookingDate,
+  logWhatsAppNotification,
+  logWhatsAppNotificationResult,
+  createWhatsAppCorrelationId,
   normalizeWhatsAppRecipient,
   normalizeWhatsAppRecipient as normalizeRecipient,
 } from './whatsappService.js'

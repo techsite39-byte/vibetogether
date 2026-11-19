@@ -8,8 +8,8 @@ function query(operation) {
   }
 }
 
-export function createMockBookingResultModel() {
-  let record = null
+export function createMockBookingResultModel(initialRecord = null) {
+  let record = clone(initialRecord)
   let writeCount = 0
 
   return {
@@ -29,8 +29,7 @@ export function createMockBookingResultModel() {
         if (record && record.requestId !== filter.requestId) return null
         if (
           record &&
-          filter.paymentStatus?.$ne &&
-          record.paymentStatus === filter.paymentStatus.$ne
+          filter.paymentStatus?.$nin?.includes(record.paymentStatus)
         ) {
           return null
         }
@@ -43,6 +42,9 @@ export function createMockBookingResultModel() {
           }
         } else {
           Object.assign(record, clone(update.$set ?? {}))
+        }
+        for (const field of Object.keys(update.$unset ?? {})) {
+          delete record[field]
         }
         writeCount += 1
         return clone(record)
