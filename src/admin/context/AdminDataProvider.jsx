@@ -9,7 +9,6 @@ const defaultPlatformSettings = {
   tagline: 'Different People. One Vibe.',
   contactEmail: '',
   contactPhone: '',
-  whatsappNumber: '',
   socialInstagram: '',
   socialFacebook: '',
   socialYoutube: '',

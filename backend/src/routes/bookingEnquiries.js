@@ -11,10 +11,6 @@ import {
   calculateTicketPricing,
 } from '../services/diwaliOffer.js'
 import {
-  logWhatsAppNotification,
-  logWhatsAppNotificationResult,
-} from '../services/whatsappNotifications.js'
-import {
   isRealPaidBookingStatus,
   normalizeBookingPaymentStatus,
 } from '../../../src/utils/paymentStatus.js'
@@ -213,28 +209,17 @@ async function validateBookingEnquiry(body, eventRepository) {
 
   const maleMemberMobiles = normalizeMemberMobiles(body.maleMemberMobiles, maleCount)
   const femaleMemberMobiles = normalizeMemberMobiles(body.femaleMemberMobiles, femaleCount)
-  const maleMemberConsents = Array.from({ length: maleCount }, (_, i) => body.maleMemberConsents?.[i] === true)
-  const femaleMemberConsents = Array.from({ length: femaleCount }, (_, i) => body.femaleMemberConsents?.[i] === true)
-  const nowTime = new Date()
-  const maleMemberConsentAts = maleMemberConsents.map((c) => (c ? nowTime : null))
-  const femaleMemberConsentAts = femaleMemberConsents.map((c) => (c ? nowTime : null))
 
   const attendees = [
     ...maleMemberNames.map((mName, i) => ({
       name: mName,
       gender: 'Male',
       mobile: maleMemberMobiles[i] || '',
-      whatsappConsent: maleMemberConsents[i],
-      whatsappConsentAt: maleMemberConsentAts[i],
-      whatsappConsentSource: 'Website booking journey',
     })),
     ...femaleMemberNames.map((fName, i) => ({
       name: fName,
       gender: 'Female',
       mobile: femaleMemberMobiles[i] || '',
-      whatsappConsent: femaleMemberConsents[i],
-      whatsappConsentAt: femaleMemberConsentAts[i],
-      whatsappConsentSource: 'Website booking journey',
     })),
   ]
 
@@ -250,12 +235,6 @@ async function validateBookingEnquiry(body, eventRepository) {
   }
 
   const ticketType = body.ticketType ?? DEFAULT_TICKET_TYPE
-  if (
-    body.whatsappConsent !== undefined &&
-    typeof body.whatsappConsent !== 'boolean'
-  ) {
-    return { error: 'WhatsApp communication consent must be selected explicitly.' }
-  }
   if (
     !BOOKING_TICKET_TYPES.some(({ id }) => id === ticketType) ||
     !Number.isInteger(ticketQuantity) ||
@@ -326,16 +305,9 @@ async function validateBookingEnquiry(body, eventRepository) {
       femaleMemberNames,
       maleMemberMobiles,
       femaleMemberMobiles,
-      maleMemberConsents,
-      femaleMemberConsents,
-      maleMemberConsentAts,
-      femaleMemberConsentAts,
       attendees,
       ticketType,
       ticketQuantity,
-      whatsappConsent: body.whatsappConsent === true,
-      whatsappConsentAt: body.whatsappConsent === true ? new Date() : null,
-      whatsappConsentSource: 'Website booking journey',
       createdAt: new Date(),
       source: 'Website booking journey',
       status: 'pending',
@@ -354,7 +326,6 @@ export function createBookingEnquiriesRouter({
   upiId = 'vinothinimoorthi37-1@okhdfcbank',
   upiPayeeName = 'Vinothini Moorthi',
   diwaliOfferService,
-  whatsappNotifications,
 }) {
   if (
     !repository ||
@@ -403,11 +374,11 @@ export function createBookingEnquiriesRouter({
       femaleMemberNames: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberNames?.[index] ?? ''),
       maleMemberMobiles: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberMobiles?.[index] ?? ''),
       femaleMemberMobiles: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberMobiles?.[index] ?? ''),
-      maleMemberConsents: Array.from({ length: maleCount }, (_, index) => enquiry.maleMemberConsents?.[index] === true),
-      femaleMemberConsents: Array.from({ length: femaleCount }, (_, index) => enquiry.femaleMemberConsents?.[index] === true),
-      attendees: enquiry.attendees ?? [],
-      attendeeNotifications: enquiry.attendeeNotifications ?? [],
-      adminNotification: enquiry.adminNotification ?? null,
+      attendees: (enquiry.attendees ?? []).map((attendee) => ({
+        name: attendee.name ?? '',
+        gender: attendee.gender ?? '',
+        mobile: attendee.mobile ?? '',
+      })),
       ticketType,
       ticketTypeName: pricing?.ticketTypeName ?? enquiry.ticketTypeName ??
         BOOKING_TICKET_TYPES.find(({ id }) => id === ticketType)?.name ?? 'General Admission',
@@ -439,7 +410,6 @@ export function createBookingEnquiriesRouter({
       paymentVerifiedAt: enquiry.paymentVerifiedAt ?? null,
       paymentFailureReason: enquiry.paymentFailureReason ?? '',
       paymentAttemptedAt: enquiry.paymentAttemptedAt ?? null,
-      whatsappConsent: Boolean(enquiry.whatsappConsent),
       cashfreeConfigured: paymentProviderMode === 'cashfree' && Boolean(cashfreeConfigured),
       upiId,
       upiPayeeName,
@@ -455,17 +425,6 @@ export function createBookingEnquiriesRouter({
             rejectionReason: enquiry.upiPayments.at(-1).rejectionReason,
           }
         : null,
-      whatsappConsentAt: enquiry.whatsappConsentAt ?? null,
-      whatsappOptedOutAt: enquiry.whatsappOptedOutAt ?? null,
-      whatsappNotification: {
-        messageType: enquiry.whatsappNotification?.messageType ?? 'booking_confirmation',
-        bookingReference: enquiry.whatsappNotification?.bookingReference ?? enquiry.reference ?? '',
-        status: enquiry.whatsappNotification?.status ?? 'skipped',
-        attemptCount: enquiry.whatsappNotification?.attemptCount ?? 0,
-        lastAttemptAt: enquiry.whatsappNotification?.lastAttemptAt ?? null,
-        sentAt: enquiry.whatsappNotification?.sentAt ?? null,
-        deliveredAt: enquiry.whatsappNotification?.deliveredAt ?? null,
-      },
     }
   }
 
@@ -496,26 +455,6 @@ export function createBookingEnquiriesRouter({
     }
   }
 
-  async function notifyWithoutAffectingPayment(requestId, type, source) {
-    try {
-      const result = await whatsappNotifications?.notify?.(requestId, type, { source })
-      logWhatsAppNotificationResult(result, {
-        source,
-        notificationType: type,
-        identity: requestId,
-      })
-      return result
-    } catch (error) {
-      logWhatsAppNotification('REJECTED', {
-        source,
-        notificationType: type,
-        identity: requestId,
-        reason: 'Notification service threw',
-        errorDetails: error?.code ? `Processing error code ${error.code}` : 'Processing error',
-      })
-      return { failed: true }
-    }
-  }
 
   async function getCurrentPricing(enquiry) {
     if (
@@ -567,9 +506,16 @@ export function createBookingEnquiriesRouter({
         ...validation.value,
         ...(pricing ?? {}),
       })
+      const paymentStatus = normalizeBookingPaymentStatus(result.enquiry.paymentStatus)
       response.status(result.duplicate ? 200 : 201).json({
         message: 'Your booking request has been received.',
         duplicate: result.duplicate,
+        outcome: result.duplicate ? 'booking_already_exists' : 'booking_created_payment_pending',
+        paymentState: isRealPaidBookingStatus(result.enquiry.paymentStatus)
+          ? 'payment_success'
+          : paymentStatus === 'failed'
+            ? 'payment_failed'
+            : 'payment_pending',
         booking: serializeEnquiry(
           result.enquiry,
           getStoredPricing(result.enquiry),
@@ -606,13 +552,6 @@ export function createBookingEnquiriesRouter({
       if (!enquiry) {
         response.status(404).json({ message: 'Booking enquiry not found.' })
         return
-      }
-      if (isRealPaidBookingStatus(enquiry.paymentStatus) && enquiry.reference) {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'booking_status_lookup')
-        enquiry = await getUpdatedEnquiry(requestId, enquiry)
-      } else if (enquiry.paymentStatus === 'failed') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'booking_status_lookup')
-        enquiry = await getUpdatedEnquiry(requestId, enquiry)
       }
       let pricing = getStoredPricing(enquiry)
       if (enquiry.paymentStatus === 'failed' && enquiry.paymentProvider !== 'upi') {
@@ -679,25 +618,6 @@ export function createBookingEnquiriesRouter({
     }
   })
 
-  router.post('/:requestId/whatsapp-opt-out', async (request, response) => {
-    const { requestId } = request.params
-    if (!requestIdPattern.test(requestId)) {
-      response.status(400).json({ message: 'The booking request could not be verified.' })
-      return
-    }
-    try {
-      const enquiry = await repository.optOutWhatsApp?.(requestId)
-      if (!enquiry) {
-        response.status(404).json({ message: 'Booking enquiry not found.' })
-        return
-      }
-      response.json({ booking: serializeEnquiry(enquiry) })
-    } catch {
-      console.error('WhatsApp opt-out could not be saved.')
-      response.status(503).json({ message: 'WhatsApp preferences could not be updated. Please try again.' })
-    }
-  })
-
   router.post('/:requestId/demo-payment', async (request, response) => {
     const { requestId } = request.params
     if (!requestIdPattern.test(requestId)) {
@@ -721,7 +641,6 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found or no longer payable.' })
         return
       }
-      await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'demo_payment')
       response.status(200).json({
         message: 'Demo payment recorded. No real payment was processed.',
         duplicate: result.duplicate,
@@ -801,41 +720,26 @@ export function createBookingEnquiriesRouter({
         return
       }
       if (result.pending) {
-        logWhatsAppNotification('SKIPPED', {
-          source: 'cashfree_verification',
-          notificationType: 'payment_assistance',
-          identity: requestId,
-          reason: 'Payment still pending',
-        })
         response.status(202).json({
           message: 'The payment is still being processed by Cashfree.',
           pending: true,
+          paymentState: 'payment_pending',
           booking: serializeEnquiry(result.booking),
         })
         return
       }
-      if (isRealPaidBookingStatus(result.booking.paymentStatus)) {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'cashfree_verification')
-      } else if (
-        result.failed &&
-        result.booking.paymentStatus === 'failed' &&
-        result.booking.paymentFailureReason !== 'cancelled'
-      ) {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'cashfree_verification')
-      } else {
-        logWhatsAppNotification('SKIPPED', {
-          source: 'cashfree_verification',
-          notificationType: 'payment_assistance',
-          identity: requestId,
-          reason: result.booking.paymentFailureReason === 'cancelled'
-            ? 'Customer cancelled payment'
-            : 'Cashfree did not confirm a terminal payment failure',
-        })
-      }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
+      const paymentState = isRealPaidBookingStatus(booking.paymentStatus)
+        ? 'payment_success'
+        : result.pending
+          ? 'payment_pending'
+          : booking.paymentStatus === 'failed'
+            ? 'payment_failed'
+            : 'payment_pending'
       response.json({
         verified: result.verified,
         duplicate: result.duplicate,
+        paymentState,
         booking: serializeEnquiry(booking),
       })
     } catch (error) {
@@ -857,22 +761,18 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found.' })
         return
       }
-      if (isRealPaidBookingStatus(result.booking.paymentStatus)) {
-        await notifyWithoutAffectingPayment(requestId, 'booking_confirmation', 'cashfree_status_check')
-      } else if (result.booking.paymentStatus === 'failed' && result.booking.paymentFailureReason !== 'cancelled') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'cashfree_status_check')
-      } else {
-        logWhatsAppNotification('SKIPPED', {
-          source: 'cashfree_status_check',
-          notificationType: 'payment_assistance',
-          identity: requestId,
-          reason: result.pending ? 'Payment still pending' : 'Payment status is not notification eligible',
-        })
-      }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
+      const paymentState = isRealPaidBookingStatus(booking.paymentStatus)
+        ? 'payment_success'
+        : result.pending
+          ? 'payment_pending'
+          : booking.paymentStatus === 'failed'
+            ? 'payment_failed'
+            : 'payment_pending'
       response.set('Cache-Control', 'no-store').json({
         pending: Boolean(result.pending),
         duplicate: Boolean(result.duplicate),
+        paymentState,
         booking: serializeEnquiry(booking),
       })
     } catch (error) {
@@ -895,19 +795,15 @@ export function createBookingEnquiriesRouter({
         response.status(404).json({ message: 'Booking enquiry not found.' })
         return
       }
-      if (result.booking?.paymentStatus === 'failed' && outcome === 'failed') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'cashfree_failure_record')
-      } else {
-        logWhatsAppNotification('SKIPPED', {
-          source: 'cashfree_failure_record',
-          notificationType: 'payment_assistance',
-          identity: requestId,
-          reason: outcome === 'cancelled' ? 'Customer cancelled payment' : 'Failure was not confirmed',
-        })
-      }
       const booking = await getUpdatedEnquiry(requestId, result.booking)
+      const paymentState = isRealPaidBookingStatus(booking.paymentStatus)
+        ? 'payment_success'
+        : result.pending || booking.paymentStatus !== 'failed'
+          ? 'payment_pending'
+          : 'payment_failed'
       response.json({
         recorded: true,
+        paymentState,
         booking: serializeEnquiry(booking),
       })
     } catch (error) {
@@ -938,16 +834,6 @@ export function createBookingEnquiriesRouter({
       if (!enquiry) {
         response.status(409).json({ message: 'This payment can no longer be marked as failed.' })
         return
-      }
-      if (enquiry.paymentStatus === 'failed') {
-        await notifyWithoutAffectingPayment(requestId, 'payment_assistance', 'demo_payment_failure')
-      } else {
-        logWhatsAppNotification('SKIPPED', {
-          source: 'demo_payment_failure',
-          notificationType: 'payment_assistance',
-          identity: requestId,
-          reason: 'Payment failure was not recorded',
-        })
       }
       const booking = await getUpdatedEnquiry(requestId, enquiry)
       response.json({ booking: serializeEnquiry(booking) })

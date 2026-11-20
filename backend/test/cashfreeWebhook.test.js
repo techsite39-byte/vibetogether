@@ -130,71 +130,37 @@ test('accepts webhooks with application/*+json content-type on both primary and 
   assert.deepEqual(received[0].rawBody, Buffer.from(body))
 })
 
-test('logs Cashfree failure notification results and suppresses duplicate webhook sends', async () => {
-  const requestId = 'cashfree-payment-session-sensitive-id'
-  const notificationCalls = []
-  const logs = []
+test('processes failure and duplicate Cashfree webhooks without notification coupling', async () => {
   let seenFailure = false
-  const originalInfo = console.info
-  const originalError = console.error
-  console.info = (message, details) => logs.push({ message, details })
-  console.error = (message, details) => logs.push({ message, details })
   const baseUrl = await startServer({
     cashfreeSecretKey: webhookSecret,
     cashfreePayments: {
       async handleWebhook() {
         if (seenFailure) {
-          return {
-            action: 'duplicate',
-            duplicate: true,
-            booking: { requestId, paymentStatus: 'failed', paymentFailureReason: 'failed' },
-          }
+          return { action: 'duplicate', duplicate: true }
         }
         seenFailure = true
         return {
           action: 'failed',
-          booking: { requestId, paymentStatus: 'failed', paymentFailureReason: 'failed' },
         }
-      },
-    },
-    whatsappNotifications: {
-      async notify(id, type, options) {
-        notificationCalls.push({ id, type, options })
-        return { failed: true }
       },
     },
   })
 
-  try {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const body = JSON.stringify({
-        type: 'PAYMENT_FAILED_WEBHOOK',
-        data: { payment: { payment_status: 'FAILED', cf_payment_id: 'cf-test' } },
-      })
-      const headers = signedHeaders(body)
-      const response = await fetch(`${baseUrl}/api/payments/cashfree/webhook`, {
-        method: 'POST',
-        headers,
-        body,
-      })
-      assert.equal(response.status, 200)
-    }
-  } finally {
-    console.info = originalInfo
-    console.error = originalError
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const body = JSON.stringify({
+      type: 'PAYMENT_FAILED_WEBHOOK',
+      data: { payment: { payment_status: 'FAILED', cf_payment_id: 'cf-test' } },
+    })
+    const headers = signedHeaders(body)
+    const response = await fetch(`${baseUrl}/api/payments/cashfree/webhook`, {
+      method: 'POST',
+      headers,
+      body,
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { received: true })
   }
-
-  assert.equal(notificationCalls.length, 1)
-  assert.equal(notificationCalls[0].type, 'payment_assistance')
-  assert.equal(notificationCalls[0].options.source, 'cashfree_webhook')
-  assert.ok(logs.some(({ details }) =>
-    details?.stage === 'caller_result' && details.outcome === 'REJECTED' &&
-    details.source === 'cashfree_webhook',
-  ))
-  assert.ok(logs.some(({ details }) =>
-    details?.outcome === 'SKIPPED' && details.reason === 'Duplicate Cashfree webhook',
-  ))
-  assert.equal(JSON.stringify(logs).includes(requestId), false)
 })
 
 test('does not acknowledge an unmatched payment when durable storage fails', async () => {

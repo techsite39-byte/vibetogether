@@ -15,7 +15,6 @@ import { categories } from '../data/categories.js'
 import { testimonials } from '../data/testimonials.js'
 import { heroBackgroundSlides, homeImages } from '../data/homepage.js'
 import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
-import { useBookingEnquiry } from '../context/useBookingEnquiry.js'
 import usePublicEvents from '../hooks/usePublicEvents.js'
 import HomeCategoriesSection from '../components/home/HomeCategoriesSection.jsx'
 import EventCard from '../components/events/EventCard.jsx'
@@ -92,7 +91,6 @@ function Home() {
   const heroPointerFrame = useRef(0)
   const hasAdvancedHero = useRef(false)
   const latestHeroPointer = useRef({ x: 0, y: 0 })
-  const { openBooking } = useBookingEnquiry()
   const { events, loading: eventsLoading, error: eventsError } = usePublicEvents()
   const aboutFeaturedEvents = events
     .filter(({ id }) =>
@@ -800,7 +798,7 @@ function Home() {
             </div>
           </div>
 
-          <Button className="home-reasons__cta" onClick={() => openBooking()}>
+          <Button className="home-reasons__cta" to="/events">
             Explore Vibe Alone Events <ArrowRight size={17} aria-hidden="true" />
           </Button>
 
@@ -841,7 +839,7 @@ function Home() {
           <p>
             Say yes to something new. We’ll save you a place in the story.
           </p>
-          <Button onClick={() => openBooking()}>
+          <Button to="/booking">
             Book Now <ArrowRight size={17} aria-hidden="true" />
           </Button>
         </div>

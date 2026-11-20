@@ -1,7 +1,6 @@
 import { Suspense, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Loader from '../common/Loader.jsx'
-import FloatingWhatsApp from '../contact/FloatingWhatsApp.jsx'
 import Footer from './Footer.jsx'
 import Navbar from './Navbar.jsx'
 import useScrollReveal from '../../hooks/useScrollReveal.js'
@@ -54,7 +53,6 @@ export default function MainLayout({ children }) {
         </Suspense>
       </main>
       <Footer />
-      <FloatingWhatsApp />
     </div>
   )
 }

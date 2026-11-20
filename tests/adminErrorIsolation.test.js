@@ -57,7 +57,6 @@ class TestErrorScopeManager {
 
 test('extractScopeFromPath correctly categorizes admin resource routes', () => {
   assert.equal(extractScopeFromPath('/admin/bookings/6afcb6145b9ed61284336bc4'), 'bookings')
-  assert.equal(extractScopeFromPath('/admin/bookings/VT-12345/whatsapp/retry'), 'bookings')
   assert.equal(extractScopeFromPath('/admin/events/sing-along'), 'events')
   assert.equal(extractScopeFromPath('/admin/users/user-1'), 'users')
   assert.equal(extractScopeFromPath('/admin/settings/platform'), 'settings')

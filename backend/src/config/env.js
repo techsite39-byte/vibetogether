@@ -162,55 +162,6 @@ const upiPayeeName = process.env.UPI_PAYEE_NAME?.trim() ?? 'Vinothini Moorthi'
 if (!/^[\w.-]+@[\w.-]+$/.test(upiId) || !upiPayeeName || upiPayeeName.length > 120) {
   throw new Error('UPI_ID and UPI_PAYEE_NAME must contain valid public payment details.')
 }
-const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim() ?? ''
-const whatsappAccessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim() ?? ''
-const whatsappBusinessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID?.trim() ?? ''
-const whatsappApiVersion = (process.env.WHATSAPP_API_VERSION?.trim() || 'v22.0')
-const whatsappBookingTemplate = (
-  process.env.WHATSAPP_BOOKING_TEMPLATE?.trim() ||
-  process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ||
-  'vibetogether_payment_success'
-)
-const whatsappBookingTemplateLanguage = (
-  process.env.WHATSAPP_BOOKING_TEMPLATE_LANGUAGE?.trim() ||
-  'en'
-)
-const whatsappAdminPhoneNumber = process.env.WHATSAPP_ADMIN_PHONE_NUMBER?.trim() ?? ''
-const whatsappNotificationsEnabled = process.env.WHATSAPP_NOTIFICATIONS_ENABLED !== 'false'
-const whatsappWebhookVerifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim() ?? ''
-const whatsappAppSecret = process.env.WHATSAPP_APP_SECRET?.trim() ?? ''
-const whatsappSuccessTemplateName = (
-  process.env.WHATSAPP_SUCCESS_TEMPLATE_NAME?.trim() ||
-  whatsappBookingTemplate ||
-  'vibetogether_payment_success'
-)
-const whatsappFailureTemplateName = (
-  process.env.WHATSAPP_FAILURE_TEMPLATE_NAME?.trim() ||
-  'vibetogether_payment_failed'
-)
-if (whatsappBookingTemplateLanguage !== 'en') {
-  throw new Error('WHATSAPP_BOOKING_TEMPLATE_LANGUAGE must be en.')
-}
-if (
-  whatsappSuccessTemplateName !== 'vibetogether_payment_success' ||
-  whatsappFailureTemplateName !== 'vibetogether_payment_failed'
-) {
-  throw new Error('WhatsApp payment templates must use the approved VibeTogether template names.')
-}
-const whatsappSuccessTicketParam = (
-  process.env.WHATSAPP_SUCCESS_TICKET_PARAM?.trim() ||
-  'type'
-).toLowerCase()
-if (whatsappApiVersion && !/^v\d+\.\d+$/.test(whatsappApiVersion)) {
-  throw new Error('WHATSAPP_API_VERSION must use the format vNN.N.')
-}
-const whatsappConfigured = Boolean(
-  whatsappPhoneNumberId &&
-  whatsappAccessToken &&
-  whatsappApiVersion &&
-  whatsappBookingTemplate &&
-  whatsappNotificationsEnabled,
-)
 
 export const config = Object.freeze({
   adminAuthConfigured,
@@ -241,18 +192,4 @@ export const config = Object.freeze({
   paymentProvider,
   upiId,
   upiPayeeName,
-  whatsappPhoneNumberId,
-  whatsappAccessToken,
-  whatsappBusinessAccountId,
-  whatsappApiVersion,
-  whatsappBookingTemplate,
-  whatsappBookingTemplateLanguage,
-  whatsappAdminPhoneNumber,
-  whatsappNotificationsEnabled,
-  whatsappWebhookVerifyToken,
-  whatsappAppSecret,
-  whatsappSuccessTemplateName,
-  whatsappFailureTemplateName,
-  whatsappSuccessTicketParam,
-  whatsappConfigured,
 })

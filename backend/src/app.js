@@ -9,7 +9,6 @@ import { createAdminRouter } from './routes/admin.js'
 import { createBookingsRouter } from './routes/bookings.js'
 import { createPublicEnquiriesRouter } from './routes/publicEnquiries.js'
 import { createPublicSettingsRouter } from './routes/publicSettings.js'
-import { createWhatsAppWebhookRouter } from './routes/whatsappWebhook.js'
 import { createCashfreeWebhookRouter } from './routes/cashfreeWebhook.js'
 import healthRouter from './routes/health.js'
 import { PlatformSetting } from './models/adminRecords.js'
@@ -41,8 +40,6 @@ export function createApp({
   paymentProvider = 'cashfree',
   upiId = 'vinothinimoorthi37-1@okhdfcbank',
   upiPayeeName = 'Vinothini Moorthi',
-  whatsappNotifications,
-  whatsappWebhookConfig = {},
   diwaliOfferService,
   corsOrigins,
   databaseReady,
@@ -71,7 +68,6 @@ export function createApp({
   })
   const cashfreeWebhookRouter = createCashfreeWebhookRouter({
     payments: cashfreePayments,
-    notifications: whatsappNotifications,
     secret: cashfreeSecretKey,
   })
   const cashfreeWebhookBodyParser = express.raw({
@@ -125,14 +121,7 @@ export function createApp({
       },
     }),
   )
-  app.use(express.json({
-    limit: '15mb',
-    verify(request, _response, buffer) {
-      if (request.originalUrl.startsWith('/api/whatsapp/webhook')) {
-        request.rawBody = Buffer.from(buffer)
-      }
-    },
-  }))
+  app.use(express.json({ limit: '15mb' }))
   app.get('/api/media/:id', async (request, response, next) => {
     try {
       const { id } = request.params
@@ -187,16 +176,11 @@ export function createApp({
     unmatchedPaymentModel,
     diwaliOfferService,
     diwaliOfferModel: DiwaliOffer,
-    whatsappNotifications,
   }))
   app.use('/api', createPublicEnquiriesRouter({ enquiryModel, subscriberModel }))
   app.use('/api/public-settings', createPublicSettingsRouter({
     platformSettingModel,
     diwaliOfferService,
-  }))
-  app.use('/api/whatsapp/webhook', createWhatsAppWebhookRouter({
-    notifications: whatsappNotifications,
-    ...whatsappWebhookConfig,
   }))
   app.use('/api/bookings', createBookingsRouter({
     bookingModel,
@@ -221,7 +205,6 @@ export function createApp({
         upiId,
         upiPayeeName,
         diwaliOfferService,
-        whatsappNotifications,
       }),
     )
   }

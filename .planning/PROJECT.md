@@ -20,14 +20,14 @@ Make the mobile experience measurably faster while preserving the existing desig
 
 - ✓ The site has public event discovery and booking routes — existing codebase.
 - ✓ The application includes Cashfree and Razorpay payment flows, payment verification/webhooks, and UPI support — existing codebase.
-- ✓ Booking confirmation, ticket/QR, WhatsApp notification, login, and admin functionality are present — existing codebase.
+- ✓ Booking confirmation, ticket/QR, login, and admin functionality are present — existing codebase.
 - ✓ Public and admin routes use separate layouts and route-level lazy loading — existing codebase.
 
 ### Active
 
 - [ ] Identify the exact mobile LCP element, resource, priority, dimensions, request timing, breakdown, and dependency chain before changing the critical path.
 - [ ] Use current Lighthouse evidence to select and implement only justified image, render-blocking, animation, DOM, or JavaScript optimizations.
-- [ ] Preserve the existing visual design, responsive behavior, route/API contracts, booking and ticket generation, Cashfree/Razorpay payments and verification, webhooks, WhatsApp notifications, and admin authentication.
+- [ ] Preserve the existing visual design, responsive behavior, route/API contracts, booking and ticket generation, Cashfree/Razorpay payments and verification, webhooks, and admin authentication.
 - [ ] Verify the production build and relevant tests; inspect layouts at 360, 375, 390, 412, and 430 px and on desktop.
 - [ ] Exercise navigation and the booking, checkout, and ticket journeys where the available backend/environment permits; report any verification blocked by unavailable services.
 - [ ] Run Lighthouse mobile under conditions comparable to the supplied baseline and report before/after metrics, failures, and any targets not met.
@@ -35,7 +35,7 @@ Make the mobile experience measurably faster while preserving the existing desig
 ### Out of Scope
 
 - Payment/business logic, payment webhooks, booking rules, or database schema changes — performance work must not alter transactional behavior.
-- Redesigning the site, removing existing features, changing routes/APIs, or changing the responsive design — the requested work is optimization without functional or visual regression.
+- Redesigning the site, changing routes/APIs, or changing the responsive design — the requested work is optimization without functional or visual regression. Feature removals require separate explicit authorization and must preserve unrelated behavior.
 - Unmeasured cleanup, dependency removal, or broad refactoring — changes must address a measured bottleneck and preserve behavior.
 
 ## Context
@@ -48,7 +48,7 @@ Make the mobile experience measurably faster while preserving the existing desig
 
 ## Constraints
 
-- **Compatibility**: Preserve all existing routes, APIs, responsive behavior, booking/ticket flows, payment integrations and verification, webhooks, WhatsApp notifications, login, and admin authentication.
+- **Compatibility**: Preserve all existing routes, APIs, responsive behavior, booking/ticket flows, payment integrations and verification, webhooks, login, and admin authentication.
 - **Performance**: Optimize only issues confirmed by current evidence; preserve image quality and the existing design.
 - **Validation**: Do not claim a target was met without a new comparable Lighthouse run. Distinguish user-supplied, repository-observed, and newly measured results.
 - **Data integrity**: Do not change payment logic or database schemas.

@@ -137,13 +137,6 @@ export default function BookingJourney({
     femaleMemberMobiles: Array.isArray(restoredDraft?.form?.femaleMemberMobiles)
       ? restoredDraft.form.femaleMemberMobiles.filter((mob) => typeof mob === 'string').slice(0, 10)
       : [],
-    maleMemberConsents: Array.isArray(restoredDraft?.form?.maleMemberConsents)
-      ? restoredDraft.form.maleMemberConsents.slice(0, 10)
-      : [],
-    femaleMemberConsents: Array.isArray(restoredDraft?.form?.femaleMemberConsents)
-      ? restoredDraft.form.femaleMemberConsents.slice(0, 10)
-      : [],
-    whatsappConsent: restoredDraft?.form?.whatsappConsent === true,
   }))
   const [countryCode, setCountryCode] = useState(restoredDraft?.countryCode ?? '+91')
   const [step, setStep] = useState(() => (
@@ -306,8 +299,6 @@ export default function BookingJourney({
         femaleMemberNames: current.femaleMemberNames.slice(0, femaleCount),
         maleMemberMobiles: (current.maleMemberMobiles || []).slice(0, maleCount),
         femaleMemberMobiles: (current.femaleMemberMobiles || []).slice(0, femaleCount),
-        maleMemberConsents: (current.maleMemberConsents || []).slice(0, maleCount),
-        femaleMemberConsents: (current.femaleMemberConsents || []).slice(0, femaleCount),
       }
     })
     setFieldError('')
@@ -319,7 +310,6 @@ export default function BookingJourney({
       const countKey = gender === 'Male' ? 'maleCount' : 'femaleCount'
       const namesKey = gender === 'Male' ? 'maleMemberNames' : 'femaleMemberNames'
       const mobilesKey = gender === 'Male' ? 'maleMemberMobiles' : 'femaleMemberMobiles'
-      const consentsKey = gender === 'Male' ? 'maleMemberConsents' : 'femaleMemberConsents'
       const otherCount = gender === 'Male' ? current.femaleCount : current.maleCount
       const count = Math.min(current.ticketQuantity - otherCount, Math.max(0, nextCount))
       return {
@@ -327,7 +317,6 @@ export default function BookingJourney({
         [countKey]: count,
         [namesKey]: current[namesKey].slice(0, count),
         [mobilesKey]: (current[mobilesKey] || []).slice(0, count),
-        [consentsKey]: (current[consentsKey] || []).slice(0, count),
       }
     })
     setFieldError('')
@@ -359,16 +348,6 @@ export default function BookingJourney({
     })
   }
 
-  function _updateMemberConsent(gender, index, value) {
-    resetRequestAfterEdit()
-    const consentsKey = gender === 'Male' ? 'maleMemberConsents' : 'femaleMemberConsents'
-    setForm((current) => {
-      const consents = [...(current[consentsKey] || [])]
-      consents[index] = Boolean(value)
-      return { ...current, [consentsKey]: consents }
-    })
-  }
-
   function getMissingMemberNames() {
     return [
       ['Male', form.maleCount, form.maleMemberNames],
@@ -387,7 +366,7 @@ export default function BookingJourney({
       return 'Enter a valid email address or leave it blank.'
     }
     if (step === 1 && !getNormalizedMobile(form.mobile, countryCode)) {
-      return 'Enter a valid WhatsApp number with 7 to 15 digits.'
+      return 'Enter a valid mobile number with 7 to 15 digits.'
     }
     if (step === 2 && !bookingCategories.some(({ id }) => id === form.categoryId)) {
       return 'Choose one category to continue.'
@@ -493,15 +472,8 @@ export default function BookingJourney({
         femaleMemberNames: form.femaleMemberNames,
         maleMemberMobiles: form.maleMemberMobiles,
         femaleMemberMobiles: form.femaleMemberMobiles,
-        maleMemberConsents: Array.from({ length: form.maleCount }, (_, i) =>
-          Boolean(form.maleMemberMobiles?.[i]?.trim()) && form.whatsappConsent
-        ),
-        femaleMemberConsents: Array.from({ length: form.femaleCount }, (_, i) =>
-          Boolean(form.femaleMemberMobiles?.[i]?.trim()) && form.whatsappConsent
-        ),
         ticketType: form.ticketType,
         ticketQuantity: form.ticketQuantity,
-        whatsappConsent: form.whatsappConsent,
       })
       navigate(`/booking/payment/${requestId.current}`, {
         state: {
@@ -618,7 +590,7 @@ export default function BookingJourney({
             >
               {[
                 'What’s your name?',
-                'What’s your WhatsApp number?',
+                'What’s your mobile number?',
                 'Pick a category',
                 'Who’s joining you?',
               ][step]}
@@ -626,7 +598,7 @@ export default function BookingJourney({
             {step > 0 && step < 4 && (
               <p className="booking-journey__support">
                 {step === 1
-                  ? 'Enter your WhatsApp number so we can contact you about your enquiry and send your booking details.'
+                  ? 'Enter a valid mobile number for your booking details.'
                   : step === 2
                     ? 'Choose one category. Our team can match you with a suitable event.'
                     : 'Assign every ticket to Male or Female. Every attendee name is required.'}
@@ -681,7 +653,7 @@ export default function BookingJourney({
                     ))}
                   </select>
                   <label className="booking-journey__visually-hidden" htmlFor="booking-mobile">
-                    WhatsApp number
+                    Mobile number
                   </label>
                   <input
                     autoComplete="tel-national"
@@ -691,7 +663,7 @@ export default function BookingJourney({
                     maxLength={24}
                     name="mobile"
                     onChange={updateField}
-                    placeholder="Enter your WhatsApp number"
+                    placeholder="Enter your mobile number"
                     type="tel"
                     value={form.mobile}
                   />
@@ -838,7 +810,7 @@ export default function BookingJourney({
                             inputMode="tel"
                             maxLength={24}
                             onChange={(event) => updateMemberMobile(gender, index, event.target.value)}
-                            placeholder="WhatsApp number (optional)"
+                            placeholder="Mobile number (optional)"
                             type="tel"
                             value={mobiles?.[index] ?? ''}
                           />
@@ -865,24 +837,6 @@ export default function BookingJourney({
                 Booking amount for {ticketQuantity} {ticketQuantity === 1 ? 'ticket' : 'tickets'}:
                 <strong>₹{finalAmount}</strong>
               </p>
-            )}
-            {step === 3 && (
-              <label className="booking-journey__whatsapp-consent">
-                <input
-                  checked={form.whatsappConsent}
-                  onChange={(event) => {
-                    resetRequestAfterEdit()
-                    setForm((current) => ({
-                      ...current,
-                      whatsappConsent: event.target.checked,
-                    }))
-                  }}
-                  type="checkbox"
-                />
-                <span>
-                  I agree to receive booking confirmations and important booking updates from Vibe Together on WhatsApp.
-                </span>
-              </label>
             )}
             {(fieldError || submissionError) && (
               <p aria-live="assertive" className="booking-journey__error" role="alert">

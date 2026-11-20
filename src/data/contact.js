@@ -1,5 +1,4 @@
 const env = import.meta.env
-const configuredWhatsApp = (env.VITE_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
 const configuredContactApiUrl = (env.VITE_CONTACT_API_URL ?? '').trim()
 function isSecureSocialUrl(value) {
   try {
@@ -42,8 +41,6 @@ export const contactConfig = {
   phone: (env.VITE_CONTACT_PHONE ?? '').trim(),
   email: (env.VITE_CONTACT_EMAIL ?? '').trim(),
   officeLocation: (env.VITE_CONTACT_LOCATION ?? '').trim(),
-  whatsappNumber:
-    /^\d{8,15}$/.test(configuredWhatsApp) ? configuredWhatsApp : '',
   apiUrl:
     contactApiUrlIsValid && configuredContactApiUrl
       ? configuredContactApiUrl.replace(/\/+$/, '')
@@ -91,6 +88,6 @@ export const faqItems = [
     id: 'contact-support',
     question: 'How do I contact support?',
     answer:
-      'Use the contact form on this page. Phone, email, social, and WhatsApp actions become available once those details are configured by the site owner.',
+      'Use the contact form on this page or call or email the configured contact details.',
   },
 ]

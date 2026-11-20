@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Compass, X } from 'lucide-react'
-import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
 import './EventPosterModal.css'
 
 const STORAGE_KEY = 'vibetogether:poster-popup-v1'
@@ -61,7 +60,6 @@ function writeStoredStep(step) {
 
 export default function EventPosterModal() {
   const navigate = useNavigate()
-  const { openBooking } = useBookingEnquiry()
   const [currentStep, setCurrentStep] = useState(() => {
     const stored = readStoredStep()
     if (stored === 'dismissed') return null
@@ -122,18 +120,18 @@ export default function EventPosterModal() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [currentStep, handleAdvanceSequence])
 
-  // Explore Events navigation handler
-  const handleExploreEvents = useCallback(() => {
+  // Book Now navigation handler
+  const handleBookNow = useCallback(() => {
     writeStoredStep('dismissed')
     setCurrentStep(null)
-    navigate('/events')
+    navigate('/booking')
   }, [navigate])
 
   const handlePosterClick = useCallback(() => {
     writeStoredStep('dismissed')
     setCurrentStep(null)
-    openBooking()
-  }, [openBooking])
+    navigate('/booking')
+  }, [navigate])
 
   const activePoster = useMemo(() => {
     return POSTERS.find((p) => p.step === currentStep) || null
@@ -241,10 +239,10 @@ export default function EventPosterModal() {
             <button
               type="button"
               className="event-poster-cta-btn"
-              onClick={handleExploreEvents}
+              onClick={handleBookNow}
             >
               <Compass size={16} aria-hidden="true" />
-              <span>Explore Events</span>
+              <span>Book Now</span>
               <ArrowRight size={15} aria-hidden="true" />
             </button>
           </div>
