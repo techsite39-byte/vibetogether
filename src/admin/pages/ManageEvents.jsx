@@ -174,7 +174,7 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
             placeholder="https://... or /m1.webp"
             value={image}
             onChange={(e) => {
-              setFailedPreview('')
+              setPreviewFailed(false)
               onImageChange(e.target.value)
             }}
           />
@@ -194,14 +194,17 @@ function EventImageUploadField({ image, imageAlt, onImageChange, onImageAltChang
   )
 }
 
-function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
+function EditEventDialog({ categories, event, onClose, onSave, storageError, organizers = [] }) {
   const [form, setForm] = useState({
     title: event.title || '',
     category: event.category || (categories[0]?.title ?? ''),
+    organizer: event.organizer || organizers[0]?.name || 'Vibe Together',
     location: event.location || '',
     price: event.price || '',
+    priceAmount: String(event.priceAmount ?? '0'),
+    seatsAvailable: String(event.seatsAvailable ?? '0'),
     description: event.description || '',
-    date: event.date || '',
+    date: event.date ? event.date.slice(0, 10) : '',
     time: event.time || '',
     image: event.image || '',
     imageAlt: event.imageAlt || '',
@@ -220,6 +223,26 @@ function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
       setError('Event title and location are required.')
       return
     }
+    if (!form.category.trim()) {
+      setError('Event category is required.')
+      return
+    }
+    if (!form.date.trim()) {
+      setError('Event date is required.')
+      return
+    }
+
+    const priceAmount = Number(form.priceAmount)
+    if (Number.isNaN(priceAmount) || priceAmount < 0) {
+      setError('Price amount must be a number of 0 or more.')
+      return
+    }
+
+    const seatsAvailable = Number(form.seatsAvailable)
+    if (Number.isNaN(seatsAvailable) || seatsAvailable < 0) {
+      setError('Available seats must be a number of 0 or more.')
+      return
+    }
 
     setError('')
     setSaveFailed(false)
@@ -228,11 +251,23 @@ function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
       const { image: formImage, ...formValues } = form
       const image = formImage.trim()
       const existingImage = (event.image ?? '').trim()
+      const isFree = priceAmount === 0
+      const displayPrice = form.price.trim() || (isFree ? 'Free' : `INR ${priceAmount}`)
+
       const saved = await onSave(event.id, {
         ...formValues,
         title: form.title.trim(),
+        category: form.category.trim(),
+        organizer: form.organizer.trim() || 'Vibe Together',
         location: form.location.trim(),
         description: form.description.trim(),
+        date: form.date.trim(),
+        time: form.time.trim(),
+        priceAmount,
+        seatsAvailable: Math.floor(seatsAvailable),
+        isFree,
+        price: displayPrice,
+        currency: 'INR',
         ...buildEventImageUpdate(existingImage, image),
         imageAlt: form.imageAlt.trim(),
         status: form.status,
@@ -254,17 +289,21 @@ function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
       <form className="admin-form" onSubmit={submit}>
         <label>
           Event name
-          <input maxLength={120} onChange={(e) => setForm({ ...form, title: e.target.value })} value={form.title} required />
+          <input maxLength={160} onChange={(e) => setForm({ ...form, title: e.target.value })} value={form.title} required />
         </label>
         <label>
           Category
-          <select onChange={(e) => setForm({ ...form, category: e.target.value })} value={form.category}>
+          <select onChange={(e) => setForm({ ...form, category: e.target.value })} value={form.category} required>
             {categories.map((category) => <option key={category.id} value={category.title}>{category.title}</option>)}
           </select>
         </label>
         <label>
+          Organizer
+          <input maxLength={120} onChange={(e) => setForm({ ...form, organizer: e.target.value })} value={form.organizer} placeholder="e.g. Vibe Together" />
+        </label>
+        <label>
           Date
-          <input onChange={(e) => setForm({ ...form, date: e.target.value })} type="date" value={form.date} />
+          <input onChange={(e) => setForm({ ...form, date: e.target.value })} type="date" value={form.date} required />
         </label>
         <label>
           Time
@@ -272,11 +311,19 @@ function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
         </label>
         <label>
           Location
-          <input maxLength={160} onChange={(e) => setForm({ ...form, location: e.target.value })} value={form.location} required />
+          <input maxLength={200} onChange={(e) => setForm({ ...form, location: e.target.value })} value={form.location} required />
         </label>
         <label>
-          Display price
-          <input maxLength={30} onChange={(e) => setForm({ ...form, price: e.target.value })} value={form.price} />
+          Price amount (₹)
+          <input min="0" onChange={(e) => setForm({ ...form, priceAmount: e.target.value })} required step="1" type="number" value={form.priceAmount} />
+        </label>
+        <label>
+          Display price label (optional)
+          <input maxLength={30} onChange={(e) => setForm({ ...form, price: e.target.value })} value={form.price} placeholder="Leave blank to auto-format (e.g. Free or INR 500)" />
+        </label>
+        <label>
+          Available seats
+          <input min="0" onChange={(e) => setForm({ ...form, seatsAvailable: e.target.value })} required step="1" type="number" value={form.seatsAvailable} />
         </label>
         <label>
           Description
@@ -316,54 +363,134 @@ function EditEventDialog({ categories, event, onClose, onSave, storageError }) {
   )
 }
 
-function NewEventDialog({ categories, onClose, onSave }) {
+function NewEventDialog({ categories, onClose, onSave, storageError, organizers = [] }) {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    category: categories[0]?.title ?? '',
+    category: categories[0]?.title ?? categories[0]?.id ?? '',
+    organizer: organizers[0]?.name ?? 'Vibe Together',
     date: '',
     time: '',
     location: '',
     image: '',
     imageAlt: '',
     priceAmount: '0',
-    seatsAvailable: '0',
+    seatsAvailable: '50',
     currency: 'INR',
-    status: 'draft',
+    status: 'published',
   })
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const effectiveCategory = form.category || categories[0]?.title || categories[0]?.id || ''
+  const effectiveOrganizer = form.organizer || organizers[0]?.name || 'Vibe Together'
 
   async function submit(event) {
     event.preventDefault()
+    if (saving) return
+
+    if (!form.title.trim() || !form.location.trim()) {
+      setError('Event title and location are required.')
+      return
+    }
+    if (!effectiveCategory.trim()) {
+      setError('Event category is required.')
+      return
+    }
+    if (!form.date.trim()) {
+      setError('Event date is required.')
+      return
+    }
+
     const priceAmount = Number(form.priceAmount)
-    const saved = await onSave({
-      ...form,
-      title: form.title.trim(),
-      description: form.description.trim(),
-      location: form.location.trim(),
-      image: form.image.trim(),
-      imageAlt: form.imageAlt.trim(),
-      priceAmount,
-      seatsAvailable: Number(form.seatsAvailable),
-      isFree: priceAmount === 0,
-      price: priceAmount === 0 ? 'Free' : `${form.currency} ${priceAmount}`,
-    })
-    if (saved) {
-      onClose()
-    } else {
-      setError('Event could not be saved. Check the form and try again.')
+    if (Number.isNaN(priceAmount) || priceAmount < 0) {
+      setError('Price amount must be a number of 0 or more.')
+      return
+    }
+
+    const seatsAvailable = Number(form.seatsAvailable)
+    if (Number.isNaN(seatsAvailable) || seatsAvailable < 0) {
+      setError('Available seats must be a number of 0 or more.')
+      return
+    }
+
+    const isFree = priceAmount === 0
+    const displayPrice = isFree ? 'Free' : `${form.currency} ${priceAmount}`
+
+    setError('')
+    setSaving(true)
+    try {
+      const saved = await onSave({
+        ...form,
+        title: form.title.trim(),
+        category: effectiveCategory.trim(),
+        organizer: effectiveOrganizer.trim(),
+        location: form.location.trim(),
+        description: form.description.trim(),
+        date: form.date.trim(),
+        time: form.time.trim(),
+        startsAt: form.date && form.time ? `${form.date} ${form.time}` : form.date,
+        image: form.image.trim(),
+        imageAlt: form.imageAlt.trim(),
+        priceAmount,
+        seatsAvailable: Math.floor(seatsAvailable),
+        isFree,
+        price: displayPrice,
+        status: form.status,
+      })
+      if (saved) {
+        onClose()
+      } else {
+        setError(storageError || 'Event could not be saved. Check the form and try again.')
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Event could not be created.')
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
     <AdminDialog onClose={onClose} title="Add event">
       <form className="admin-form" onSubmit={submit}>
-        <label>Event name<input maxLength={160} onChange={(event) => setForm({ ...form, title: event.target.value })} required value={form.title} /></label>
-        <label>Description<textarea maxLength={2000} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={3} value={form.description} /></label>
-        <label>Category<select onChange={(event) => setForm({ ...form, category: event.target.value })} required value={form.category}>{categories.map((category) => <option key={category.id} value={category.title}>{category.title}</option>)}</select></label>
-        <label>Date<input onChange={(event) => setForm({ ...form, date: event.target.value })} required type="date" value={form.date} /></label>
-        <label>Time<input maxLength={30} onChange={(event) => setForm({ ...form, time: event.target.value })} value={form.time} placeholder="e.g. 7:30 PM" /></label>
-        <label>Location<input maxLength={200} onChange={(event) => setForm({ ...form, location: event.target.value })} required value={form.location} /></label>
+        <label>
+          Event name
+          <input maxLength={160} onChange={(event) => setForm({ ...form, title: event.target.value })} required value={form.title} placeholder="e.g. Sunset Acoustic Jam" />
+        </label>
+        <label>
+          Category
+          <select onChange={(event) => setForm({ ...form, category: event.target.value })} required value={effectiveCategory}>
+            {categories.map((category) => <option key={category.id} value={category.title}>{category.title}</option>)}
+          </select>
+        </label>
+        <label>
+          Organizer
+          <input maxLength={120} onChange={(event) => setForm({ ...form, organizer: event.target.value })} value={effectiveOrganizer} placeholder="e.g. Vibe Together" />
+        </label>
+        <label>
+          Date
+          <input onChange={(event) => setForm({ ...form, date: event.target.value })} required type="date" value={form.date} />
+        </label>
+        <label>
+          Time
+          <input maxLength={30} onChange={(event) => setForm({ ...form, time: event.target.value })} value={form.time} placeholder="e.g. 7:30 PM" />
+        </label>
+        <label>
+          Location
+          <input maxLength={200} onChange={(event) => setForm({ ...form, location: event.target.value })} required value={form.location} placeholder="e.g. Downtown music lounge" />
+        </label>
+        <label>
+          Price amount (₹)
+          <input min="0" onChange={(event) => setForm({ ...form, priceAmount: event.target.value })} required step="1" type="number" value={form.priceAmount} />
+        </label>
+        <label>
+          Available seats
+          <input min="0" onChange={(event) => setForm({ ...form, seatsAvailable: event.target.value })} required step="1" type="number" value={form.seatsAvailable} />
+        </label>
+        <label>
+          Description
+          <textarea maxLength={2000} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={3} value={form.description} placeholder="Tell attendees what to expect..." />
+        </label>
         <div>
           <span style={{ display: 'block', fontSize: 'var(--font-size-xs)', fontWeight: 600, marginBottom: 'var(--space-2)' }}>
             Event poster image
@@ -375,13 +502,18 @@ function NewEventDialog({ categories, onClose, onSave }) {
             onImageAltChange={(alt) => setForm((prev) => ({ ...prev, imageAlt: alt }))}
           />
         </div>
-        <label>Price amount<input min="0" onChange={(event) => setForm({ ...form, priceAmount: event.target.value })} required step="0.01" type="number" value={form.priceAmount} /></label>
-        <label>Available seats<input min="0" onChange={(event) => setForm({ ...form, seatsAvailable: event.target.value })} required step="1" type="number" value={form.seatsAvailable} /></label>
-        <label>Status<select onChange={(event) => setForm({ ...form, status: event.target.value })} value={form.status}>{eventStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label>
+        <label>
+          Status
+          <select onChange={(event) => setForm({ ...form, status: event.target.value })} value={form.status}>
+            {eventStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}
+          </select>
+        </label>
         {error && <AdminNotice tone="error">{error}</AdminNotice>}
         <div className="admin-form__actions">
           <button className="admin-button admin-button--secondary" onClick={onClose} type="button">Cancel</button>
-          <button className="admin-button admin-button--primary" type="submit">Create event</button>
+          <button className="admin-button admin-button--primary" disabled={saving} type="submit">
+            {saving ? 'Creating…' : 'Create event'}
+          </button>
         </div>
       </form>
     </AdminDialog>
@@ -389,7 +521,7 @@ function NewEventDialog({ categories, onClose, onSave }) {
 }
 
 export default function ManageEvents() {
-  const { actor, categories, createRecord, deleteEvent, eventError, events, organizers, updateEvent } = useAdminData()
+  const { actor, categories, createRecord, deleteEvent, eventError, events, organizers, storageError, updateEvent } = useAdminData()
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [organizer, setOrganizer] = useState('all')
@@ -519,8 +651,25 @@ export default function ManageEvents() {
         </AdminTable>
         {!filteredEvents.length && <p className="admin-empty">No events match these filters.</p>}
       </AdminPanel>
-      {editingEvent && <EditEventDialog categories={categories} event={editingEvent} onClose={() => setEditingEvent(null)} onSave={updateEvent} storageError={eventError || storageError} />}
-      {addingEvent && <NewEventDialog categories={categories} onClose={() => setAddingEvent(false)} onSave={(record) => createRecord('events', record)} />}
+      {editingEvent && (
+        <EditEventDialog
+          categories={categories}
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSave={updateEvent}
+          organizers={organizers}
+          storageError={eventError || storageError || ''}
+        />
+      )}
+      {addingEvent && (
+        <NewEventDialog
+          categories={categories}
+          onClose={() => setAddingEvent(false)}
+          onSave={(record) => createRecord('events', record)}
+          organizers={organizers}
+          storageError={eventError || storageError || ''}
+        />
+      )}
     </div>
   )
 }
