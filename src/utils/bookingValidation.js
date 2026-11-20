@@ -9,7 +9,7 @@ export function validateBookingForm(values, availableSeats) {
     errors.fullName = 'Enter a name between 2 and 100 characters.'
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     errors.email = 'Enter a valid email address.'
   }
 

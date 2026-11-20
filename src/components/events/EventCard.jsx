@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { CalendarDays, Clock3, MapPin, Users, UsersRound } from 'lucide-react'
 import Button from '../common/Button.jsx'
-import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
 import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import {
   resetInteractiveTilt,
@@ -41,7 +40,6 @@ export default function EventCard({
   to,
   showDescription = false,
 }) {
-  const { openBooking } = useBookingEnquiry()
   const [failedImage, setFailedImage] = useState('')
   const isFreeEvent =
     isFree ?? (price === 0 || (typeof price === 'string' && price.toLowerCase() === 'free'))
@@ -130,7 +128,7 @@ export default function EventCard({
           <div className="event-card__actions">
             <Button
               className="event-card__book"
-              onClick={() => openBooking(category)}
+              to={id != null ? `/booking/${encodeURIComponent(id)}` : '/booking'}
               variant="secondary"
             >
               Book Now

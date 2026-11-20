@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
 import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import './HomeCategoriesSection.css'
 
@@ -120,7 +119,6 @@ const baseExperiences = [
 ]
 
 export default function HomeCategoriesSection() {
-  const { openBooking } = useBookingEnquiry()
   const stageRef = useRef(null)
 
   // Continuous 20-card ring (360° / 20 = 18° spacing) for a seamless infinite rotating arch
@@ -496,10 +494,9 @@ export default function HomeCategoriesSection() {
           </p>
 
           <div className="experiences-arc__cta-wrap">
-            <button
-              type="button"
+            <Link
+              to="/events"
               className="experiences-arc__cta-btn"
-              onClick={() => openBooking()}
               aria-label="Explore experiences and start booking"
             >
               <span>Explore Experiences</span>
@@ -508,7 +505,7 @@ export default function HomeCategoriesSection() {
                 className="experiences-arc__cta-arrow"
                 aria-hidden="true"
               />
-            </button>
+            </Link>
           </div>
         </div>
 

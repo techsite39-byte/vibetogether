@@ -1,6 +1,5 @@
 import { ArrowRight, HeartHandshake, Sparkles, UsersRound } from 'lucide-react'
 import Button from '../components/common/Button.jsx'
-import { useBookingEnquiry } from '../context/useBookingEnquiry.js'
 import './About.css'
 
 const features = [
@@ -33,8 +32,6 @@ const particles = [
 ]
 
 export default function About() {
-  const { openBooking } = useBookingEnquiry()
-
   return (
     <section className="about-page" aria-labelledby="about-title">
       <div className="about-page__ambience" aria-hidden="true">
@@ -91,7 +88,7 @@ export default function About() {
           </ul>
 
           <div className="about-page__actions">
-            <Button onClick={() => openBooking()}>
+            <Button to="/events">
               Find your next experience
               <ArrowRight aria-hidden="true" size={17} />
             </Button>

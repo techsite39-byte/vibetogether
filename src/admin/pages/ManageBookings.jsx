@@ -37,6 +37,33 @@ function formatBookingDate(value) {
       }).format(date)
 }
 
+function formatEventDate(value) {
+  if (typeof value !== 'string' || !value) {
+    return ''
+  }
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value)
+  return Number.isNaN(date.getTime())
+    ? ''
+    : new Intl.DateTimeFormat('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(date)
+}
+
+function getEventMeta(event) {
+  if (!event) {
+    return ''
+  }
+  return [
+    event.category,
+    formatEventDate(event.date),
+    event.time,
+    event.location,
+  ].filter((value) => typeof value === 'string' && value.trim()).join(' · ')
+}
+
 function formatPaymentStatus(status) {
   const label = ({
     unpaid: 'Unpaid',
@@ -118,93 +145,150 @@ function escapeCsv(value) {
 }
 
 function getBookingSubject(booking, event) {
+  const eventTitle = event?.title ?? booking.event?.title
+  if (typeof eventTitle === 'string' && eventTitle.trim()) {
+    return eventTitle
+  }
+
   if (booking.category) {
     return `Category interest: ${booking.category}`
   }
 
-  return event?.title ?? booking.event?.title ?? booking.event ?? 'Unknown event'
+  return typeof booking.event === 'string' ? booking.event : 'Unknown event'
 }
 
-function BookingDetails({ booking, event, organizer, onClose }) {
+function BookingDetails({ booking, event, onClose }) {
   const [currentBooking] = useState(booking)
+  const bookingRef = currentBooking.reference || currentBooking.requestId || currentBooking.id
+  const customerName = currentBooking.customer || currentBooking.name || 'Guest'
+  const mobileNumber = currentBooking.mobile || '—'
+  const eventName = getBookingSubject(currentBooking, event)
+  const eventDate = formatEventDate(event?.date) || formatBookingDate(currentBooking.createdAt)
+  const eventTime = event?.time || '—'
+  const eventCategory = currentBooking.category || event?.category || '—'
+  const numberOfTickets = currentBooking.ticketQuantity ?? currentBooking.ticketCount ?? 1
+  const pricePerTicket = currentBooking.pricePerTicket != null
+    ? formatAmount(currentBooking.pricePerTicket, currentBooking.currency)
+    : event?.priceAmount != null
+      ? formatAmount(event.priceAmount, currentBooking.currency)
+      : (numberOfTickets > 0 && currentBooking.amount
+          ? formatAmount(Math.round(currentBooking.amount / numberOfTickets), currentBooking.currency)
+          : '—')
+  const totalBookingAmount = formatAmount(currentBooking.amount, currentBooking.currency)
+  const paymentMethod = currentBooking.cfPaymentMethod
+    || (currentBooking.paymentProvider === 'cashfree'
+        ? 'Cashfree Payments'
+        : currentBooking.paymentProvider === 'upi'
+          ? 'Direct UPI'
+          : currentBooking.paymentProvider === 'razorpay'
+            ? 'Legacy Gateway'
+            : currentBooking.paymentProvider || 'Online Payment')
+  const paymentReference = currentBooking.cfPaymentId
+    || currentBooking.paymentReference
+    || currentBooking.paymentOrderId
+    || currentBooking.cfOrderId
+    || currentBooking.razorpayPaymentId
+    || '—'
+  const finalPayableAmount = formatAmount(currentBooking.amount, currentBooking.currency)
 
   return (
-    <AdminDialog onClose={onClose} title={`Booking ${currentBooking.reference || currentBooking.requestId || currentBooking.id}`}>
-      <div className="admin-profile">
-        <p>Booking information saved by the platform.</p>
-        <dl>
-          <div><dt>Booking reference</dt><dd>{currentBooking.reference || 'Awaiting payment'}</dd></div>
-          {!currentBooking.reference && <div><dt>Request ID</dt><dd>{currentBooking.requestId || currentBooking.id}</dd></div>}
-          <div><dt>Customer</dt><dd>{currentBooking.customer}</dd></div>
-          <div><dt>Email</dt><dd>{currentBooking.customerEmail || '—'}</dd></div>
-          <div><dt>Mobile</dt><dd>{currentBooking.mobile || '—'}</dd></div>
-          <div><dt>{currentBooking.category ? 'Category interest' : 'Event'}</dt><dd>{currentBooking.category ?? getBookingSubject(currentBooking, event)}</dd></div>
-          <div><dt>Organizer</dt><dd>{currentBooking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</dd></div>
-          <div><dt>Ticket type</dt><dd>{currentBooking.ticketTypeName || currentBooking.ticketType || '—'}</dd></div>
-          <div><dt>Number of tickets</dt><dd>{currentBooking.ticketQuantity ?? currentBooking.ticketCount ?? 1}</dd></div>
-          <div><dt>Male tickets</dt><dd>{currentBooking.maleCount ?? (currentBooking.gender === 'Male' ? currentBooking.ticketQuantity ?? 1 : 0)}</dd></div>
-          <div><dt>Female tickets</dt><dd>{currentBooking.femaleCount ?? (currentBooking.gender === 'Female' ? currentBooking.ticketQuantity ?? 1 : 0)}</dd></div>
-          <div>
-            <dt>Male members</dt>
-            <dd>{Array.from({ length: currentBooking.maleCount ?? (currentBooking.gender === 'Male' ? currentBooking.ticketQuantity ?? 1 : 0) }, (_, index) => (
-              <span key={`male-${index}`} style={{ display: 'block' }}>Male Member {index + 1}: {currentBooking.maleMemberNames?.[index]?.trim() || 'Not provided'}</span>
-            ))}</dd>
-          </div>
-          <div>
-            <dt>Female members</dt>
-            <dd>{Array.from({ length: currentBooking.femaleCount ?? (currentBooking.gender === 'Female' ? currentBooking.ticketQuantity ?? 1 : 0) }, (_, index) => (
-              <span key={`female-${index}`} style={{ display: 'block' }}>Female Member {index + 1}: {currentBooking.femaleMemberNames?.[index]?.trim() || 'Not provided'}</span>
-            ))}</dd>
-          </div>
-          <div><dt>Price per ticket</dt><dd>{currentBooking.pricePerTicket == null ? '—' : formatAmount(currentBooking.pricePerTicket, currentBooking.currency)}</dd></div>
-          <div><dt>Subtotal</dt><dd>{currentBooking.subtotal == null ? '—' : formatAmount(currentBooking.subtotal, currentBooking.currency)}</dd></div>
-          <div><dt>Discount</dt><dd>{formatAmount(currentBooking.discount ?? 0, currentBooking.currency)}</dd></div>
-          <div><dt>Booking date</dt><dd>{formatBookingDate(currentBooking.createdAt)}</dd></div>
-          <div><dt>Total amount charged</dt><dd>{formatAmount(currentBooking.amount, currentBooking.currency)}</dd></div>
-          <div><dt>Regular price per ticket</dt><dd>{formatAmount(currentBooking.regularPrice ?? 299, currentBooking.currency)}</dd></div>
-          <div><dt>Diwali offer</dt><dd>{currentBooking.diwaliOfferApplied ? `Applied · saved ${formatAmount(currentBooking.discount ?? (currentBooking.regularPrice ?? 299) - currentBooking.amount, currentBooking.currency)}` : 'Not applied'}</dd></div>
-          <div><dt>Payment status</dt><dd><StatusBadge status={currentBooking.paymentStatus}>{formatPaymentStatus(currentBooking.paymentStatus)}</StatusBadge></dd></div>
-          <div><dt>Payment provider</dt><dd><strong>{currentBooking.paymentProvider === 'cashfree' ? 'Cashfree Payments' : currentBooking.paymentProvider === 'razorpay' ? 'Legacy gateway (Historical)' : currentBooking.paymentProvider || '—'}</strong></dd></div>
-          {currentBooking.upiPayments?.map((payment, index) => (
-            <div key={`${payment.utr}-${index}`}>
-              <dt>UPI submission {index + 1}</dt>
+    <AdminDialog onClose={onClose} title={`Booking Details · ${bookingRef}`}>
+      <div className="admin-booking-details">
+        {/* Category 1: Customer Details */}
+        <div className="admin-booking-section">
+          <h3 className="admin-booking-section__title">Customer Details</h3>
+          <dl className="admin-booking-section__grid">
+            <div>
+              <dt>Customer name</dt>
+              <dd><strong>{customerName}</strong></dd>
+            </div>
+            <div>
+              <dt>Mobile number</dt>
+              <dd>{mobileNumber}</dd>
+            </div>
+            <div>
+              <dt>Booking reference</dt>
+              <dd><span className="admin-ref-code">{currentBooking.reference || 'Awaiting payment'}</span></dd>
+            </div>
+            <div>
+              <dt>Booking status</dt>
               <dd>
-                <span style={{ display: 'block' }}>UTR: {payment.utr}</span>
-                <span style={{ display: 'block' }}>Payee UPI ID: {payment.upiId}</span>
-                <span style={{ display: 'block' }}>Amount: {formatAmount(payment.amount, currentBooking.currency)}</span>
-                <span style={{ display: 'block' }}>Status: {payment.status}</span>
-                <span style={{ display: 'block' }}>Submitted: {formatBookingDate(payment.submittedAt)}</span>
-                <span style={{ display: 'block' }}>Verified/rejected: {formatBookingDate(payment.adminVerifiedAt)}</span>
-                {payment.rejectionReason && <span style={{ display: 'block' }}>Rejection reason: {payment.rejectionReason}</span>}
+                <StatusBadge status={currentBooking.status}>
+                  {formatBookingStatus(currentBooking.status)}
+                </StatusBadge>
               </dd>
             </div>
-          ))}
-          {currentBooking.paymentProvider === 'cashfree' ? (
-            <>
-              <div><dt>Cashfree order ID</dt><dd>{currentBooking.cfOrderId || currentBooking.paymentOrderId || '—'}</dd></div>
-              <div><dt>Cashfree payment ID</dt><dd>{currentBooking.cfPaymentId || '—'}</dd></div>
-              <div><dt>Cashfree payment status</dt><dd>{currentBooking.cfPaymentStatus || currentBooking.paymentStatus || '—'}</dd></div>
-              {currentBooking.cfPaymentMethod && <div><dt>Cashfree payment method</dt><dd>{currentBooking.cfPaymentMethod}</dd></div>}
-            </>
-          ) : currentBooking.paymentProvider === 'razorpay' ? (
-            <>
-              <div><dt>Legacy order ID</dt><dd>{currentBooking.paymentOrderId || '—'}</dd></div>
-              <div><dt>Legacy payment ID</dt><dd>{currentBooking.razorpayPaymentId || '—'}</dd></div>
-            </>
-          ) : (
-            <>
-              <div><dt>Order ID</dt><dd>{currentBooking.paymentOrderId || currentBooking.cfOrderId || '—'}</dd></div>
-              <div><dt>Payment ID</dt><dd>{currentBooking.cfPaymentId || currentBooking.razorpayPaymentId || '—'}</dd></div>
-            </>
-          )}
-          <div><dt>Payment reference</dt><dd>{currentBooking.paymentReference || '—'}</dd></div>
-          <div><dt>Payment verified at</dt><dd>{formatBookingDate(currentBooking.paymentVerifiedAt ?? currentBooking.paidAt)}</dd></div>
-          <div><dt>Payment failure</dt><dd>{currentBooking.paymentFailureReason || '—'}</dd></div>
-          <div><dt>Booking status</dt><dd><StatusBadge status={currentBooking.status}>{formatBookingStatus(currentBooking.status)}</StatusBadge></dd></div>
-        </dl>
-        <AdminNotice tone="neutral">
-          Ticket selection and charged pricing are locked after payment. Any change requires a separate payment or refund workflow.
-        </AdminNotice>
+          </dl>
+        </div>
+
+        {/* Category 2: Event Details */}
+        <div className="admin-booking-section">
+          <h3 className="admin-booking-section__title">Event Details</h3>
+          <dl className="admin-booking-section__grid">
+            <div>
+              <dt>Event name</dt>
+              <dd><strong>{eventName}</strong></dd>
+            </div>
+            <div>
+              <dt>Event date</dt>
+              <dd>{eventDate}</dd>
+            </div>
+            <div>
+              <dt>Event time</dt>
+              <dd>{eventTime}</dd>
+            </div>
+            <div>
+              <dt>Event category</dt>
+              <dd>{eventCategory}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Category 3: Ticket Details */}
+        <div className="admin-booking-section">
+          <h3 className="admin-booking-section__title">Ticket Details</h3>
+          <dl className="admin-booking-section__grid">
+            <div>
+              <dt>Number of tickets</dt>
+              <dd>{numberOfTickets}</dd>
+            </div>
+            <div>
+              <dt>Price per ticket</dt>
+              <dd>{pricePerTicket}</dd>
+            </div>
+            <div>
+              <dt>Total booking amount</dt>
+              <dd><strong className="admin-amount-highlight">{totalBookingAmount}</strong></dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Category 4: Payment Details */}
+        <div className="admin-booking-section">
+          <h3 className="admin-booking-section__title">Payment Details</h3>
+          <dl className="admin-booking-section__grid">
+            <div>
+              <dt>Payment method</dt>
+              <dd>{paymentMethod}</dd>
+            </div>
+            <div>
+              <dt>Payment status</dt>
+              <dd>
+                <StatusBadge status={currentBooking.paymentStatus}>
+                  {formatPaymentStatus(currentBooking.paymentStatus)}
+                </StatusBadge>
+              </dd>
+            </div>
+            <div>
+              <dt>Payment reference / transaction ID</dt>
+              <dd>{paymentReference}</dd>
+            </div>
+            <div>
+              <dt>Final payable amount</dt>
+              <dd><strong className="admin-amount-highlight">{finalPayableAmount}</strong></dd>
+            </div>
+          </dl>
+        </div>
       </div>
     </AdminDialog>
   )
@@ -299,25 +383,30 @@ export default function ManageBookings() {
 
   function exportCsv() {
     const rows = [
-      ['Reference', 'Customer', 'Email', 'Event', 'Organizer', 'Ticket type', 'Ticket quantity', 'Price per ticket', 'Subtotal', 'Discount', 'Total amount', 'Booking date', 'Payment status', 'Booking status'],
+      ['Customer Name', 'Mobile Number', 'Booking Reference', 'Event Name', 'Event Date', 'Event Time', 'Event Category', 'Number of Tickets', 'Price per Ticket', 'Total Booking Amount', 'Payment Method', 'Payment Status', 'Payment Reference', 'Final Payable Amount'],
       ...filtered.map((booking) => {
         const event = events.find((item) => item.id === booking.eventId)
-        const organizer = organizers.find((item) => item.id === booking.organizerId)
+        const numberOfTickets = booking.ticketQuantity ?? booking.ticketCount ?? 1
+        const pricePerTicket = booking.pricePerTicket != null
+          ? booking.pricePerTicket
+          : (numberOfTickets > 0 && booking.amount ? Math.round(booking.amount / numberOfTickets) : '')
+        const txnRef = booking.cfPaymentId || booking.paymentReference || booking.paymentOrderId || booking.cfOrderId || ''
+        const paymentMethod = booking.cfPaymentMethod || (booking.paymentProvider === 'cashfree' ? 'Cashfree' : booking.paymentProvider || '')
         return [
-          booking.reference,
-          booking.customer,
-          booking.customerEmail,
+          booking.customer || booking.name || '',
+          booking.mobile || '',
+          booking.reference || booking.requestId || '',
           getBookingSubject(booking, event),
-          organizer?.name ?? '',
-          booking.ticketTypeName ?? booking.ticketType ?? '',
-          booking.ticketQuantity ?? booking.ticketCount,
-          booking.pricePerTicket ?? '',
-          booking.subtotal ?? '',
-          booking.discount ?? 0,
+          event?.date || booking.createdAt || '',
+          event?.time || '',
+          booking.category || event?.category || '',
+          numberOfTickets,
+          pricePerTicket,
           booking.amount,
-          booking.createdAt,
+          paymentMethod,
           booking.paymentStatus,
-          booking.status,
+          txnRef,
+          booking.amount,
         ]
       }),
     ]
@@ -380,7 +469,7 @@ export default function ManageBookings() {
   }
 
   return (
-    <div className="admin-page">
+    <div className="admin-page admin-bookings-page">
       <AdminPageHeader
         description="Review booking records and category interests submitted on the platform."
         eyebrow="Reservations"
@@ -389,7 +478,7 @@ export default function ManageBookings() {
       />
       {actionSuccess && <AdminNotice tone="success">{actionSuccess}</AdminNotice>}
       {actionError && <AdminNotice tone="error">{actionError}</AdminNotice>}
-      <AdminPanel title={`UPI payments awaiting verification · ${pendingUpiPayments.length}`}>
+      <AdminPanel className="admin-bookings__upi-panel" title={`UPI payments awaiting verification · ${pendingUpiPayments.length}`}>
         <AdminNotice tone="neutral">
           Verify the actual credit and exact amount in the authorised receiving bank account before approving. A UTR or customer screenshot alone is not proof of payment.
         </AdminNotice>
@@ -397,25 +486,33 @@ export default function ManageBookings() {
           <AdminTable label="UPI payments awaiting verification">
             <thead><tr><th scope="col">Booking / customer</th><th scope="col">Event / ticket</th><th scope="col">Amount</th><th scope="col">UTR</th><th scope="col">Submitted</th><th scope="col">Actions</th></tr></thead>
             <tbody>
-              {pendingUpiPayments.map(({ booking, payment }) => (
-                <tr key={`${booking.requestId}-${payment.utr}`}>
-                  <td><strong>{booking.reference || booking.requestId}</strong><span className="admin-table__secondary">{booking.customer} · {booking.mobile || booking.customerEmail}</span></td>
-                  <td><strong>{getBookingSubject(booking, events.find((event) => event.id === booking.eventId))}</strong><span className="admin-table__secondary">{booking.ticketTypeName || booking.ticketType} · {booking.ticketQuantity ?? booking.ticketCount} ticket(s)</span></td>
-                  <td>{formatAmount(payment.amount, booking.currency)}</td>
-                  <td><strong>{payment.utr}</strong><span className="admin-table__secondary">{payment.upiId}</span></td>
-                  <td>{formatBookingDate(payment.submittedAt)}</td>
-                  <td><div className="admin-row-actions admin-row-actions--wrap">
-                    <button className="admin-button admin-button--small" onClick={() => setSelected(booking)} type="button">Booking details</button>
-                    <button className="admin-button admin-button--small admin-button--primary" onClick={() => void decideUpiPayment(booking, 'approve')} type="button">Verify &amp; approve</button>
-                    <button className="admin-button admin-button--small admin-button--danger" onClick={() => void decideUpiPayment(booking, 'reject')} type="button">Reject</button>
-                  </div></td>
-                </tr>
-              ))}
+              {pendingUpiPayments.map(({ booking, payment }) => {
+                const event = events.find((item) => item.id === booking.eventId)
+                const eventMeta = getEventMeta(event)
+                return (
+                  <tr key={`${booking.requestId}-${payment.utr}`}>
+                    <td><strong>{booking.reference || booking.requestId}</strong><span className="admin-table__secondary">{booking.customer} · {booking.mobile || booking.customerEmail}</span></td>
+                    <td>
+                      <strong>{getBookingSubject(booking, event)}</strong>
+                      <span className="admin-table__secondary">{booking.ticketTypeName || booking.ticketType} · {booking.ticketQuantity ?? booking.ticketCount} ticket(s)</span>
+                      {eventMeta && <span className="admin-table__secondary">{eventMeta}</span>}
+                    </td>
+                    <td>{formatAmount(payment.amount, booking.currency)}</td>
+                    <td><strong>{payment.utr}</strong><span className="admin-table__secondary">{payment.upiId}</span></td>
+                    <td>{formatBookingDate(payment.submittedAt)}</td>
+                    <td><div className="admin-row-actions admin-row-actions--wrap">
+                      <button className="admin-button admin-button--small" onClick={() => setSelected(booking)} type="button">Booking details</button>
+                      <button className="admin-button admin-button--small admin-button--primary" onClick={() => void decideUpiPayment(booking, 'approve')} type="button">Verify &amp; approve</button>
+                      <button className="admin-button admin-button--small admin-button--danger" onClick={() => void decideUpiPayment(booking, 'reject')} type="button">Reject</button>
+                    </div></td>
+                  </tr>
+                )
+              })}
             </tbody>
           </AdminTable>
         ) : <p className="admin-empty">No UPI payments are awaiting verification.</p>}
       </AdminPanel>
-      <AdminPanel title={`${filtered.length} booking records`}>
+      <AdminPanel className="admin-bookings__list-panel" title={`${filtered.length} booking records`}>
         <div className="admin-toolbar admin-toolbar--wrap">
           <label className="admin-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search bookings</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Reference, customer, event, category or organizer" value={query} /></label>
           <label className="admin-select"><span>Booking</span><select onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All statuses</option><option value="confirmed">Confirmed</option><option value="pending">Pending</option><option value="cancelled">Cancelled</option></select></label>
@@ -423,49 +520,93 @@ export default function ManageBookings() {
           <label className="admin-select"><span>Gateway</span><select onChange={(event) => setGateway(event.target.value)} value={gateway}><option value="all">All Gateways</option><option value="cashfree">Cashfree Payments</option><option value="upi">Direct UPI</option></select></label>
         </div>
         <AdminTable label="Booking records">
-          <thead><tr><th scope="col">Reference / customer</th><th scope="col">Event / interest</th><th scope="col">Ticket details</th><th scope="col">Booked</th><th scope="col">Total amount</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+          <thead>
+            <tr>
+              <th scope="col">Customer Details</th>
+              <th scope="col">Event Details</th>
+              <th scope="col">Ticket Details</th>
+              <th scope="col">Payment Details</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
           <tbody>
             {filtered.map((booking) => {
               const event = events.find((item) => item.id === booking.eventId)
-              const organizer = organizers.find((item) => item.id === booking.organizerId)
+              const eventDate = formatEventDate(event?.date) || formatBookingDate(booking.createdAt)
+              const eventTime = event?.time || '—'
+              const eventCategory = booking.category || event?.category || '—'
               const bookingKey = booking.reference || booking.requestId || booking.id
+              const customerName = booking.customer || booking.name || 'Guest'
+              const numberOfTickets = booking.ticketQuantity ?? booking.ticketCount ?? 1
+              const pricePerTicket = booking.pricePerTicket != null
+                ? formatAmount(booking.pricePerTicket, booking.currency)
+                : event?.priceAmount != null
+                  ? formatAmount(event.priceAmount, booking.currency)
+                  : (numberOfTickets > 0 && booking.amount
+                      ? formatAmount(Math.round(booking.amount / numberOfTickets), booking.currency)
+                      : '—')
+              const paymentMethod = booking.cfPaymentMethod
+                || (booking.paymentProvider === 'cashfree'
+                    ? 'Cashfree'
+                    : booking.paymentProvider === 'upi'
+                      ? 'Direct UPI'
+                      : booking.paymentProvider === 'razorpay'
+                        ? 'Legacy'
+                        : booking.paymentProvider || '—')
+              const txnRef = booking.cfPaymentId
+                || booking.paymentReference
+                || booking.paymentOrderId
+                || booking.cfOrderId
+                || booking.razorpayPaymentId
+
               return (
                 <tr key={bookingKey}>
-                  <td><strong>{booking.reference || 'Awaiting payment'}</strong>{!booking.reference && <span className="admin-table__secondary">Request {bookingKey}</span>}<span className="admin-table__secondary">{booking.customer}</span><span className="admin-table__secondary">{booking.mobile || booking.customerEmail}</span></td>
-                  <td><strong>{getBookingSubject(booking, event)}</strong><span className="admin-table__secondary">{booking.category ? 'Our team will match an event.' : organizer?.name ?? event?.organizer ?? '—'}</span></td>
+                  {/* Customer Details */}
                   <td>
-                    <strong>{booking.ticketTypeName || booking.ticketType || '—'} · {booking.ticketQuantity ?? booking.ticketCount ?? 1}</strong>
-                    <span className="admin-table__secondary">
-                      {booking.pricePerTicket == null ? 'Price per ticket —' : `${formatAmount(booking.pricePerTicket, booking.currency)} per ticket`}
-                    </span>
-                    <span className="admin-table__secondary">
-                      Subtotal {booking.subtotal == null ? '—' : formatAmount(booking.subtotal, booking.currency)} · Discount {formatAmount(booking.discount ?? 0, booking.currency)}
-                    </span>
+                    <strong>{customerName}</strong>
+                    <span className="admin-table__secondary">{booking.mobile || booking.customerEmail || '—'}</span>
+                    <span className="admin-table__secondary">Ref: {booking.reference || 'Awaiting payment'}</span>
                   </td>
-                  <td>{formatBookingDate(booking.createdAt)}</td>
+
+                  {/* Event Details */}
                   <td>
-                    {formatAmount(booking.amount, booking.currency)}
-                    {booking.diwaliOfferApplied && <span className="admin-table__secondary"><s>{formatAmount(booking.subtotal ?? booking.regularPrice, booking.currency)}</s> Diwali offer · saved {formatAmount(booking.discount ?? 0, booking.currency)}</span>}
+                    <strong>{getBookingSubject(booking, event)}</strong>
+                    <span className="admin-table__secondary">{eventDate}{eventTime !== '—' ? ` · ${eventTime}` : ''}</span>
+                    <span className="admin-table__secondary">{eventCategory}</span>
                   </td>
+
+                  {/* Ticket Details */}
+                  <td>
+                    <strong>{numberOfTickets} ticket(s)</strong>
+                    <span className="admin-table__secondary">{pricePerTicket} per ticket</span>
+                    <span className="admin-table__secondary">Total: {formatAmount(booking.amount, booking.currency)}</span>
+                  </td>
+
+                  {/* Payment Details */}
                   <td>
                     <StatusBadge status={booking.paymentStatus}>{formatPaymentStatus(booking.paymentStatus)}</StatusBadge>
                     <span className="admin-table__secondary" style={{ display: 'block', marginTop: '3px', fontWeight: 600 }}>
-                      {booking.paymentProvider === 'cashfree' ? 'Cashfree' : booking.paymentProvider === 'razorpay' ? 'Legacy gateway' : booking.paymentProvider === 'upi' ? 'Direct UPI' : '—'}
+                      {paymentMethod}
                     </span>
+                    {txnRef && <span className="admin-table__secondary">ID: {txnRef}</span>}
+                    <span className="admin-table__secondary">Final: <strong>{formatAmount(booking.amount, booking.currency)}</strong></span>
                   </td>
-                  <td><StatusBadge status={booking.status}>{formatBookingStatus(booking.status)}</StatusBadge></td>
-                  <td><div className="admin-row-actions admin-row-actions--wrap">
-                    <button className="admin-button admin-button--small" onClick={() => setSelected(booking)} type="button">Details</button>
-                    {actor?.role === 'super_admin'
-                      && isVisibleNoPaymentCandidate(booking)
-                      && hasUniqueVisibleBookingIdentifier(booking, bookings)
-                      && <button
-                        className="admin-button admin-button--small admin-button--danger"
-                        onClick={() => void removeBooking(booking)}
-                        type="button"
-                      >Delete</button>}
-                    {!['cancelled', 'rejected'].includes(booking.status) && !['verified', 'paid'].includes(booking.paymentStatus) && <button className="admin-button admin-button--small admin-button--danger" onClick={() => void cancel(booking)} type="button">Cancel</button>}
-                  </div></td>
+
+                  {/* Actions */}
+                  <td>
+                    <div className="admin-row-actions admin-row-actions--wrap">
+                      <button className="admin-button admin-button--small" onClick={() => setSelected(booking)} type="button">Details</button>
+                      {actor?.role === 'super_admin'
+                        && isVisibleNoPaymentCandidate(booking)
+                        && hasUniqueVisibleBookingIdentifier(booking, bookings)
+                        && <button
+                          className="admin-button admin-button--small admin-button--danger"
+                          onClick={() => void removeBooking(booking)}
+                          type="button"
+                        >Delete</button>}
+                      {!['cancelled', 'rejected'].includes(booking.status) && !['verified', 'paid'].includes(booking.paymentStatus) && <button className="admin-button admin-button--small admin-button--danger" onClick={() => void cancel(booking)} type="button">Cancel</button>}
+                    </div>
+                  </td>
                 </tr>
               )
             })}

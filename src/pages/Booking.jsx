@@ -1,23 +1,19 @@
 import { useRef, useState } from 'react'
 import {
   ArrowLeft,
+  ArrowRight,
   CalendarDays,
-  Clock3,
+  Check,
   LockKeyhole,
-  MapPin,
-  ShieldAlert,
+  Minus,
+  Plus,
   Ticket,
   UsersRound,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/common/Button.jsx'
-import Container from '../components/common/Container.jsx'
 import FormField from '../components/common/FormField.jsx'
-import {
-  bookingConfig,
-  bookingConfigErrors,
-  isPaymentBackendConfigured,
-} from '../config/booking.js'
+import { bookingConfig } from '../config/booking.js'
 import {
   calculateBookingTotals,
   formatBookingAmount,
@@ -26,8 +22,7 @@ import {
   rememberBookingReference,
 } from '../utils/bookingStorage.js'
 import { getResponsiveImageSrcSet } from '../utils/responsiveImage.js'
-import { validateBookingForm } from '../utils/bookingValidation.js'
-import { createCheckoutSession } from '../services/paymentCheckout.js'
+import { submitBookingEnquiry } from '../services/bookingEnquiry.js'
 import { createBooking } from '../services/bookingRecords.js'
 import usePublicEvents from '../hooks/usePublicEvents.js'
 import NotFound from './NotFound.jsx'
@@ -35,26 +30,44 @@ import './Booking.css'
 
 const initialForm = {
   fullName: '',
-  email: '',
   mobile: '',
   ticketCount: 1,
-  specialRequests: '',
 }
 
-function formatEventDate(date) {
-  const parsedDate = new Date(`${date}T00:00:00Z`)
+function normalizeIndiaMobile(value) {
+  const digits = (value || '').replace(/\D/g, '')
+  if (digits.length === 10) {
+    return `+91${digits}`
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return `+${digits}`
+  }
+  return value?.trim()?.startsWith('+') ? value.trim() : `+91${digits}`
+}
 
-  if (Number.isNaN(parsedDate.getTime())) {
-    return date
+function validateBookingInputs(form, availableSeats) {
+  const errors = {}
+  const name = (form.fullName || '').trim()
+  const phoneDigits = (form.mobile || '').replace(/\D/g, '')
+  const ticketCount = Number(form.ticketCount)
+
+  if (name.length < 2 || name.length > 100) {
+    errors.fullName = 'Enter your full name (2 to 100 characters).'
   }
 
-  return new Intl.DateTimeFormat('en', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(parsedDate)
+  if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+    errors.mobile = 'Enter a valid 10-digit mobile number.'
+  }
+
+  if (!Number.isInteger(ticketCount) || ticketCount < 1) {
+    errors.ticketCount = 'Choose at least 1 ticket.'
+  } else if (ticketCount > availableSeats) {
+    errors.ticketCount = `Only ${availableSeats} ${
+      availableSeats === 1 ? 'seat is' : 'seats are'
+    } available.`
+  }
+
+  return errors
 }
 
 export default function Booking() {
@@ -71,8 +84,31 @@ export default function Booking() {
   const [submitError, setSubmitError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { events: availableEvents, error: eventsError, loading: eventsLoading } = usePublicEvents()
+  const searchParams = new URLSearchParams(location.search)
+  const queryEventId = searchParams.get('eventId') || searchParams.get('event')
+  const queryCategory = searchParams.get('category')
+
+  const categoryMatchedEventId = queryCategory
+    ? availableEvents.find(
+        (item) =>
+          (item.category || '').toLowerCase() === queryCategory.toLowerCase() &&
+          (item.seatsAvailable ?? 0) > 0,
+      )?.id
+    : ''
+
+  const defaultAvailableEventId =
+    availableEvents.find((item) => (item.seatsAvailable ?? 0) > 0)?.id ||
+    availableEvents[0]?.id ||
+    ''
+
   const requestId = useRef(crypto.randomUUID())
-  const eventId = routeEventId || stateEventId || selectedEventId
+  const eventId =
+    routeEventId ||
+    stateEventId ||
+    selectedEventId ||
+    queryEventId ||
+    categoryMatchedEventId ||
+    defaultAvailableEventId
   const event = availableEvents.find((item) => item.id === eventId)
   const invalidRequestedEvent =
     !eventsLoading &&
@@ -83,6 +119,7 @@ export default function Booking() {
   const totals = event
     ? calculateBookingTotals(event, ticketCount)
     : { subtotal: 0, fees: 0, total: 0, currency: bookingConfig.currency }
+
   if (invalidRequestedEvent && !event && !eventsError) {
     return <NotFound />
   }
@@ -94,7 +131,6 @@ export default function Booking() {
       if (!current[field]) {
         return current
       }
-
       const nextErrors = { ...current }
       delete nextErrors[field]
       return nextErrors
@@ -102,33 +138,31 @@ export default function Booking() {
     setSubmitError('')
   }
 
-  function validateForm() {
-    const nextErrors = validateBookingForm(form, availableSeats)
-    setErrors(nextErrors)
-    setHasSubmitted(true)
-    return Object.keys(nextErrors).length === 0
-  }
-
   function validateField(field) {
-    const nextErrors = validateBookingForm(form, availableSeats)
+    const nextErrors = validateBookingInputs(form, availableSeats)
     setErrors((current) => {
       const updatedErrors = { ...current }
-
       if (nextErrors[field]) {
         updatedErrors[field] = nextErrors[field]
       } else {
         delete updatedErrors[field]
       }
-
       return updatedErrors
     })
   }
 
   async function handleSubmit(submitEvent) {
     submitEvent.preventDefault()
+    if (isSubmitting) {
+      return
+    }
     setSubmitError('')
 
-    if (!validateForm() || !event) {
+    const nextErrors = validateBookingInputs(form, availableSeats)
+    setErrors(nextErrors)
+    setHasSubmitted(true)
+
+    if (Object.keys(nextErrors).length > 0 || !event) {
       return
     }
 
@@ -140,10 +174,11 @@ export default function Booking() {
     setIsSubmitting(true)
 
     try {
+      const normalizedMobile = normalizeIndiaMobile(form.mobile)
       const attendee = {
         fullName: form.fullName.trim(),
-        email: form.email.trim(),
-        mobile: form.mobile.trim(),
+        email: '',
+        mobile: normalizedMobile,
       }
 
       if (event.isFree) {
@@ -151,14 +186,17 @@ export default function Booking() {
           requestId: requestId.current,
           eventId: event.id,
           attendee,
-          specialRequests: form.specialRequests,
+          specialRequests: '',
           ticketCount,
         })
         let referenceStorageWarning = ''
         try {
           rememberBookingReference(booking.reference)
         } catch (error) {
-          referenceStorageWarning = error instanceof Error ? error.message : 'The booking reference could not be saved on this device.'
+          referenceStorageWarning =
+            error instanceof Error
+              ? error.message
+              : 'The booking reference could not be saved on this device.'
         }
 
         navigate(
@@ -171,21 +209,28 @@ export default function Booking() {
         return
       }
 
-      if (!isPaymentBackendConfigured) {
-        setSubmitError(
-          `Online payment is not available yet. Configure a booking backend to create and verify a secure ${bookingConfig.paymentProvider} checkout.`,
-        )
-        return
-      }
-
-      const checkout = await createCheckoutSession({
-        attendee,
+      // Paid booking flow: submit booking enquiry and navigate to payment page
+      const enquiryResult = await submitBookingEnquiry({
+        requestId: requestId.current,
+        name: attendee.fullName,
+        email: '',
+        mobile: normalizedMobile,
         eventId: event.id,
-        specialRequests: form.specialRequests.trim(),
-        ticketCount,
+        ticketQuantity: ticketCount,
+        maleCount: ticketCount,
+        femaleCount: 0,
+        maleMemberNames: Array(ticketCount).fill(attendee.fullName),
+        femaleMemberNames: [],
       })
 
-      window.location.assign(checkout.checkoutUrl)
+      const targetRequestId = enquiryResult?.booking?.requestId || requestId.current
+      navigate(`/booking/payment/${encodeURIComponent(targetRequestId)}`, {
+        state: {
+          eventId: event.id,
+          attendee,
+          ticketCount,
+        },
+      })
     } catch (error) {
       setSubmitError(
         error instanceof Error
@@ -199,251 +244,257 @@ export default function Booking() {
 
   const activeFieldError = (field) =>
     hasSubmitted || errors[field] ? errors[field] : undefined
+  const selectableEvents = routeEventId
+    ? availableEvents.filter((item) => item.id === routeEventId)
+    : availableEvents
 
   return (
     <div className="booking-page">
-      <section className="booking-page__intro">
-        <Container>
-          <Link className="booking-page__back" to={event ? `/events/${event.id}` : '/events'}>
-            <ArrowLeft size={17} aria-hidden="true" />
-            {event ? 'Back to event' : 'Explore events'}
+      <div className="booking-page__ambient" aria-hidden="true" />
+      <div className="booking-page__container">
+        <header className="booking-page__topbar">
+          <Link className="booking-page__brand" to="/" aria-label="VibeTogether home">
+            <img
+              src="/assets/optimized/favicon-256-v1.webp"
+              alt=""
+              width="42"
+              height="42"
+            />
+            <span>VibeTogether</span>
           </Link>
-          <p className="booking-page__eyebrow">A good plan starts here</p>
-          <h1>Save your <span className="gradient-text">spot.</span></h1>
-          <p>Share a few details and get ready for something memorable.</p>
-        </Container>
-      </section>
+          <span className="booking-page__tagline">Music <i /> Events <i /> Together</span>
+        </header>
 
-      <Container className="booking-layout">
-        <form className="booking-form glass-card" onSubmit={handleSubmit} noValidate>
-          <section className="booking-form__section" aria-labelledby="event-selection-title">
-            <div className="booking-form__section-heading">
-              <span className="booking-form__step">01</span>
-              <div>
-                <h2 id="event-selection-title">Your event</h2>
-                <p>Choose the experience you want to join.</p>
+        <section className="booking-page__hero">
+          <p className="booking-page__eyebrow">BOOK YOUR SPOT</p>
+          <h1>What&apos;s your name?</h1>
+          <p>Let&apos;s get you registered for an amazing event!</p>
+        </section>
+
+        <form className="booking-form" onSubmit={handleSubmit} noValidate>
+          <div className="booking-form__panel">
+            {/* Section B: Your Details */}
+            <section className="booking-form__section" aria-labelledby="attendee-title">
+              <div className="booking-form__section-heading">
+                <span className="booking-form__section-icon"><UsersRound size={17} aria-hidden="true" /></span>
+                <h2 id="attendee-title">Your Details</h2>
               </div>
-            </div>
 
-            <FormField id="booking-event" label="Event" required>
-              {(fieldProps) => (
-                <select
-                  {...fieldProps}
-                  value={event?.id ?? ''}
-                  onChange={(changeEvent) => {
-                    requestId.current = crypto.randomUUID()
-                    setSelectedEventId(changeEvent.target.value)
-                    setForm(initialForm)
-                    setErrors({})
-                    setHasSubmitted(false)
-                    setSubmitError('')
-                  }}
-                  disabled={Boolean(routeEventId)}
+              <div className="booking-form__fields">
+                <FormField
+                  id="booking-full-name"
+                  label="Full Name"
+                  required
+                  error={activeFieldError('fullName')}
                 >
-                  <option value="" disabled>
-                    Select an event
-                  </option>
-                  {availableEvents.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.title} · {item.isFree ? 'Free' : item.price}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-            {eventsError && <p className="booking-alert booking-alert--error" role="alert">{eventsError}</p>}
-            {eventsLoading && <p role="status">Loading available events…</p>}
+                  {(fieldProps) => (
+                    <input
+                      {...fieldProps}
+                      autoComplete="name"
+                      maxLength={100}
+                      onBlur={() => validateField('fullName')}
+                      onChange={(changeEvent) =>
+                        updateForm('fullName', changeEvent.target.value)
+                      }
+                      placeholder="Enter your full name"
+                      value={form.fullName}
+                    />
+                  )}
+                </FormField>
+                <FormField
+                  id="booking-mobile"
+                  label="Mobile Number"
+                  required
+                  error={activeFieldError('mobile')}
+                >
+                  {(fieldProps) => (
+                    <div className="booking-form__phone-wrap">
+                      <span className="booking-form__country-code" aria-hidden="true">+91</span>
+                      <input
+                        {...fieldProps}
+                        autoComplete="tel"
+                        inputMode="tel"
+                        maxLength={15}
+                        onBlur={() => validateField('mobile')}
+                        onChange={(changeEvent) =>
+                          updateForm('mobile', changeEvent.target.value)
+                        }
+                        placeholder="Enter 10-digit mobile number"
+                        type="tel"
+                        value={form.mobile}
+                      />
+                    </div>
+                  )}
+                </FormField>
+              </div>
+            </section>
 
-            {event && (
-              <div className="booking-event">
-                <img
-                  src={event.image}
-                  srcSet={getResponsiveImageSrcSet(event.image)}
-                  sizes="(max-width: 48rem) 100vw, 50vw"
-                  alt={event.imageAlt}
-                  loading="lazy"
-                  decoding="async"
-                />
-                <div className="booking-event__content">
-                  <span className="booking-event__category">{event.category}</span>
-                  <h3>{event.title}</h3>
-                  <p>
-                    <CalendarDays size={16} aria-hidden="true" />
-                    {formatEventDate(event.date)}
-                  </p>
-                  <p>
-                    <Clock3 size={16} aria-hidden="true" />
-                    {event.time}
-                  </p>
-                  <p>
-                    <MapPin size={16} aria-hidden="true" />
-                    {event.location}
-                  </p>
-                  <p className="booking-event__seats">
-                    <UsersRound size={16} aria-hidden="true" />
-                    {availableSeats} {availableSeats === 1 ? 'seat' : 'seats'} left
-                  </p>
+            {/* Section C: Select Event */}
+            <section className="booking-form__section" aria-labelledby="event-selection-title">
+              <div className="booking-form__section-heading">
+                <span className="booking-form__section-icon"><CalendarDays size={17} aria-hidden="true" /></span>
+                <div>
+                  <h2 id="event-selection-title">Select Event</h2>
+                  <p>Choose the experience you want to join.</p>
                 </div>
               </div>
-            )}
-          </section>
 
-          <section className="booking-form__section" aria-labelledby="attendee-title">
-            <div className="booking-form__section-heading">
-              <span className="booking-form__step">02</span>
-              <div>
-                <h2 id="attendee-title">Attendee details</h2>
-                <p>We’ll use these details for your booking information.</p>
+              {eventsLoading && <p className="booking-form__status" role="status">Loading available events…</p>}
+              {eventsError && <p className="booking-alert booking-alert--error" role="alert">{eventsError}</p>}
+              {!eventsLoading && !eventsError && selectableEvents.length === 0 && (
+                <p className="booking-form__status">No events are available right now.</p>
+              )}
+              <div className="booking-form__event-grid">
+                {selectableEvents.map((item) => {
+                  const isSelected = item.id === event?.id
+                  const isAvailable = (item.seatsAvailable ?? 0) > 0
+                  return (
+                    <button
+                      aria-pressed={isSelected}
+                      className={`booking-form__event-card${isSelected ? ' is-selected' : ''}`}
+                      disabled={!isAvailable || eventsLoading}
+                      key={item.id}
+                      onClick={() => {
+                        if (routeEventId) return
+                        requestId.current = crypto.randomUUID()
+                        setSelectedEventId(item.id)
+                        setForm((prev) => ({
+                          ...prev,
+                          ticketCount: Math.min(prev.ticketCount || 1, item.seatsAvailable || 1),
+                        }))
+                        setErrors((prev) => {
+                          const next = { ...prev }
+                          delete next.ticketCount
+                          return next
+                        })
+                        setSubmitError('')
+                      }}
+                      type="button"
+                    >
+                      <span className="booking-form__event-image-wrap">
+                        <img
+                          src={item.image}
+                          srcSet={getResponsiveImageSrcSet(item.image)}
+                          sizes="(max-width: 35rem) 50vw, (max-width: 60rem) 33vw, 25vw"
+                          alt={item.imageAlt || item.title}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        {isSelected && <span className="booking-form__event-check"><Check size={14} aria-hidden="true" /></span>}
+                      </span>
+                      <span className="booking-form__event-info">
+                        <span className="booking-form__event-title">{item.title}</span>
+                        <span className="booking-form__event-category">{item.category}</span>
+                        <span className="booking-form__event-price">
+                          {item.isFree ? 'Free' : formatBookingAmount(item.priceAmount, item.currency)}
+                        </span>
+                        <span className={`booking-form__event-availability${isAvailable ? '' : ' is-unavailable'}`}>
+                          <span aria-hidden="true" />
+                          {isAvailable ? `${item.seatsAvailable} available` : 'Sold out'}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
-            </div>
+            </section>
 
-            <div className="booking-form__fields">
-              <FormField
-                id="booking-full-name"
-                label="Full name"
-                required
-                error={activeFieldError('fullName')}
-              >
-                {(fieldProps) => (
-                  <input
-                    {...fieldProps}
-                    autoComplete="name"
-                    maxLength={100}
-                    onBlur={() => validateField('fullName')}
-                    onChange={(changeEvent) =>
-                      updateForm('fullName', changeEvent.target.value)
-                    }
-                    value={form.fullName}
-                  />
-                )}
-              </FormField>
-              <FormField
-                id="booking-email"
-                label="Email address"
-                required
-                error={activeFieldError('email')}
-                hint="Your booking reference will be shown on screen. Email delivery needs backend setup."
-              >
-                {(fieldProps) => (
-                  <input
-                    {...fieldProps}
-                    autoComplete="email"
-                    maxLength={254}
-                    onBlur={() => validateField('email')}
-                    onChange={(changeEvent) =>
-                      updateForm('email', changeEvent.target.value)
-                    }
-                    type="email"
-                    value={form.email}
-                  />
-                )}
-              </FormField>
-              <FormField
-                id="booking-mobile"
-                label="Mobile number"
-                required
-                error={activeFieldError('mobile')}
-                hint="Include a country code if you are booking from outside India."
-              >
-                {(fieldProps) => (
-                  <input
-                    {...fieldProps}
-                    autoComplete="tel"
-                    inputMode="tel"
-                    maxLength={24}
-                    onBlur={() => validateField('mobile')}
-                    onChange={(changeEvent) =>
-                      updateForm('mobile', changeEvent.target.value)
-                    }
-                    type="tel"
-                    value={form.mobile}
-                  />
-                )}
-              </FormField>
+            {/* Section D: Number of Tickets */}
+            <section className="booking-form__section" aria-labelledby="ticket-count-title">
+              <div className="booking-form__section-heading">
+                <span className="booking-form__section-icon"><Ticket size={17} aria-hidden="true" /></span>
+                <div>
+                  <h2 id="ticket-count-title">Number of Tickets</h2>
+                  <p>{event ? `${availableSeats} ${availableSeats === 1 ? 'seat is' : 'seats are'} currently available.` : 'Select an event to see availability.'}</p>
+                </div>
+              </div>
               <FormField
                 id="booking-ticket-count"
-                label="Number of attendees"
+                label="Tickets"
                 required
                 error={activeFieldError('ticketCount')}
-                hint={
-                  event
-                    ? `${availableSeats} ${
-                        availableSeats === 1 ? 'seat is' : 'seats are'
-                      } currently available.`
-                    : 'Select an event to see available seats.'
-                }
               >
                 {(fieldProps) => (
-                  <input
-                    {...fieldProps}
-                    disabled={!event || availableSeats < 1}
-                    inputMode="numeric"
-                    max={availableSeats}
-                    min="1"
-                    onBlur={() => validateField('ticketCount')}
-                    onChange={(changeEvent) => {
-                      const value = changeEvent.target.value
-                      updateForm(
-                        'ticketCount',
-                        value === '' ? '' : Number(value),
-                      )
-                    }}
-                    type="number"
-                    value={form.ticketCount}
-                  />
+                  <div className="booking-form__quantity">
+                    <button
+                      aria-label="Remove one ticket"
+                      disabled={!event || availableSeats < 1 || ticketCount <= 1}
+                      onClick={() => updateForm('ticketCount', Math.max(1, ticketCount - 1))}
+                      type="button"
+                    >
+                      <Minus size={18} aria-hidden="true" />
+                    </button>
+                    <input
+                      {...fieldProps}
+                      aria-label="Number of tickets"
+                      disabled={!event || availableSeats < 1}
+                      inputMode="numeric"
+                      max={availableSeats}
+                      min="1"
+                      onBlur={() => validateField('ticketCount')}
+                      onChange={(changeEvent) => {
+                        const value = changeEvent.target.value
+                        updateForm('ticketCount', value === '' ? '' : Number(value))
+                      }}
+                      type="number"
+                      value={form.ticketCount}
+                    />
+                    <button
+                      aria-label="Add one ticket"
+                      disabled={!event || availableSeats < 1 || ticketCount >= availableSeats}
+                      onClick={() => updateForm('ticketCount', Math.min(availableSeats, ticketCount + 1))}
+                      type="button"
+                    >
+                      <Plus size={18} aria-hidden="true" />
+                    </button>
+                  </div>
                 )}
               </FormField>
-              <FormField
-                id="booking-special-requests"
-                label="Special requests"
-                error={activeFieldError('specialRequests')}
-                hint="Optional · Please don’t include sensitive or payment information."
-              >
-                {(fieldProps) => (
-                  <textarea
-                    {...fieldProps}
-                    maxLength={500}
-                    onBlur={() => validateField('specialRequests')}
-                    onChange={(changeEvent) =>
-                      updateForm('specialRequests', changeEvent.target.value)
-                    }
-                    rows={4}
-                    value={form.specialRequests}
-                  />
-                )}
-              </FormField>
-            </div>
-          </section>
+            </section>
+
+            {/* Section E: Price Summary */}
+            <section className="booking-summary" aria-labelledby="summary-title">
+              <div className="booking-form__section-heading">
+                <span className="booking-form__section-icon"><Ticket size={17} aria-hidden="true" /></span>
+                <h2 id="summary-title">Price Summary</h2>
+              </div>
+              <div className="booking-summary__line">
+                <span>Selected Event</span>
+                <strong>{event?.title ?? 'Choose an event'}</strong>
+              </div>
+              <div className="booking-summary__line">
+                <span>Price per Ticket</span>
+                <strong>{event ? (event.isFree ? 'Free' : formatBookingAmount(event.priceAmount, event.currency)) : '—'}</strong>
+              </div>
+              <div className="booking-summary__line">
+                <span>Number of Tickets</span>
+                <strong>{ticketCount || 0}</strong>
+              </div>
+              {event && totals.fees > 0 && (
+                <div className="booking-summary__line">
+                  <span>Booking Fee</span>
+                  <strong>{formatBookingAmount(totals.fees, totals.currency)}</strong>
+                </div>
+              )}
+              <div className="booking-summary__total">
+                <span>Total Booking Amount</span>
+                <strong>
+                  {event
+                    ? (event.isFree ? 'Free' : formatBookingAmount(totals.total, totals.currency))
+                    : '—'}
+                </strong>
+              </div>
+            </section>
+          </div>
 
           {submitError && (
-            <p className="booking-alert booking-alert--error" role="alert">
-              {submitError}
-            </p>
+            <p className="booking-alert booking-alert--error" role="alert">{submitError}</p>
           )}
 
-          {event && !event.isFree && (
-            <div className="booking-alert booking-alert--info" role="status">
-              <ShieldAlert size={20} aria-hidden="true" />
-              <p>
-                Payment is not collected or confirmed here. Secure checkout and
-                payment verification require a configured backend.
-              </p>
-            </div>
-          )}
-          {event &&
-            !event.isFree &&
-            bookingConfigErrors.map((configError) => (
-              <p
-                className="booking-alert booking-alert--error"
-                key={configError}
-                role="alert"
-              >
-                {configError}
-              </p>
-            ))}
-
+          {/* Section F: Confirm Booking */}
           <div className="booking-form__actions">
             <Button to={event ? `/events/${event.id}` : '/events'} variant="secondary">
+              <ArrowLeft size={16} aria-hidden="true" />
               Keep exploring
             </Button>
             <Button
@@ -455,87 +506,18 @@ export default function Booking() {
                 Boolean(eventsError)
               }
               loading={isSubmitting}
-              loadingText={
-                event?.isFree ? 'Saving reservation...' : 'Preparing checkout...'
-              }
+              loadingText={event?.isFree ? 'Saving reservation...' : 'Preparing payment...'}
             >
-              {event?.isFree ? (
-                <>
-                  <Ticket size={17} aria-hidden="true" />
-                  Reserve free tickets
-                </>
-              ) : (
-                <>
-                  <LockKeyhole size={17} aria-hidden="true" />
-                  Continue to payment
-                </>
-              )}
+              Confirm Booking
+              <ArrowRight size={17} aria-hidden="true" />
             </Button>
           </div>
           <p className="booking-form__privacy">
-            {event?.isFree
-              ? 'Development preview: free booking details are stored only in this browser and are not sent to an organizer.'
-              : 'No card details are collected or stored on this page.'}
+            <LockKeyhole size={14} aria-hidden="true" />
+            Your details are safe and secure. No payment details are collected or stored on this page.
           </p>
         </form>
-
-        <aside className="booking-summary glass-card" aria-labelledby="summary-title">
-          <p className="booking-summary__eyebrow">Booking summary</p>
-          <h2 id="summary-title">{event?.title ?? 'Choose your experience'}</h2>
-          {event ? (
-            <>
-              <div className="booking-summary__line">
-                <span>
-                  {event.isFree ? 'Free admission' : 'Ticket price'}
-                  {ticketCount > 0 && ` × ${ticketCount}`}
-                </span>
-                <strong>
-                  {event.isFree
-                    ? 'FREE'
-                    : formatBookingAmount(totals.subtotal, totals.currency)}
-                </strong>
-              </div>
-              <div className="booking-summary__line">
-                <span>Booking fee</span>
-                <strong>
-                  {formatBookingAmount(totals.fees, totals.currency)}
-                </strong>
-              </div>
-              <div className="booking-summary__total">
-                <span>Total</span>
-                <strong>
-                  {event.isFree
-                    ? 'FREE'
-                    : formatBookingAmount(totals.total, totals.currency)}
-                </strong>
-              </div>
-              {!event.isFree && (
-                <p className="booking-summary__note">
-                  Fees are configurable and verified by the booking service.
-                  Current configured fee:{' '}
-                  {formatBookingAmount(
-                    bookingConfig.feePerPaidTicket,
-                    totals.currency,
-                  )}{' '}
-                  per ticket.
-                </p>
-              )}
-            </>
-          ) : (
-            <p className="booking-summary__note">
-              Event pricing, tickets, and any fees will appear here.
-            </p>
-          )}
-          <div className="booking-summary__trust">
-            <LockKeyhole size={18} aria-hidden="true" />
-            <span>
-              {event?.isFree
-                ? 'No payment details required'
-                : 'No payment details are stored by this frontend'}
-            </span>
-          </div>
-        </aside>
-      </Container>
+      </div>
     </div>
   )
 }
