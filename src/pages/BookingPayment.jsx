@@ -35,6 +35,7 @@ import {
   verifyCashfreePayment,
   getBookingEnquiry,
 } from '../services/bookingEnquiryPayment.js'
+import { resolveBookingSubtotal } from '../utils/bookingTotals.js'
 import './BookingPayment.css'
 
 const paymentAttemptTimeoutMs = 2 * 60 * 1000
@@ -850,9 +851,11 @@ export default function BookingPayment() {
   const pricePerTicket = Number.isFinite(Number(booking?.pricePerTicket))
     ? Number(booking.pricePerTicket)
     : 199
-  const subtotal = Number.isFinite(Number(booking?.subtotal))
-    ? Number(booking.subtotal)
-    : pricePerTicket * ticketQuantity
+  const subtotal = resolveBookingSubtotal(
+    booking?.subtotal,
+    pricePerTicket,
+    ticketQuantity,
+  )
   const finalPayable = ticketQuantity > 1
     ? pricePerTicket * ticketQuantity
     : (Number.isFinite(Number(booking?.paymentAmount))
@@ -1673,12 +1676,6 @@ export default function BookingPayment() {
                                     </>
                                   )}
                                 </button>
-                                <div className="booking-payment__cf-inline-warning" role="note">
-                                  <Info size={16} aria-hidden="true" />
-                                  <span>
-                                    If {selectedUpiApp.name} is unavailable or handoff does not start, use UPI Payment (QR).
-                                  </span>
-                                </div>
                               </div>
                             )}
                           </div>

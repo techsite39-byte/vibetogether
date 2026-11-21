@@ -17,6 +17,14 @@ export function calculateBookingTotals(event, ticketCount) {
   }
 }
 
+export function resolveBookingSubtotal(subtotal, pricePerTicket, ticketQuantity) {
+  const calculatedSubtotal = pricePerTicket * ticketQuantity
+  const storedSubtotal = Number(subtotal)
+  return Number.isFinite(storedSubtotal) && storedSubtotal >= calculatedSubtotal
+    ? storedSubtotal
+    : calculatedSubtotal
+}
+
 export function formatBookingAmount(amount, currency = bookingConfig.currency) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
