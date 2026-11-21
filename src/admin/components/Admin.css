@@ -1385,3 +1385,276 @@
     transition: none;
   }
 }
+
+.admin-bookings-page {
+  gap: var(--space-5);
+}
+
+.admin-bookings-page > .admin-page-header {
+  align-items: flex-end;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid rgb(184 76 255 / 28%);
+  border-radius: var(--radius-xl, 1.25rem);
+  background:
+    radial-gradient(ellipse at 92% 0%, rgb(123 43 255 / 18%), transparent 42%),
+    linear-gradient(145deg, rgb(24 12 47 / 94%), rgb(12 8 26 / 96%));
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 22%), inset 0 1px rgb(255 255 255 / 5%);
+}
+
+.admin-bookings-page > .admin-page-header h1 {
+  letter-spacing: -0.035em;
+}
+
+.admin-bookings-page > .admin-page-header .admin-page-header__description {
+  max-width: 56ch;
+}
+
+.admin-bookings-page > .admin-panel {
+  min-width: 0;
+  padding: clamp(1rem, 2.2vw, 1.5rem);
+  border-color: rgb(184 76 255 / 24%);
+  border-radius: var(--radius-xl, 1.25rem);
+  background:
+    radial-gradient(ellipse at 100% 0%, rgb(123 43 255 / 9%), transparent 36%),
+    linear-gradient(150deg, rgb(19 11 36 / 96%), rgb(12 8 26 / 98%));
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 18%), inset 0 1px rgb(255 255 255 / 4%);
+}
+
+.admin-bookings-page .admin-panel__header {
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid rgb(202 155 255 / 16%);
+}
+
+.admin-bookings-page .admin-panel__header h2 {
+  font-size: clamp(1rem, 1.6vw, 1.2rem);
+}
+
+.admin-bookings-page .admin-notice {
+  border-radius: 0.75rem;
+  line-height: 1.55;
+}
+
+.admin-bookings-page .admin-toolbar {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1.5fr) repeat(3, minmax(9rem, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+}
+
+.admin-bookings-page .admin-search,
+.admin-bookings-page .admin-select {
+  min-width: 0;
+  min-height: 2.85rem;
+  border-color: rgb(192 143 255 / 24%);
+  border-radius: 0.7rem;
+  background: rgb(8 5 20 / 72%);
+}
+
+.admin-bookings-page .admin-search input,
+.admin-bookings-page .admin-select select {
+  min-width: 0;
+  min-height: 2.75rem;
+  color: #f7f1fc;
+  font-size: 0.82rem;
+}
+
+.admin-bookings-page .admin-search:focus-within,
+.admin-bookings-page .admin-select:focus-within {
+  border-color: #db75ff;
+  outline: 3px solid rgb(203 84 255 / 20%);
+  outline-offset: 1px;
+}
+
+.admin-bookings-page .admin-table-scroll {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid rgb(192 143 255 / 18%);
+  border-radius: 0.85rem;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: #7132a0 #120b20;
+}
+
+.admin-bookings__list-panel .admin-table {
+  min-width: 74rem;
+}
+
+.admin-bookings__upi-panel .admin-table {
+  min-width: 58rem;
+}
+
+.admin-bookings-page .admin-table thead th {
+  padding: 0.8rem 0.75rem;
+  border-bottom-color: rgb(192 143 255 / 24%);
+  background: rgb(34 17 58 / 95%);
+  color: #e8d8f6;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-bookings-page .admin-table tbody td {
+  padding: 0.8rem 0.75rem;
+  border-bottom-color: rgb(202 155 255 / 10%);
+  color: #eee5f6;
+  vertical-align: top;
+}
+
+.admin-bookings-page .admin-table tbody tr:hover {
+  background: rgb(142 54 199 / 9%);
+}
+
+.admin-bookings-page .admin-table tbody td > strong {
+  display: block;
+  color: #fff;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.admin-bookings-page .admin-table__secondary {
+  display: block;
+  max-width: 20rem;
+  margin-top: 0.22rem;
+  color: #bdb1cc;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.admin-bookings-page .admin-row-actions {
+  gap: 0.4rem;
+}
+
+.admin-bookings-page .admin-row-actions .admin-button {
+  min-height: 2.5rem;
+  border-radius: 0.6rem;
+  white-space: nowrap;
+}
+
+.admin-bookings-page .admin-button:focus-visible {
+  outline: 3px solid #e8adff;
+  outline-offset: 2px;
+}
+
+.admin-bookings-page .admin-status-badge {
+  min-height: 1.7rem;
+  white-space: nowrap;
+}
+
+.admin-bookings-page .admin-empty {
+  margin: 1rem 0 0;
+  padding: 1.5rem;
+  border: 1px dashed rgb(192 143 255 / 30%);
+  border-radius: 0.75rem;
+  color: #cbbad9;
+  text-align: center;
+}
+
+@media (max-width: 68rem) {
+  .admin-bookings-page .admin-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 48rem) {
+  .admin-bookings-page {
+    gap: var(--space-4);
+  }
+
+  .admin-bookings-page > .admin-page-header {
+    padding: 1rem;
+    border-radius: 1rem;
+  }
+
+  .admin-bookings-page .admin-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-bookings-page .admin-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-bookings-page .admin-button {
+    transition: none;
+  }
+}
+
+
+/* =============================================================================
+   ADMIN BOOKING 4-CATEGORY DETAIL VIEW STYLES
+   ============================================================================= */
+
+.admin-booking-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.5rem 0;
+}
+
+.admin-booking-section {
+  padding: 1.15rem 1.35rem;
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(192, 132, 252, 0.22);
+}
+
+.admin-booking-section__title {
+  margin: 0 0 0.85rem;
+  color: #e9d5ff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid rgba(192, 132, 252, 0.15);
+  padding-bottom: 0.45rem;
+}
+
+.admin-booking-section__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.9rem 1.25rem;
+  margin: 0;
+}
+
+.admin-booking-section__grid dt {
+  color: #cbbad9;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.admin-booking-section__grid dd {
+  margin: 0;
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.admin-booking-section__grid dd strong {
+  color: #fff;
+  font-weight: 700;
+}
+
+.admin-amount-highlight {
+  color: #fde047 !important;
+  font-weight: 800 !important;
+  font-size: 1.05rem !important;
+}
+
+.admin-ref-code {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.45rem;
+  background: rgba(168, 85, 247, 0.18);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  color: #f3e8ff;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.82rem;
+  font-weight: 600;
+}

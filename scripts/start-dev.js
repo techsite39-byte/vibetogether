@@ -76,16 +76,55 @@ function startProcess(label, args, cwd, extraEnv = {}) {
   return child
 }
 
+async function waitForPort(port, host = '127.0.0.1', timeoutMs = 45000) {
+  const startTime = Date.now()
+  while (!shuttingDown) {
+    const isReady = await new Promise((resolve) => {
+      const socket = new net.Socket()
+      socket.setTimeout(1000)
+      socket.once('connect', () => {
+        socket.destroy()
+        resolve(true)
+      })
+      socket.once('error', () => {
+        socket.destroy()
+        resolve(false)
+      })
+      socket.once('timeout', () => {
+        socket.destroy()
+        resolve(false)
+      })
+      socket.connect(port, host)
+    })
+
+    if (isReady) return true
+    if (Date.now() - startTime > timeoutMs) {
+      throw new Error(`Timed out waiting for backend to be ready on ${host}:${port}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+  return false
+}
+
+const backendPort = Number(process.env.PORT ?? 4000)
 const vitePort = await findAvailablePort(Number(process.env.VITE_PORT ?? 5173))
 const devFrontendOrigins = `http://localhost:${vitePort},http://127.0.0.1:${vitePort}`
+
 startProcess('Backend', ['--watch-path=src', 'src/server.js'], backendDir, {
   DEV_FRONTEND_ORIGINS: devFrontendOrigins,
 })
-startProcess(
-  'Vite',
-  [viteEntrypoint, '--host', 'localhost', '--port', String(vitePort), '--strictPort'],
-  rootDir,
-)
+
+console.log(`[DevRunner] Waiting for backend to be ready on port ${backendPort}...`)
+const isBackendReady = await waitForPort(backendPort, '127.0.0.1', 45000)
+
+if (isBackendReady && !shuttingDown) {
+  console.log(`[DevRunner] Backend is ready. Starting Vite development server on port ${vitePort}...`)
+  startProcess(
+    'Vite',
+    [viteEntrypoint, '--host', 'localhost', '--port', String(vitePort), '--strictPort'],
+    rootDir,
+  )
+}
 
 function cleanup() {
   console.log('\n[DevRunner] Shutting down servers...')

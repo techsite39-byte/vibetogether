@@ -50,7 +50,7 @@ const bookingEnquirySchema = new mongoose.Schema(
     whatsappNotification: {
       messageType: {
         type: String,
-        enum: ['booking_confirmation', 'payment_assistance'],
+        enum: ['booking_confirmation', 'payment_success', 'payment_failed', 'payment_assistance'],
         default: 'booking_confirmation',
       },
       recipient: {

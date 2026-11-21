@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11,21 +11,23 @@ import {
   Info,
   LoaderCircle,
   LockKeyhole,
-  Mail,
-  Phone,
   QrCode,
   RefreshCw,
   ShieldCheck,
   Smartphone,
   Sparkles,
   Ticket,
-  User,
-  Users,
+  XCircle,
 } from 'lucide-react'
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
 import UpiPayment from './UpiPayment.jsx'
-import BookingProgress from '../components/booking/BookingProgress.jsx'
+import usePublicEvents from '../hooks/usePublicEvents.js'
+import {
+  createGooglePayPaymentIntent,
+  createPaytmPaymentIntent,
+  createPhonePePaymentIntent,
+} from '../services/upiPaymentIntent.js'
 import {
   checkCashfreePaymentStatus,
   createCashfreeOrder,
@@ -37,19 +39,6 @@ import './BookingPayment.css'
 
 const paymentAttemptTimeoutMs = 2 * 60 * 1000
 const cashfreeScriptUrl = 'https://sdk.cashfree.com/js/v3/cashfree.js'
-const bookingDraftStorageKey = 'vibe-together-booking-draft'
-
-function readStoredJourneyOrigin(requestId) {
-  try {
-    const draft = JSON.parse(sessionStorage.getItem(bookingDraftStorageKey) ?? 'null')
-    if (draft?.requestId !== requestId || !draft.origin || typeof draft.origin !== 'object') {
-      return null
-    }
-    return draft.origin
-  } catch {
-    return null
-  }
-}
 
 function getDeviceCapabilities() {
   if (typeof navigator === 'undefined') {
@@ -63,7 +52,7 @@ function getDeviceCapabilities() {
 }
 
 // These are the only website-owned Cashfree method choices. Hosted checkout is intentionally absent.
-const allCustomPaymentMethods = [
+const _allCustomPaymentMethods = [
   {
     id: 'upiQr',
     name: 'Other UPI · QR',
@@ -189,6 +178,21 @@ function formatBookingDate(value) {
       }).format(date)
 }
 
+function formatEventDate(value) {
+  if (typeof value !== 'string' || !value) {
+    return ''
+  }
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value)
+  return Number.isNaN(date.getTime())
+    ? ''
+    : new Intl.DateTimeFormat('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(date)
+}
+
 function getBookingMembers(booking) {
   return [
     ['Male', booking?.maleCount ?? (booking?.gender === 'Male' ? booking?.ticketQuantity ?? 1 : 0), booking?.maleMemberNames, booking?.maleMemberMobiles],
@@ -201,8 +205,8 @@ function getBookingMembers(booking) {
 }
 
 export default function BookingPayment() {
+  const { events: publicEvents } = usePublicEvents()
   const { requestId } = useParams()
-  const location = useLocation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const orderIdFromUrl = searchParams.get('order_id')
@@ -232,7 +236,7 @@ export default function BookingPayment() {
   }, [])
 
   // Custom Checkout state
-  const [selectedMethod, setSelectedMethod] = useState('upiQr')
+  const [selectedMethod, setSelectedMethod] = useState('phonepe')
   const [cashfreeOrder, setCashfreeOrder] = useState(null)
   const [isOrderLoading, setIsOrderLoading] = useState(false)
   const [isElementReady, setIsElementReady] = useState(false)
@@ -248,7 +252,6 @@ export default function BookingPayment() {
 
   // Device capability detection (Android / iOS / Desktop)
   const device = useMemo(() => getDeviceCapabilities(), [])
-  const customPaymentMethods = allCustomPaymentMethods
 
   const activeProvider = bookingState.booking?.paymentProviderMode || bookingState.booking?.paymentProvider || 'cashfree'
   const isCashfreeActive = activeProvider === 'cashfree'
@@ -349,35 +352,6 @@ export default function BookingPayment() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [bookingState.booking?.paymentStatus, refreshPaymentStatus, requestId])
-
-  // Real-time WhatsApp Notification polling
-  const whatsappBookingReference = bookingState.booking?.reference
-  const whatsappNotificationStatus = bookingState.booking?.whatsappNotification?.status
-
-  useEffect(() => {
-    if (
-      !whatsappBookingReference ||
-      !['pending', 'sent'].includes(whatsappNotificationStatus)
-    ) {
-      return undefined
-    }
-
-    let active = true
-    const timer = window.setInterval(async () => {
-      try {
-        const latest = await getBookingEnquiry(requestId)
-        if (active) {
-          setBookingState({ requestId, status: 'ready', booking: latest, error: '' })
-        }
-      } catch {
-        // Silent refresh until next cycle
-      }
-    }, 4000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
-    }
-  }, [whatsappBookingReference, whatsappNotificationStatus, requestId])
 
   // Generate QR Code for verified ticket reference
   useEffect(() => {
@@ -812,44 +786,38 @@ export default function BookingPayment() {
   }
 
   function handleBackToDetails() {
-    const origin = location.state?.bookingJourneyOrigin ?? readStoredJourneyOrigin(requestId)
-    const originPath = (
-      typeof origin?.pathname === 'string' &&
-      origin.pathname.startsWith('/') &&
-      !origin.pathname.startsWith('//')
-    )
-      ? origin.pathname
-      : '/events'
-    const search = new URLSearchParams(
-      typeof origin?.search === 'string' ? origin.search : '',
-    )
-    search.set('bookingJourneyStep', '4')
-    search.set('bookingRequestId', requestId)
-    if (
-      origin?.requestId === requestId &&
-      origin?.step === 4
-    ) {
+    if (window.history.length > 1) {
       navigate(-1)
       return
     }
-
-    navigate({
-      pathname: originPath,
-      search: `?${search.toString()}`,
-      hash: typeof origin?.hash === 'string' ? origin.hash : '',
-    }, {
-      replace: true,
-      state: {
-        bookingJourneyStep: 4,
-        bookingRequestId: requestId,
-      },
-    })
+    navigate('/booking')
   }
 
   const currentBookingState = bookingState.requestId === requestId
     ? bookingState
     : { status: 'loading', booking: null, error: '' }
   const booking = currentBookingState.booking
+  const matchedEvent = useMemo(() => {
+    const rawEventTitle = typeof booking?.event === 'string'
+      ? booking.event
+      : booking?.event?.title
+    const eventTitle = typeof rawEventTitle === 'string'
+      ? rawEventTitle.trim().toLocaleLowerCase()
+      : ''
+    return eventTitle
+      ? publicEvents.find((event) => (
+        typeof event.title === 'string' &&
+        event.title.trim().toLocaleLowerCase() === eventTitle
+      )) ?? null
+      : null
+  }, [booking?.event, publicEvents])
+  const formattedEventDate = matchedEvent ? formatEventDate(matchedEvent.date) : ''
+  const matchedEventTime = typeof matchedEvent?.time === 'string' ? matchedEvent.time : ''
+  const matchedEventLocation = typeof matchedEvent?.location === 'string' ? matchedEvent.location : ''
+  const displayEventName = matchedEvent?.title ||
+    (typeof booking?.event === 'string' ? booking.event : '') ||
+    booking?.category ||
+    'Vibe Together Experience'
   const isPaid = ['demo_paid', 'paid'].includes(booking?.paymentStatus) && Boolean(booking?.reference)
   const isUpiPayment = Boolean(booking) && !isPaid && (
     booking.paymentProvider === 'upi' ||
@@ -861,15 +829,35 @@ export default function BookingPayment() {
     booking?.paymentStatus === 'failed' &&
     booking?.paymentProvider !== 'upi' &&
     !isUpiPayment
-  const isFailureView = isPaymentFailed && !paymentUncertain && searchParams.get('retry') !== '1'
+  const isTerminalFailed = Boolean(
+    isPaymentFailed &&
+    !paymentUncertain &&
+    booking?.paymentFailureReason !== 'cancelled' &&
+    booking?.cfPaymentStatus !== 'USER_DROPPED'
+  )
+  const isCancelledView = Boolean(
+    isPaymentFailed &&
+    !paymentUncertain &&
+    (booking?.paymentFailureReason === 'cancelled' || booking?.cfPaymentStatus === 'USER_DROPPED') &&
+    searchParams.get('retry') !== '1'
+  )
   const isVerifying = paymentUncertain || isRecentProcessing(booking)
   const bookingLabel = booking?.status === 'confirmed' ? 'Approved' : 'Pending Approval'
 
   // Pricing calculations
   const ticketQuantity = booking?.ticketQuantity ?? 1
   const ticketTypeName = booking?.ticketTypeName || 'General Admission'
-  const finalPayable = booking?.paymentAmount ?? 199
-  const subtotal = booking?.subtotal ?? finalPayable
+  const pricePerTicket = Number.isFinite(Number(booking?.pricePerTicket))
+    ? Number(booking.pricePerTicket)
+    : 199
+  const subtotal = Number.isFinite(Number(booking?.subtotal))
+    ? Number(booking.subtotal)
+    : pricePerTicket * ticketQuantity
+  const finalPayable = ticketQuantity > 1
+    ? pricePerTicket * ticketQuantity
+    : (Number.isFinite(Number(booking?.paymentAmount))
+      ? Number(booking.paymentAmount)
+      : subtotal)
   const isDiwali = Boolean(booking?.diwaliOfferApplied)
   const discount = booking?.discount ?? 0
   const memberDetails = getBookingMembers(booking)
@@ -882,26 +870,41 @@ export default function BookingPayment() {
       <div className="booking-payment__glow-orb booking-payment__glow-orb--bottom" aria-hidden="true" />
 
       <div className="booking-payment__container">
-        <header className="booking-payment__header">
-          <div className="booking-payment__header-top">
-            <span className="booking-payment__brand">
-              <Sparkles size={16} aria-hidden="true" />
-              VIBE TOGETHER
-            </span>
-            {!isPaid && (
+        <header className="booking-payment__topbar">
+          <Link className="booking-payment__brand-link" to="/" aria-label="VibeTogether home">
+            <img
+              src="/assets/optimized/favicon-256-v1.webp"
+              alt=""
+              width="42"
+              height="42"
+            />
+            <span>VibeTogether</span>
+          </Link>
+          <div className="booking-payment__topbar-right">
+            {!isPaid && !isTerminalFailed && (
               <button
                 className="booking-payment__back-button"
                 onClick={handleBackToDetails}
                 type="button"
               >
-                <ArrowLeft size={17} aria-hidden="true" />
+                <ArrowLeft size={15} aria-hidden="true" />
                 Back
               </button>
             )}
+            <span className="booking-payment__tagline">Music <i /> Events <i /> Together</span>
           </div>
-          <BookingProgress activeStep={4} />
-          <p className="booking-payment__step-count" aria-live="polite">5 / 5</p>
         </header>
+
+        {!isPaid && !isTerminalFailed && !isCancelledView && currentBookingState.status === 'ready' && (
+          <section className="booking-payment__hero">
+            <div className="booking-payment__secure-badge">
+              <ShieldCheck size={14} aria-hidden="true" />
+              <span>Secure &amp; Encrypted Payment</span>
+            </div>
+            <h1>Complete Your Payment</h1>
+            <p>Your booking is almost done! Choose a payment method to confirm your tickets.</p>
+          </section>
+        )}
 
         {/* =========================================================================
            PAGE STATES: LOADING / ERROR / SUCCESS / FAILURE / CHECKOUT
@@ -949,7 +952,7 @@ export default function BookingPayment() {
               </span>
               <h1 className="booking-payment__success-title">You’re In! Reservation Confirmed</h1>
               <p className="booking-payment__success-subtitle">
-                Your spot for <strong>{booking.category || booking.event || 'Vibe Together'}</strong> is officially reserved.
+                Your spot for <strong>{displayEventName}</strong> is officially reserved.
                 A confirmation receipt has been generated.
               </p>
             </div>
@@ -998,7 +1001,7 @@ export default function BookingPayment() {
                   <div className="booking-payment__ticket-cell">
                     <span className="booking-payment__ticket-cell-label">Experience</span>
                     <strong className="booking-payment__ticket-cell-val">
-                      {booking.category || booking.event || 'Vibe Together Experience'}
+                      {displayEventName}
                     </strong>
                   </div>
 
@@ -1082,9 +1085,25 @@ export default function BookingPayment() {
               </Link>
             </div>
           </div>
-        ) : isFailureView ? (
+        ) : isTerminalFailed ? (
           /* =========================================================================
-             LUXURY FAILURE & RECOVERY STATE
+             SIMPLE PAYMENT FAILED SCREEN (CONFIRMED TERMINAL FAILURE)
+             ========================================================================= */
+          <div className="booking-payment__state-card booking-payment__state-card--failure" role="alert">
+            <div className="booking-payment__failure-beacon" aria-hidden="true">
+              <XCircle size={44} className="booking-payment__failure-icon" />
+            </div>
+            <h1 className="booking-payment__state-title">Payment Failed</h1>
+            <p className="booking-payment__state-desc">Your payment could not be completed.</p>
+            <div className="booking-payment__failure-cta-wrap">
+              <Link to="/" className="booking-payment__btn booking-payment__btn--primary booking-payment__return-home-btn">
+                Return Home
+              </Link>
+            </div>
+          </div>
+        ) : isCancelledView ? (
+          /* =========================================================================
+             USER CANCELLED STATE
              ========================================================================= */
           <div className="booking-payment__state-card booking-payment__state-card--failure" role="alert">
             <div className="booking-payment__failure-beacon">
@@ -1102,7 +1121,7 @@ export default function BookingPayment() {
             <div className="booking-payment__held-summary">
               <div className="booking-payment__held-row">
                 <span>Reserved Experience:</span>
-                <strong>{booking.category || booking.event}</strong>
+                <strong>{displayEventName}</strong>
               </div>
               <div className="booking-payment__held-row">
                 <span>Passes:</span>
@@ -1125,7 +1144,6 @@ export default function BookingPayment() {
                 <ArrowRight size={18} aria-hidden="true" />
               </button>
               <div className="booking-payment__failure-sublinks">
-                <Link className="booking-payment__link-inline" to="/contact">Need assistance? Reach our team</Link>
                 <Link className="booking-payment__link-inline" to="/">Return to home</Link>
               </div>
             </div>
@@ -1135,181 +1153,96 @@ export default function BookingPayment() {
              STEP 5: LUXURY TWO-COLUMN PAYMENT PAGE (BRANDED CUSTOM CHECKOUT)
              ========================================================================= */
           <div className="booking-payment__checkout-shell">
-            {/* Headline Banner */}
-            <div className="booking-payment__hero-intro">
-              <div className="booking-payment__hero-badge">
-                <Sparkles size={13} aria-hidden="true" />
-                <span>CONFIRMED RESERVATION · FINAL STEP</span>
-              </div>
-              <h1 className="booking-payment__hero-title">Complete Your Booking</h1>
-              <p className="booking-payment__hero-subtitle">
-                Select your preferred payment method below. Securely processed via encrypted Cashfree Elements.
-              </p>
-            </div>
-
             {/* Main Two-Column Layout */}
             <div className="booking-payment__layout">
               {/* ===================================================================
-                 LEFT COLUMN: EXPERIENCE RESERVATION DOSSIER
+                 LEFT COLUMN: BOOKING SUMMARY
                  =================================================================== */}
-              <section className="booking-payment__card booking-payment__dossier" aria-labelledby="dossier-heading">
+              <section className="booking-payment__card booking-payment__summary-card" aria-labelledby="summary-heading">
                 <div className="booking-payment__card-header">
-                  <span className="booking-payment__meta-badge">EXPERIENCE DOSSIER</span>
-                  <h2 id="dossier-heading" className="booking-payment__experience-title">
-                    {booking.category || booking.event || 'Vibe Together Experience'}
-                  </h2>
-                  <p className="booking-payment__experience-tagline">
-                    {booking.category?.toLowerCase().includes('sing')
-                      ? 'The room becomes the chorus. An evening where every voice finds its place in the song.'
-                      : 'An intimate, high-energy gathering celebrating music, connection, and shared rhythm.'}
-                  </p>
+                  <span className="booking-payment__meta-badge">BOOKING SUMMARY</span>
+                  <h2 id="summary-heading" className="booking-payment__card-title">Order Details</h2>
                 </div>
 
-                <div className="booking-payment__dossier-body">
-                  <div className="booking-payment__dossier-grid">
-                    <div className="booking-payment__info-tile">
-                      <span className="booking-payment__tile-label">
-                        <Ticket size={13} aria-hidden="true" /> Ticket Category
-                      </span>
-                      <strong className="booking-payment__tile-val">
-                        {ticketTypeName}
-                        <span className="booking-payment__qty-pill">{ticketQuantity} {ticketQuantity > 1 ? 'Tickets' : 'Ticket'}</span>
-                      </strong>
-                    </div>
-
-                    <div className="booking-payment__info-tile">
-                      <span className="booking-payment__tile-label">
-                        <Users size={13} aria-hidden="true" /> Total Attendees
-                      </span>
-                      <strong className="booking-payment__tile-val">
-                        {ticketQuantity} {ticketQuantity > 1 ? 'Guests' : 'Guest'}
-                        {(booking.maleCount > 0 || booking.femaleCount > 0) && (
-                          <span className="booking-payment__gender-sub">
-                            ({booking.maleCount > 0 ? `${booking.maleCount} Male` : ''}
-                            {booking.maleCount > 0 && booking.femaleCount > 0 ? ' · ' : ''}
-                            {booking.femaleCount > 0 ? `${booking.femaleCount} Female` : ''})
-                          </span>
-                        )}
-                      </strong>
-                    </div>
-
-                    {memberDetails.length > 0 && (
-                      <div className="booking-payment__info-tile booking-payment__info-tile--full">
-                        <span className="booking-payment__tile-label">
-                          <User size={13} aria-hidden="true" /> Registered Member Names
-                        </span>
-                        <div className="booking-payment__guest-chips">
-                          {memberDetails.map(({ label, name, mobile }) => (
-                            <span className="booking-payment__guest-chip" key={label}>
-                              <span className="booking-payment__guest-chip-label">{label}:</span>
-                              <strong className="booking-payment__guest-chip-name">{name || 'Guest'}</strong>
-                              {mobile && <span className="booking-payment__guest-chip-mobile"> ({mobile})</span>}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="booking-payment__info-tile">
-                      <span className="booking-payment__tile-label">
-                        <User size={13} aria-hidden="true" /> Primary Contact
-                      </span>
-                      <strong className="booking-payment__tile-val">{booking.name}</strong>
-                    </div>
-
-                    <div className="booking-payment__info-tile">
-                      <span className="booking-payment__tile-label">
-                        <Phone size={13} aria-hidden="true" /> Mobile Number
-                      </span>
-                      <strong className="booking-payment__tile-val">{booking.mobile}</strong>
-                    </div>
-
-                    {booking.email && (
-                      <div className="booking-payment__info-tile booking-payment__info-tile--full">
-                        <span className="booking-payment__tile-label">
-                          <Mail size={13} aria-hidden="true" /> Email Address
-                        </span>
-                        <strong className="booking-payment__tile-val">{booking.email}</strong>
-                      </div>
-                    )}
-
-                    <div className="booking-payment__info-tile booking-payment__info-tile--full">
-                      <span className="booking-payment__tile-label">
-                        <Calendar size={13} aria-hidden="true" /> Reservation Session
-                      </span>
-                      <strong className="booking-payment__tile-val">
-                        {formatBookingDate(booking.createdAt)}
-                      </strong>
-                    </div>
+                {matchedEvent?.image && (
+                  <div className="booking-payment__event-poster">
+                    <img
+                      src={matchedEvent.image}
+                      alt={matchedEvent.imageAlt || displayEventName}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </div>
+                )}
 
-                  {/* VIP Door Privileges */}
-                  <div className="booking-payment__privileges-box">
-                    <div className="booking-payment__privilege-row">
-                      <Check size={14} className="booking-payment__privilege-check" aria-hidden="true" />
-                      <span>Priority Door Entry with instant digital QR pass</span>
+                <div className="booking-payment__summary-event-info">
+                  <span className="booking-payment__event-category-badge">
+                    {matchedEvent?.category || booking.category || 'Live Experience'}
+                  </span>
+                  <h3 className="booking-payment__summary-event-name">{displayEventName}</h3>
+                  {matchedEvent?.description && (
+                    <p className="booking-payment__summary-event-desc">{matchedEvent.description}</p>
+                  )}
+
+                  <div className="booking-payment__summary-meta-row">
+                    {formattedEventDate && (
+                      <span className="booking-payment__meta-item">
+                        <Calendar size={14} aria-hidden="true" />
+                        {formattedEventDate}
+                      </span>
+                    )}
+                    {matchedEventTime && (
+                      <span className="booking-payment__meta-item">
+                        {matchedEventTime}
+                      </span>
+                    )}
+                    {matchedEventLocation && (
+                      <span className="booking-payment__meta-item">
+                        {matchedEventLocation}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="booking-payment__pricing-ledger">
+                  <div className="booking-payment__ledger-row">
+                    <span className="booking-payment__ledger-name">Number of tickets</span>
+                    <span className="booking-payment__ledger-val">{ticketQuantity} ticket(s)</span>
+                  </div>
+                  <div className="booking-payment__ledger-row">
+                    <span className="booking-payment__ledger-name">Price per ticket</span>
+                    <span className="booking-payment__ledger-val">₹{pricePerTicket}</span>
+                  </div>
+                  <div className="booking-payment__ledger-row">
+                    <span className="booking-payment__ledger-name">Total amount</span>
+                    <span className="booking-payment__ledger-val">₹{subtotal}</span>
+                  </div>
+                  {(discount > 0 || isDiwali) && (
+                    <div className="booking-payment__ledger-row booking-payment__ledger-row--discount">
+                      <span className="booking-payment__discount-tag">
+                        <Sparkles size={13} aria-hidden="true" /> Offer Savings
+                      </span>
+                      <span className="booking-payment__discount-amount">−₹{discount}</span>
                     </div>
-                    <div className="booking-payment__privilege-row">
-                      <Check size={14} className="booking-payment__privilege-check" aria-hidden="true" />
-                      <span>Instant WhatsApp &amp; Email booking receipt confirmation</span>
+                  )}
+                  <div className="booking-payment__ledger-divider" aria-hidden="true" />
+                  <div className="booking-payment__ledger-total-row">
+                    <div>
+                      <span className="booking-payment__total-caption">FINAL PAYABLE AMOUNT</span>
+                      <span className="booking-payment__total-subcaption">Inclusive of all taxes &amp; entry</span>
                     </div>
-                    <div className="booking-payment__privilege-row">
-                      <Check size={14} className="booking-payment__privilege-check" aria-hidden="true" />
-                      <span>100% refund guarantee if the event is rescheduled</span>
-                    </div>
+                    <strong className="booking-payment__final-amount">₹{finalPayable}</strong>
                   </div>
                 </div>
               </section>
 
               {/* ===================================================================
-                 RIGHT COLUMN: ORDER SUMMARY & BRANDED CUSTOM CHECKOUT
+                 RIGHT COLUMN: PAYMENT METHOD
                  =================================================================== */}
-              <section className="booking-payment__card booking-payment__checkout-panel" aria-labelledby="payment-heading">
+              <section className="booking-payment__card booking-payment__methods-column" aria-labelledby="payment-heading">
                 <div className="booking-payment__card-header">
-                  <span className="booking-payment__meta-badge">ORDER SUMMARY</span>
-                  <h2 id="payment-heading" className="booking-payment__panel-title">Price Breakdown</h2>
-                </div>
-
-                {/* Price Ledger */}
-                <div className="booking-payment__pricing-ledger">
-                  <div className="booking-payment__ledger-row">
-                    <span className="booking-payment__ledger-name">Booking amount</span>
-                    <span className="booking-payment__ledger-val">₹{subtotal}</span>
-                  </div>
-
-                  {isDiwali && (
-                    <div className="booking-payment__ledger-row booking-payment__ledger-row--discount">
-                      <span className="booking-payment__discount-tag">
-                        <Sparkles size={13} aria-hidden="true" /> Diwali Festive Privilege
-                      </span>
-                      <span className="booking-payment__discount-amount">−₹{discount}</span>
-                    </div>
-                  )}
-
-                  <div className="booking-payment__ledger-row">
-                    <span className="booking-payment__ledger-name">Taxes &amp; Platform Surcharges</span>
-                    <span className="booking-payment__ledger-val booking-payment__ledger-val--waived">₹0 · Waived</span>
-                  </div>
-
-                  {isDiwali && (
-                    <div className="booking-payment__diwali-savings-banner">
-                      <Sparkles size={14} aria-hidden="true" />
-                      <span>You save ₹{discount} with Diwali Exclusive Offer!</span>
-                    </div>
-                  )}
-
-                  <div className="booking-payment__ledger-divider" aria-hidden="true" />
-
-                  <div className="booking-payment__ledger-total-row">
-                    <div>
-                      <span className="booking-payment__total-caption">TOTAL AMOUNT DUE</span>
-                      <span className="booking-payment__total-subcaption">Inclusive of all taxes &amp; entry access</span>
-                    </div>
-                    <div className="booking-payment__total-digits">
-                      {isDiwali && <s className="booking-payment__struck-amount">₹{subtotal}</s>}
-                      <strong className="booking-payment__final-amount">₹{finalPayable}</strong>
-                    </div>
-                  </div>
+                  <span className="booking-payment__meta-badge">PAYMENT METHOD</span>
+                  <h2 id="payment-heading" className="booking-payment__card-title">Choose Payment Option</h2>
                 </div>
 
                 {/* Payment Error Alert */}
@@ -1345,245 +1278,426 @@ export default function BookingPayment() {
                     <p>Online checkout is being initialized on the server. Your booking details are safely saved.</p>
                   </div>
                 ) : isCashfreeActive ? (
-                  /* ===================================================================
-                     FULLY BRANDED CASHFREE CUSTOM CHECKOUT (NO HOSTED POPUP)
-                     =================================================================== */
                   <div className="booking-payment__custom-cashfree-shell">
-                    <div className="booking-payment__methods-header">
-                      <span className="booking-payment__methods-heading">SELECT PAYMENT METHOD</span>
-                      <span className="booking-payment__methods-note">Cashfree Encrypted Elements</span>
-                    </div>
+                    {/* Method Selector Cards */}
+                    <div className="booking-payment__methods-list" role="radiogroup" aria-label="Payment Methods">
+                      {/* 1. UPI Payment */}
+                      <div
+                        className={`booking-payment__method-card${['upi', 'upiQr'].includes(selectedMethod) ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setSelectedMethod('upiQr')
+                          setPaymentError('')
+                        }}
+                        role="radio"
+                        aria-checked={['upi', 'upiQr'].includes(selectedMethod)}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            setSelectedMethod('upiQr')
+                            setPaymentError('')
+                          }
+                        }}
+                      >
+                        <div className="booking-payment__method-head">
+                          <span className="booking-payment__radio-indicator">
+                            {['upi', 'upiQr'].includes(selectedMethod) && <span className="booking-payment__radio-dot" />}
+                          </span>
+                          <div className="booking-payment__method-title-wrap">
+                            <span className="booking-payment__method-name">UPI Payment</span>
+                            <span className="booking-payment__method-desc">Instant payment via any UPI app (Google Pay, PhonePe, Paytm, CRED)</span>
+                          </div>
+                          <span className="booking-payment__method-badge">RECOMMENDED</span>
+                        </div>
 
-                    {/* Method Selector Tabs */}
-                    <div className="booking-payment__custom-method-selector" role="tablist" aria-label="Payment Methods">
-                      {customPaymentMethods.map((method) => {
-                        const isSelected = selectedMethod === method.id
-                        const MethodIcon = method.icon
-                        return (
-                          <button
-                            key={method.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={isSelected}
-                            className={`booking-payment__custom-method-pill${isSelected ? ' is-active' : ''}`}
-                            onClick={() => {
-                              setSelectedMethod(method.id)
-                              setPaymentError('')
-                            }}
-                          >
-                            <span className="booking-payment__custom-pill-icon">
-                              <MethodIcon size={16} aria-hidden="true" />
-                            </span>
-                            <span className="booking-payment__custom-pill-title">{method.name}</span>
-                            {method.badge && (
-                              <span className="booking-payment__custom-pill-badge">{method.badge}</span>
+                        {['upi', 'upiQr'].includes(selectedMethod) && (
+                          <div className="booking-payment__method-content" onClick={(e) => e.stopPropagation()}>
+                            {isOrderLoading && (
+                              <div className="booking-payment__cf-loading-box" role="status">
+                                <LoaderCircle className="booking-payment__btn-spinner" size={20} aria-hidden="true" />
+                                <span>Preparing secure payment elements…</span>
+                              </div>
                             )}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    {/* Active Method Container Card */}
-                    <div className="booking-payment__custom-method-details">
-                      {isOrderLoading && (
-                        <div className="booking-payment__cf-loading-box" role="status">
-                          <LoaderCircle className="booking-payment__btn-spinner" size={20} aria-hidden="true" />
-                          <span>Preparing secure payment elements…</span>
-                        </div>
-                      )}
-
-                      {elementLoadError && (
-                        <div className="booking-payment__alert-box" role="alert">
-                          <AlertTriangle size={15} aria-hidden="true" />
-                          <span>{elementLoadError}</span>
-                        </div>
-                      )}
-
-                      {/* -------------------------------------------------------------
-                         1. OTHER UPI / QR METHOD
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'upiQr' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="UPI and QR">
-                          <div className="booking-payment__cf-qr-block">
-                            <div className="booking-payment__cf-qr-outer">
-                              <div id="vibetogether-cf-upi-qr" className="booking-payment__cf-qr-mount" />
-                            </div>
-                            <div className="booking-payment__cf-qr-instructions">
-                              <span className="booking-payment__cf-qr-caption">
-                                Scan using <strong>Google Pay</strong>, <strong>PhonePe</strong>, <strong>Paytm</strong>, <strong>CRED</strong> or any UPI App
-                              </span>
-                              <div className="booking-payment__cf-qr-beacons">
-                                <span className="booking-payment__pulse-beacon" aria-hidden="true" />
-                                <span>Dynamic order amount: ₹{finalPayable}</span>
+                            {elementLoadError && (
+                              <div className="booking-payment__alert-box" role="alert">
+                                <AlertTriangle size={15} aria-hidden="true" />
+                                <span>{elementLoadError}</span>
+                              </div>
+                            )}
+                            <div className="booking-payment__cf-qr-block">
+                              <div className="booking-payment__cf-qr-outer">
+                                <div id="vibetogether-cf-upi-qr" className="booking-payment__cf-qr-mount" />
+                              </div>
+                              <div className="booking-payment__cf-qr-instructions">
+                                <span className="booking-payment__cf-qr-caption">
+                                  Scan using <strong>Google Pay</strong>, <strong>PhonePe</strong>, <strong>Paytm</strong>, <strong>CRED</strong> or any UPI App
+                                </span>
+                                <div className="booking-payment__cf-qr-beacons">
+                                  <span className="booking-payment__pulse-beacon" aria-hidden="true" />
+                                  <span>Dynamic order amount: ₹{finalPayable}</span>
+                                </div>
+                              </div>
+                              <div className="booking-payment__cf-qr-actions">
+                                <button
+                                  type="button"
+                                  className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--verify"
+                                  disabled={isPaying || !isElementReady}
+                                  onClick={handleExecuteCustomPayment}
+                                >
+                                  {isPaying ? (
+                                    <>
+                                      <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                      <span>Starting UPI QR…</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <LockKeyhole size={16} aria-hidden="true" />
+                                      <span>PAY ₹{finalPayable} WITH UPI QR</span>
+                                      <ArrowRight size={16} aria-hidden="true" />
+                                    </>
+                                  )}
+                                </button>
+                                <span className="booking-payment__auto-poll-hint">
+                                  <Sparkles size={13} aria-hidden="true" />
+                                  Scan the QR, approve in your UPI app, then wait for server confirmation.
+                                </span>
                               </div>
                             </div>
-                            <div className="booking-payment__cf-qr-actions">
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 2. Credit / Debit Card */}
+                      <div
+                        className={`booking-payment__method-card${selectedMethod === 'card' ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setSelectedMethod('card')
+                          setPaymentError('')
+                        }}
+                        role="radio"
+                        aria-checked={selectedMethod === 'card'}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            setSelectedMethod('card')
+                            setPaymentError('')
+                          }
+                        }}
+                      >
+                        <div className="booking-payment__method-head">
+                          <span className="booking-payment__radio-indicator">
+                            {selectedMethod === 'card' && <span className="booking-payment__radio-dot" />}
+                          </span>
+                          <div className="booking-payment__method-title-wrap">
+                            <span className="booking-payment__method-name">Credit / Debit Card</span>
+                            <span className="booking-payment__method-desc">Visa, MasterCard, RuPay, Maestro accepted</span>
+                          </div>
+                          <span className="booking-payment__method-badge">SECURE ELEMENTS</span>
+                        </div>
+
+                        {selectedMethod === 'card' && (
+                          <div className="booking-payment__method-content" onClick={(e) => e.stopPropagation()}>
+                            {isOrderLoading && (
+                              <div className="booking-payment__cf-loading-box" role="status">
+                                <LoaderCircle className="booking-payment__btn-spinner" size={20} aria-hidden="true" />
+                                <span>Preparing secure payment elements…</span>
+                              </div>
+                            )}
+                            {elementLoadError && (
+                              <div className="booking-payment__alert-box" role="alert">
+                                <AlertTriangle size={15} aria-hidden="true" />
+                                <span>{elementLoadError}</span>
+                              </div>
+                            )}
+                            <div className="booking-payment__cf-card-form">
+                              <div className="booking-payment__cf-field-group">
+                                <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-number">
+                                  Card Number
+                                </label>
+                                <div id="vibetogether-cf-card-number" className="booking-payment__cf-input-mount" />
+                              </div>
+
+                              <div className="booking-payment__cf-field-row">
+                                <div className="booking-payment__cf-field-group">
+                                  <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-expiry">
+                                    Valid Thru (MM / YY)
+                                  </label>
+                                  <div id="vibetogether-cf-card-expiry" className="booking-payment__cf-input-mount" />
+                                </div>
+                                <div className="booking-payment__cf-field-group">
+                                  <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-cvv">
+                                    CVV / CVC
+                                  </label>
+                                  <div id="vibetogether-cf-card-cvv" className="booking-payment__cf-input-mount" />
+                                </div>
+                              </div>
+
+                              <div className="booking-payment__cf-field-group">
+                                <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-holder">
+                                  Cardholder Name
+                                </label>
+                                <div id="vibetogether-cf-card-holder" className="booking-payment__cf-input-mount" />
+                              </div>
+
+                              <div className="booking-payment__cf-card-badges">
+                                <span className="booking-payment__cf-brand-chip">VISA</span>
+                                <span className="booking-payment__cf-brand-chip">MasterCard</span>
+                                <span className="booking-payment__cf-brand-chip">RuPay</span>
+                                <span className="booking-payment__cf-brand-chip">Maestro</span>
+                              </div>
+
+                              <div className="booking-payment__cf-inline-warning" role="note">
+                                <Info size={16} aria-hidden="true" />
+                                <span>Card details stay inside Cashfree Elements. Your issuer may require 3DS authentication.</span>
+                              </div>
+
                               <button
                                 type="button"
-                                className="booking-payment__cf-submit-btn booking-payment__cf-submit-btn--verify"
+                                className="booking-payment__cf-submit-btn"
                                 disabled={isPaying || !isElementReady}
                                 onClick={handleExecuteCustomPayment}
                               >
                                 {isPaying ? (
                                   <>
                                     <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                    <span>Starting UPI QR…</span>
+                                    <span>Processing Card Payment…</span>
                                   </>
                                 ) : (
                                   <>
                                     <LockKeyhole size={16} aria-hidden="true" />
-                                    <span>PAY ₹{finalPayable} WITH UPI QR</span>
+                                    <span>PAY ₹{finalPayable} VIA CARD</span>
                                     <ArrowRight size={16} aria-hidden="true" />
                                   </>
                                 )}
                               </button>
-                              <span className="booking-payment__auto-poll-hint">
-                                <Sparkles size={13} aria-hidden="true" />
-                                Scan the QR, approve in your UPI app, then wait for server confirmation.
-                              </span>
                             </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. Net Banking */}
+                      <div
+                        className={`booking-payment__method-card${selectedMethod === 'netbanking' ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setSelectedMethod('netbanking')
+                          setPaymentError('')
+                        }}
+                        role="radio"
+                        aria-checked={selectedMethod === 'netbanking'}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            setSelectedMethod('netbanking')
+                            setPaymentError('')
+                          }
+                        }}
+                      >
+                        <div className="booking-payment__method-head">
+                          <span className="booking-payment__radio-indicator">
+                            {selectedMethod === 'netbanking' && <span className="booking-payment__radio-dot" />}
+                          </span>
+                          <div className="booking-payment__method-title-wrap">
+                            <span className="booking-payment__method-name">Net Banking</span>
+                            <span className="booking-payment__method-desc">All major Indian banks supported (SBI, HDFC, ICICI, Axis, Kotak)</span>
                           </div>
                         </div>
-                      )}
 
-                      {selectedUpiApp && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label={selectedUpiApp.name}>
-                          <div className="booking-payment__intent-card">
-                            <div className="booking-payment__intent-icon-wrap">
-                              <Smartphone size={28} className="booking-payment__intent-icon" />
+                        {selectedMethod === 'netbanking' && (
+                          <div className="booking-payment__method-content" onClick={(e) => e.stopPropagation()}>
+                            <div className="booking-payment__bank-list-preview">
+                              <span className="booking-payment__bank-chip">State Bank of India</span>
+                              <span className="booking-payment__bank-chip">HDFC Bank</span>
+                              <span className="booking-payment__bank-chip">ICICI Bank</span>
+                              <span className="booking-payment__bank-chip">Axis Bank</span>
+                              <span className="booking-payment__bank-chip">Kotak Mahindra</span>
+                              <span className="booking-payment__bank-chip">+ 40 More Banks</span>
                             </div>
-                            <div className="booking-payment__intent-copy">
-                              <strong className="booking-payment__intent-name">Pay via {selectedUpiApp.name}</strong>
-                              <span className="booking-payment__intent-desc">
-                                Cashfree will open {selectedUpiApp.name} so you can authorize this payment.
-                              </span>
-                            </div>
-                          </div>
-
-                          <div id={selectedUpiApp.selector} className="booking-payment__cf-app-mount" />
-
-                          <button
-                            type="button"
-                            className={`booking-payment__cf-submit-btn booking-payment__cf-submit-btn--${selectedMethod}`}
-                            disabled={isPaying || !isElementReady || paymentUncertain}
-                            onClick={handleExecuteCustomPayment}
-                          >
-                            {isPaying ? (
-                              <>
-                                <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                <span>Opening {selectedUpiApp.name}…</span>
-                              </>
-                            ) : (
-                              <>
-                                <Smartphone size={16} aria-hidden="true" />
-                                <span>PAY ₹{finalPayable} VIA {selectedUpiApp.name.toUpperCase()}</span>
-                                <ArrowRight size={16} aria-hidden="true" />
-                              </>
-                            )}
-                          </button>
-
-                          <div className="booking-payment__cf-inline-warning" role="note">
-                            <Info size={16} aria-hidden="true" />
-                            <span>
-                              If {selectedUpiApp.name} is unavailable or the handoff does not start, use Other UPI · QR. Payment is confirmed only after server verification.
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            className="booking-payment__cf-alt-link"
-                            disabled={isPaying || paymentUncertain}
-                            onClick={() => setSelectedMethod('upiQr')}
-                          >
-                            Use Other UPI · QR instead
-                          </button>
-                        </div>
-                      )}
-
-                      {/* -------------------------------------------------------------
-                         5. CREDIT & DEBIT CARDS METHOD
-                         ------------------------------------------------------------- */}
-                      {selectedMethod === 'card' && (
-                        <div className="booking-payment__cf-panel" role="tabpanel" aria-label="Credit and Debit Cards">
-                          <div className="booking-payment__cf-card-form">
-                            <div className="booking-payment__cf-field-group">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-number">
-                                Card Number
-                              </label>
-                              <div id="vibetogether-cf-card-number" className="booking-payment__cf-input-mount" />
-                            </div>
-
-                            <div className="booking-payment__cf-field-row">
-                              <div className="booking-payment__cf-field-group">
-                                <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-expiry">
-                                  Valid Thru (MM / YY)
-                                </label>
-                                <div id="vibetogether-cf-card-expiry" className="booking-payment__cf-input-mount" />
-                              </div>
-                              <div className="booking-payment__cf-field-group">
-                                <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-cvv">
-                                  CVV / CVC
-                                </label>
-                                <div id="vibetogether-cf-card-cvv" className="booking-payment__cf-input-mount" />
-                              </div>
-                            </div>
-
-                            <div className="booking-payment__cf-field-group">
-                              <label className="booking-payment__cf-label" htmlFor="vibetogether-cf-card-holder">
-                                Cardholder Name
-                              </label>
-                              <div id="vibetogether-cf-card-holder" className="booking-payment__cf-input-mount" />
-                            </div>
-
-                            <div className="booking-payment__cf-card-badges">
-                              <span className="booking-payment__cf-brand-chip">VISA</span>
-                              <span className="booking-payment__cf-brand-chip">MasterCard</span>
-                              <span className="booking-payment__cf-brand-chip">RuPay</span>
-                              <span className="booking-payment__cf-brand-chip">Maestro</span>
-                            </div>
-
                             <div className="booking-payment__cf-inline-warning" role="note">
                               <Info size={16} aria-hidden="true" />
-                              <span>Card details stay inside Cashfree Elements. Your issuer may require an external authentication step.</span>
+                              <span>For fastest 0-wait instant ticket issuing, UPI Payment or Cards are processed in 0 seconds.</span>
                             </div>
-
                             <button
                               type="button"
                               className="booking-payment__cf-submit-btn"
-                              disabled={isPaying || !isElementReady}
-                              onClick={handleExecuteCustomPayment}
+                              onClick={() => setSelectedMethod('upiQr')}
                             >
-                              {isPaying ? (
-                                <>
-                                  <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
-                                  <span>Processing Card Payment…</span>
-                                </>
-                              ) : (
-                                <>
-                                  <LockKeyhole size={16} aria-hidden="true" />
-                                  <span>PAY ₹{finalPayable} VIA CARD ELEMENTS</span>
-                                  <ArrowRight size={16} aria-hidden="true" />
-                                </>
-                              )}
+                              <span>Use Instant UPI Payment instead</span>
+                              <ArrowRight size={16} aria-hidden="true" />
                             </button>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
 
+                      {/* 4. Wallets */}
+                      <div
+                        className={`booking-payment__method-card${selectedMethod === 'wallet' ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setSelectedMethod('wallet')
+                          setPaymentError('')
+                        }}
+                        role="radio"
+                        aria-checked={selectedMethod === 'wallet'}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            setSelectedMethod('wallet')
+                            setPaymentError('')
+                          }
+                        }}
+                      >
+                        <div className="booking-payment__method-head">
+                          <span className="booking-payment__radio-indicator">
+                            {selectedMethod === 'wallet' && <span className="booking-payment__radio-dot" />}
+                          </span>
+                          <div className="booking-payment__method-title-wrap">
+                            <span className="booking-payment__method-name">Wallets</span>
+                            <span className="booking-payment__method-desc">Paytm, PhonePe, Mobikwik &amp; Amazon Pay</span>
+                          </div>
+                        </div>
+
+                        {selectedMethod === 'wallet' && (
+                          <div className="booking-payment__method-content" onClick={(e) => e.stopPropagation()}>
+                            <div className="booking-payment__bank-list-preview">
+                              <span className="booking-payment__bank-chip">Paytm Wallet</span>
+                              <span className="booking-payment__bank-chip">PhonePe Wallet</span>
+                              <span className="booking-payment__bank-chip">Mobikwik</span>
+                              <span className="booking-payment__bank-chip">Amazon Pay</span>
+                            </div>
+                            <div className="booking-payment__cf-inline-warning" role="note">
+                              <Info size={16} aria-hidden="true" />
+                              <span>UPI QR is universally supported by all wallet apps.</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="booking-payment__cf-submit-btn"
+                              onClick={() => setSelectedMethod('upiQr')}
+                            >
+                              <span>Pay via UPI QR · ₹{finalPayable}</span>
+                              <ArrowRight size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 5. Other UPI Apps */}
+                      <div
+                        className={`booking-payment__method-card${['otherUpi', 'phonepe', 'gpay', 'paytm'].includes(selectedMethod) ? ' is-active' : ''}`}
+                        onClick={() => {
+                          setSelectedMethod('phonepe')
+                          setPaymentError('')
+                        }}
+                        role="radio"
+                        aria-checked={['otherUpi', 'phonepe', 'gpay', 'paytm'].includes(selectedMethod)}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            setSelectedMethod('phonepe')
+                            setPaymentError('')
+                          }
+                        }}
+                      >
+                        <div className="booking-payment__method-head">
+                          <span className="booking-payment__radio-indicator">
+                            {['otherUpi', 'phonepe', 'gpay', 'paytm'].includes(selectedMethod) && <span className="booking-payment__radio-dot" />}
+                          </span>
+                          <div className="booking-payment__method-title-wrap">
+                            <span className="booking-payment__method-name">Other UPI Apps</span>
+                            <span className="booking-payment__method-desc">Direct mobile app handoff via PhonePe, Google Pay, or Paytm</span>
+                          </div>
+                        </div>
+
+                        {['otherUpi', 'phonepe', 'gpay', 'paytm'].includes(selectedMethod) && (
+                          <div className="booking-payment__method-content" onClick={(e) => e.stopPropagation()}>
+                            <div className="booking-payment__upi-apps-selector">
+                              {Object.entries(cashfreeUpiApps).map(([appKey, app]) => {
+                                const isThisApp = selectedMethod === appKey
+                                return (
+                                  <button
+                                    key={appKey}
+                                    type="button"
+                                    className={`booking-payment__upi-app-btn${isThisApp ? ' is-active' : ''}`}
+                                    onClick={() => {
+                                      setSelectedMethod(appKey)
+                                      setPaymentError('')
+                                    }}
+                                  >
+                                    <Smartphone size={16} aria-hidden="true" />
+                                    <span>{app.name}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+
+                            {selectedUpiApp && (
+                              <div className="booking-payment__intent-card">
+                                {device.isAndroid && (
+                                  <a
+                                    className="booking-payment__direct-app-link"
+                                    href={
+                                      selectedMethod === 'phonepe'
+                                        ? createPhonePePaymentIntent(
+                                          { ...booking, paymentAmount: finalPayable },
+                                            window.location.href,
+                                          )
+                                        : selectedMethod === 'gpay'
+                                          ? createGooglePayPaymentIntent(
+                                            { ...booking, paymentAmount: finalPayable },
+                                              window.location.href,
+                                            )
+                                          : createPaytmPaymentIntent(
+                                            { ...booking, paymentAmount: finalPayable },
+                                              window.location.href,
+                                            )
+                                    }
+                                  >
+                                    <Smartphone size={16} aria-hidden="true" />
+                                    Open in {selectedUpiApp.name}
+                                  </a>
+                                )}
+                                <div id={selectedUpiApp.selector} className="booking-payment__cf-app-mount" />
+                                <button
+                                  type="button"
+                                  className={`booking-payment__cf-submit-btn booking-payment__cf-submit-btn--${selectedMethod}`}
+                                  disabled={isPaying || !isElementReady || paymentUncertain}
+                                  onClick={handleExecuteCustomPayment}
+                                >
+                                  {isPaying ? (
+                                    <>
+                                      <LoaderCircle className="booking-payment__btn-spinner" size={17} aria-hidden="true" />
+                                      <span>Opening {selectedUpiApp.name}…</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Smartphone size={16} aria-hidden="true" />
+                                      <span>PAY ₹{finalPayable} VIA {selectedUpiApp.name.toUpperCase()}</span>
+                                      <ArrowRight size={16} aria-hidden="true" />
+                                    </>
+                                  )}
+                                </button>
+                                <div className="booking-payment__cf-inline-warning" role="note">
+                                  <Info size={16} aria-hidden="true" />
+                                  <span>
+                                    If {selectedUpiApp.name} is unavailable or handoff does not start, use UPI Payment (QR).
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Trust Guarantees */}
                     <div className="booking-payment__trust-footer">
                       <div className="booking-payment__trust-item">
-                        <ShieldCheck size={14} aria-hidden="true" />
-                        <span>PCI-DSS Level 1 Elements</span>
+                        <ShieldCheck size={16} aria-hidden="true" />
+                        <span>Your payment is 100% secure and encrypted</span>
                       </div>
-                      <div className="booking-payment__trust-item">
-                        <LockKeyhole size={14} aria-hidden="true" />
-                        <span>End-to-End Encrypted</span>
-                      </div>
-                      <div className="booking-payment__trust-item">
-                        <Sparkles size={14} aria-hidden="true" />
-                        <span>Instant E-Ticket Pass</span>
+                      <div className="booking-payment__trust-sub">
+                        <span>PCI-DSS Level 1</span>
+                        <span>•</span>
+                        <span>256-Bit SSL</span>
+                        <span>•</span>
+                        <span>Cashfree Payments</span>
                       </div>
                     </div>
                   </div>

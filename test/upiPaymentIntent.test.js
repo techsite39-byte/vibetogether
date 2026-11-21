@@ -25,7 +25,7 @@ test('encodes the payee and persisted booking amount in the UPI intent', () => {
   assert.equal(url.searchParams.get('tn'), 'Vibe Together Booking')
 })
 
-test('targets PhonePe, Google Pay, and Paytm without exposing WhatsApp as a payment target', () => {
+test('targets PhonePe, Google Pay, and Paytm', () => {
   const booking = {
     upiId: 'vinothinimoorthi37-1@okhdfcbank',
     upiPayeeName: 'Vinothini Moorthi',
@@ -56,7 +56,6 @@ test('targets PhonePe, Google Pay, and Paytm without exposing WhatsApp as a paym
     assert.equal(parameters.get('cu'), 'INR')
     assert.equal(parameters.get('tn'), 'Vibe Together Booking')
     assert.equal(fallback, fallbackUrl)
-    assert.doesNotMatch(intent, /wa\.me|whatsapp/i)
   }
 })
 

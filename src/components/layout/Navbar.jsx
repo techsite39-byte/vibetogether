@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Menu, X } from 'lucide-react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import Button from '../common/Button.jsx'
-import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
 
 const navigationLinks = [
   { to: '/', label: 'Home', end: true },
@@ -15,7 +14,6 @@ const navigationLinks = [
 
 export default function Navbar() {
   const location = useLocation()
-  const { openBooking } = useBookingEnquiry()
   const [openMenuPath, setOpenMenuPath] = useState(null)
   const isMenuOpen = openMenuPath === location.pathname
   const menuButtonRef = useRef(null)
@@ -95,10 +93,8 @@ export default function Navbar() {
             </ul>
             <Button
               className="site-nav__cta"
-              onClick={() => {
-                closeMenu()
-                openBooking()
-              }}
+              to="/booking"
+              onClick={closeMenu}
             >
               Book Now <ArrowRight size={16} aria-hidden="true" />
             </Button>

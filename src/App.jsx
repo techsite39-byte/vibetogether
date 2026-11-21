@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import AppErrorBoundary from './components/common/AppErrorBoundary.jsx'
 import Loader from './components/common/Loader.jsx'
 import { BookingEnquiryProvider } from './context/BookingEnquiryContext.jsx'
@@ -64,9 +64,11 @@ function App() {
               <Route path="booking" element={<Booking />} />
               <Route
                 path="booking/step-4/:requestId"
-                element={<div aria-hidden="true" />}
+                element={<Navigate to="/booking" replace />}
               />
               <Route path="booking/:eventId" element={<Booking />} />
+              <Route path="book-now" element={<Navigate to="/booking" replace />} />
+              <Route path="book" element={<Navigate to="/booking" replace />} />
               <Route path="sing-along" element={<SingAlong />} />
               <Route path="strangers-meet" element={<StrangersMeet />} />
               <Route path="strangers-trip" element={<StrangersTrip />} />

@@ -143,68 +143,6 @@ matched to a booking is stored in `main.cashfree-unmatched-payments` using only 
 order/payment IDs, amount, currency, status, event type, and timestamps. The provider payload
 and customer details are not retained.
 
-WhatsApp booking notifications use the official Meta Cloud API and are sent to
-the customer's consented, validated mobile number (not the business number).
-Set `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_API_VERSION`,
-`WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_SUCCESS_TEMPLATE_NAME`, and
-`WHATSAPP_FAILURE_TEMPLATE_NAME` in Render. Set `WHATSAPP_APP_SECRET` to verify
-Meta webhook signatures. The configured phone number ID must be the Vibe
-Together sender in Meta; the recipient is always the customer's consented
-number from the booking form.
-Payment notifications require the approved templates
-`vibetogether_payment_success` and `vibetogether_payment_failed` with language
-code `en`. The application rejects other template names or locales rather than
-sending a potentially unapproved template.
-Templates must be submitted and approved in Meta WhatsApp Manager. The success
-template parameters are customer/attendee name, booking reference, ticket
-quantity, numeric amount, and ticket type or confirmation URL. The failure
-template parameters are customer name, booking/request reference, numeric
-amount, and retry URL. Keep the approved positional placeholders aligned with
-these mappings; do not create or send a replacement template from this
-documentation.
-
-The Meta webhook endpoint is
-`https://vibetogether-ahgy.onrender.com/api/whatsapp/webhook`. Configure that
-callback URL and `WHATSAPP_WEBHOOK_VERIFY_TOKEN` in Meta. API acceptance is
-reported as **Sent**, not **Delivered**; delivery, read, and failure statuses
-are recorded only from signed status webhooks. Missing consent is recorded as
-**Skipped**, and notification errors never undo a finalized payment or booking.
-The authenticated admin endpoint
-`GET /api/admin/integrations/diagnostics` reports configured-variable names,
-whether Meta accepts the configured phone number ID and access token, and
-WhatsApp notification readiness. It never returns credentials. Template
-approval and recipient test allowlisting must still be confirmed in WhatsApp
-Manager.
-
-WhatsApp diagnostic records use the `[WhatsApp Notification]` event and include
-a safe correlation ID, notification source/type, and outcome. Outcomes include
-`SKIPPED` (with a reason), `ATTEMPTED` (immediately before the Meta request),
-`ACCEPTED` (with Meta's message ID, but not a delivery claim), and `REJECTED`
-(HTTP status, numeric Meta error code/subcode when present, a controlled internal
-reason, and retryability). Provider error messages and details are never logged;
-diagnostics omit recipient values and customer or booking data. `DELIVERED`,
-`READ`, and `DELIVERY_FAILED` are emitted only for
-matching signed status callbacks. Text-based admin alerts use `text` as the
-template and `not_applicable` as the language.
-
-Example:
-
-```text
-[WhatsApp Notification] {
-  event: 'whatsapp_notification',
-  outcome: 'ATTEMPTED',
-  source: 'cashfree_verification',
-  notificationType: 'booking_confirmation',
-  correlationId: '4f3a8c219d0e7b61',
-  template: 'vibe_booking_confirmation',
-  language: 'en'
-}
-```
-
-These logs never include provider error details, access tokens, authorization
-headers, customer names, phone numbers, email addresses, event names, booking
-references, message contents, or payment identifiers.
-
 ## Payment-first category bookings
 
 Category booking submissions are saved as seven-day temporary payment sessions
@@ -289,7 +227,7 @@ reconciliation. No production migration is implied by these instructions.
 
 Run `npm run bookings:reconcile` in the backend directory for a read-only summary
 of referenced unpaid records, demo/actual paid records, failed payment records,
-temporary sessions, legacy WhatsApp failures, the maximum assigned reference,
+temporary sessions, the maximum assigned reference,
 and the saved counter value. To backfill expiry only for unreferenced temporary
 sessions missing it, explicitly run
 `npm run bookings:reconcile -- --backfill-temporary-expiry`; this sets their
@@ -337,13 +275,9 @@ deployment instead of appearing healthy with unavailable data APIs.
   /api/booking-enquiries/:requestId/demo-payment` is an explicit simulator; it records `Demo Paid`
   and finalizes that same record. `POST /api/booking-enquiries/:requestId/demo-payment-failure`
   records a failed/cancelled demo attempt without assigning a reference.
-- `POST /api/booking-enquiries/:requestId/whatsapp-opt-out` revokes the
-  customer's WhatsApp notification consent for the saved enquiry.
 - Webhook endpoints:
   - `POST /api/payments/cashfree/webhook` (and alias `/api/cashfree/webhook`) verifies Cashfree
     HMAC-SHA256 signatures over raw request body and processes payment success/failure asynchronously.
-  - `POST /api/whatsapp/webhook` verifies Meta webhook signatures and records delivery statuses.
-  - Authenticated `GET /api/admin/bookings/:reference/whatsapp` returns notification history.
 - `POST /api/newsletter` stores subscriptions in `newsletter-db`.
 - `POST /api/enquiries/contact` and `POST /api/enquiries/host-event` store
   contact and event-hosting requests in `enquiry-db`.
@@ -364,8 +298,8 @@ deployment instead of appearing healthy with unavailable data APIs.
   Supported reason codes are `unmatched_webhook`, `late_payment`, and
   `identity_confirmed`. The action independently checks the exact Cashfree order
   and payment IDs, successful status, amount, INR currency, and refund/reversal
-  indicators before matching one existing booking. It never creates a booking or
-  sends a WhatsApp message. Booking, result, unmatched-event, and admin-audit
+  indicators before matching one existing booking. It never creates a booking.
+  Booking, result, unmatched-event, and admin-audit
   updates run in one MongoDB transaction; MongoDB must support transactions
   (replica set or sharded cluster). The endpoint fails closed if a transaction
   cannot be used.

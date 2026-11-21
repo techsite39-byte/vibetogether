@@ -37,6 +37,35 @@ test('admin booking records include saved enquiries before payment', () => {
   assert.equal(booking.paymentStatus, 'unpaid')
 })
 
+test('admin booking records keep attendee details without legacy notification metadata', () => {
+  const enquiry = {
+    requestId: '4a9f7d8e-1ef2-4c0a-a62e-c1a73e756c4b',
+    name: 'Alex Customer',
+    maleMemberConsents: [true],
+    femaleMemberConsents: [false],
+    attendees: [{
+      name: 'Alex',
+      gender: 'Male',
+      mobile: '+919876543210',
+      messagingConsent: true,
+    }],
+    attendeeNotifications: [{ status: 'delivered' }],
+    adminNotification: { status: 'sent' },
+  }
+
+  const [booking] = mergeBookingRecords([], [enquiry])
+
+  assert.deepEqual(booking.attendees, [{
+    name: 'Alex',
+    gender: 'Male',
+    mobile: '+919876543210',
+  }])
+  assert.equal('maleMemberConsents' in booking, false)
+  assert.equal('femaleMemberConsents' in booking, false)
+  assert.equal('attendeeNotifications' in booking, false)
+  assert.equal('adminNotification' in booking, false)
+})
+
 test('admin booking merge deduplicates shared request and reference identities across collections', () => {
   const currentEnquiry = {
     requestId: 'request-current',

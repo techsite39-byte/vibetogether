@@ -15,7 +15,6 @@ function validateBooking(booking) {
   ) {
     throw new Error('Booking details could not be verified. Please try again.')
   }
-
   return booking
 }
 
@@ -155,13 +154,4 @@ export async function submitUpiPayment(requestId, utr) {
     ...payload,
     booking: validateBooking(payload.booking),
   }
-}
-
-export async function optOutOfWhatsAppUpdates(requestId) {
-  return requestBooking(
-    `${encodeURIComponent(requestId)}/whatsapp-opt-out`,
-    { method: 'POST' },
-    undefined,
-    'WhatsApp preference update',
-  )
 }

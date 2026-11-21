@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react'
 import './BookingProgress.css'
 
-const steps = ['Name', 'WhatsApp', 'Category', 'Gender & attendees', 'Payment']
+const steps = ['Name', 'Mobile', 'Category', 'Gender & attendees', 'Payment']
 
 export default function BookingProgress({ activeStep }) {
   return (

@@ -2,7 +2,6 @@ import {
   ArrowDown,
   Mail,
   MapPin,
-  MessageCircle,
   Phone,
   Share2,
   Sparkles,
@@ -10,7 +9,6 @@ import {
 import ContactCard from '../components/contact/ContactCard.jsx'
 import ContactForm from '../components/contact/ContactForm.jsx'
 import FAQAccordion from '../components/contact/FAQAccordion.jsx'
-import WhatsAppLink from '../components/contact/WhatsAppLink.jsx'
 import Button from '../components/common/Button.jsx'
 import Container from '../components/common/Container.jsx'
 import { contactConfig, faqItems } from '../data/contact.js'
@@ -55,9 +53,6 @@ export default function Contact() {
             <a className="button button--primary" href="#contact-form">
               Send us a message <ArrowDown size={17} aria-hidden="true" />
             </a>
-            <WhatsAppLink
-              message="Hi VIBE TOGETHER, I have a question and would love to connect."
-            />
           </div>
           <p className="contact-hero__demo">
             Contact details are configurable. Unavailable details are not
@@ -89,17 +84,6 @@ export default function Contact() {
               label="Phone"
               value={contactConfig.phone}
             />
-            <ContactCard
-              description="Open a chat with a ready-to-send hello."
-              icon={MessageCircle}
-              label="WhatsApp"
-            >
-              <WhatsAppLink
-                className="whatsapp-action--inline"
-                label="Start a conversation"
-                message="Hi VIBE TOGETHER, I have a question and would love to connect."
-              />
-            </ContactCard>
             <ContactCard
               description="Send a note to the configured contact inbox."
               href={emailHref}

@@ -1,6 +1,5 @@
 import { ArrowUpRight } from 'lucide-react'
 import Button from '../common/Button.jsx'
-import { useBookingEnquiry } from '../../context/useBookingEnquiry.js'
 import { getResponsiveImageSrcSet } from '../../utils/responsiveImage.js'
 import {
   resetInteractiveTilt,
@@ -14,8 +13,6 @@ export default function CategoryCard({
   imageAlt,
   title,
 }) {
-  const { openBooking } = useBookingEnquiry()
-
   return (
     <article
       className="category-card ui-category-card"
@@ -52,7 +49,7 @@ export default function CategoryCard({
         <Button
           className="category-card__action"
           variant="secondary"
-          onClick={() => openBooking(title)}
+          to={title ? `/booking?category=${encodeURIComponent(title)}` : '/booking'}
         >
           Book Now <ArrowUpRight size={16} aria-hidden="true" />
         </Button>
