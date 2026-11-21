@@ -228,8 +228,8 @@ test('reloads persisted booking and attendee details without requiring offer pri
   })
   assert.equal(createResponse.status, 201)
   const created = await createResponse.json()
-  assert.equal(created.booking.paymentAmount, 199)
-  assert.equal(created.booking.paymentAmountPaise, 19_900)
+  assert.equal(created.booking.paymentAmount, 398)
+  assert.equal(created.booking.paymentAmountPaise, 39_800)
   assert.equal(created.booking.ticketQuantity, 2)
   assert.deepEqual(created.booking.attendees, [
     { name: 'Jordan Example', gender: 'Male', mobile: '+919876543210' },
@@ -266,7 +266,7 @@ test('reloads persisted booking and attendee details without requiring offer pri
     assert.equal(booking.event, events[0].title)
     assert.equal(booking.ticketTypeName, 'General Admission')
     assert.equal(booking.ticketQuantity, 2)
-    assert.equal(booking.paymentAmount, 199)
+    assert.equal(booking.paymentAmount, 398)
     assert.deepEqual(booking.maleMemberNames, ['Jordan Example'])
     assert.deepEqual(booking.femaleMemberNames, ['Mira Example'])
     assert.deepEqual(booking.attendees, created.booking.attendees)

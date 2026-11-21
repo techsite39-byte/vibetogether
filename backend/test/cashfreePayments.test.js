@@ -308,8 +308,8 @@ describe('Cashfree Payments Integration', () => {
     it('creates Production Cashfree order with HTTPS return_url and rejects localhost', async () => {
       const enquiry = createMockEnquiry({
         requestId: 'req_prod_booking_789',
-        categoryId: 'fun-games',
-        ticketQuantity: 3,
+        eventId: 'after-hours',
+        ticketQuantity: 2,
       })
       let capturedUrl = ''
       let capturedHeaders = {}
@@ -325,7 +325,7 @@ describe('Cashfree Payments Integration', () => {
             cf_order_id: 'cf_order_prod_999888',
             order_id: capturedBody.order_id,
             payment_session_id: 'session_token_prod_xyz123',
-            order_amount: 597,
+            order_amount: 398,
             order_currency: 'INR',
             order_status: 'ACTIVE',
           }),
@@ -364,9 +364,9 @@ describe('Cashfree Payments Integration', () => {
 
       assert.equal(result.cf_order_id, 'cf_order_prod_999888')
       assert.equal(result.payment_session_id, 'session_token_prod_xyz123')
-      assert.equal(result.amount, 597)
+      assert.equal(result.amount, 398)
       assert.equal(result.environment, 'production')
-      assert.equal(capturedBody.order_amount, 597)
+      assert.equal(capturedBody.order_amount, 398)
 
       // Production endpoint must be called
       assert.equal(capturedUrl, 'https://api.cashfree.com/pg/orders')
@@ -386,12 +386,12 @@ describe('Cashfree Payments Integration', () => {
       assert.equal(enquiry.paymentProvider, 'cashfree')
       assert.equal(enquiry.cfPaymentSessionId, 'session_token_prod_xyz123')
       assert.equal(enquiry.paymentOrderId.startsWith('VT_'), true)
-      assert.equal(enquiry.paymentAmount, 597)
-      assert.equal(enquiry.paymentOrderAmountPaise, 59_700)
+      assert.equal(enquiry.paymentAmount, 398)
+      assert.equal(enquiry.paymentOrderAmountPaise, 39_800)
 
       const retry = await service.createOrder(enquiry.requestId)
       assert.equal(retry.order_id, result.order_id)
-      assert.equal(retry.amount, 597)
+      assert.equal(retry.amount, 398)
       assert.equal(enquiry.paymentOrders.length, 1)
     })
 

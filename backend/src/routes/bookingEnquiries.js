@@ -470,7 +470,6 @@ export function createBookingEnquiriesRouter({
       currentPricing ?? defaultOfferPricing,
       enquiry.ticketQuantity ?? 1,
       enquiry.ticketType ?? DEFAULT_TICKET_TYPE,
-      { perTicket: Boolean(enquiry.categoryId) },
     )
   }
 
@@ -498,7 +497,6 @@ export function createBookingEnquiriesRouter({
         basePricing ?? defaultOfferPricing,
         validation.value.ticketQuantity,
         validation.value.ticketType,
-        { perTicket: Boolean(validation.value.categoryId) },
       )
       const result = await repository.save({
         ...validation.value,

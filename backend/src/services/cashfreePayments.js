@@ -483,7 +483,6 @@ export function createCashfreePaymentService({
       basePricing,
       enquiry?.ticketQuantity ?? 1,
       enquiry?.ticketType ?? DEFAULT_TICKET_TYPE,
-      { perTicket: Boolean(enquiry?.categoryId) },
     )
   }
 
